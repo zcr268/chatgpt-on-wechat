@@ -404,6 +404,30 @@ def test_http_post_returns_200_json(monkeypatch):
     assert json.loads(response.data)["choices"][0]["message"]["content"] == "Hello"
 
 
+def test_http_post_returns_400_for_invalid_json(monkeypatch):
+    app = _http_app(monkeypatch, _runner([], []))
+
+    response = app.request(
+        "/v1/chat/completions",
+        method="POST",
+        data="{",
+        headers={
+            "Authorization": "Bearer secret",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status == "400 Bad Request"
+    assert response.headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json.loads(response.data) == {
+        "error": {
+            "message": "Request body must be valid JSON.",
+            "type": "invalid_request_error",
+            "code": "invalid_json",
+        }
+    }
+
+
 def test_http_post_returns_401_for_invalid_bearer_token(monkeypatch):
     app = _http_app(monkeypatch, _runner([], []))
 
