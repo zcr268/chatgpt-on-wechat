@@ -14,13 +14,21 @@ from channel.web.openai_api import (
 
 
 def _runner(events, calls):
-    def run(query, session_id, send_chunk_fn, channel_type="", agent_id=None):
+    def run(
+        query,
+        session_id,
+        send_chunk_fn,
+        channel_type="",
+        agent_id=None,
+        request_id=None,
+    ):
         calls.append(
             {
                 "query": query,
                 "session_id": session_id,
                 "channel_type": channel_type,
                 "agent_id": agent_id,
+                "request_id": request_id,
             }
         )
         for event in events:
@@ -93,18 +101,27 @@ def test_bearer_scheme_is_case_insensitive(scheme):
     assert response["choices"][0]["message"]["content"] == "Hello"
 
 
-def test_cancel_agent_session_uses_bridge_scoped_key(monkeypatch):
+def test_cancel_agent_request_uses_bridge_scoped_key(monkeypatch):
     calls = []
 
     class FakeAgentBridge:
-        def scoped_session_key(self, session_id, agent_id=None):
-            calls.append(("scope", session_id, agent_id))
-            return f"research::{session_id}"
+        agent_registry = type(
+            "FakeAgentRegistry", (), {"default_agent_id": "primary"}
+        )()
+
+        def _resolve_agent_id(self, agent_id=None):
+            calls.append(("resolve", agent_id))
+            return agent_id or "primary"
+
+        @staticmethod
+        def _cancel_key(agent_id, request_id, default_agent_id):
+            calls.append(("scope", agent_id, request_id, default_agent_id))
+            return f"{agent_id}::{request_id}"
 
     class FakeRegistry:
-        def cancel_session(self, session_id):
-            calls.append(("cancel", session_id))
-            return 1
+        def cancel_request(self, request_id):
+            calls.append(("cancel", request_id))
+            return True
 
     monkeypatch.setattr(
         "bridge.bridge.Bridge",
@@ -116,11 +133,32 @@ def test_cancel_agent_session_uses_bridge_scoped_key(monkeypatch):
     )
     monkeypatch.setattr("agent.protocol.get_cancel_registry", lambda: FakeRegistry())
 
-    assert openai_api._cancel_agent_session("session-1", agent_id="research") == 1
+    assert openai_api._cancel_agent_request("request-1", agent_id="research") is True
     assert calls == [
-        ("scope", "session-1", "research"),
-        ("cancel", "research::session-1"),
+        ("resolve", "research"),
+        ("scope", "research", "request-1", "primary"),
+        ("cancel", "research::request-1"),
     ]
+
+
+def test_late_cancel_does_not_cancel_new_request_in_same_session(monkeypatch):
+    from agent.protocol.cancel import CancelTokenRegistry
+
+    registry = CancelTokenRegistry()
+    old_event = registry.register("request-old", session_id="shared-session")
+    registry.unregister("request-old")
+    new_event = registry.register("request-new", session_id="shared-session")
+
+    monkeypatch.setattr("agent.protocol.get_cancel_registry", lambda: registry)
+    monkeypatch.setattr(
+        openai_api,
+        "_request_cancel_key",
+        lambda request_id, agent_id=None: request_id,
+    )
+
+    assert openai_api._cancel_agent_request("request-old") is False
+    assert not old_event.is_set()
+    assert not new_event.is_set()
 
 
 def test_non_streaming_completion_maps_content_reasoning_and_tools():
@@ -173,6 +211,7 @@ def test_non_streaming_completion_maps_content_reasoning_and_tools():
             "session_id": "openai:conversation:conversation-42",
             "channel_type": "openai_api",
             "agent_id": None,
+            "request_id": "chatcmpl-test",
         }
     ]
     assert response == {
@@ -289,7 +328,12 @@ def test_streaming_agent_failure_before_first_event_returns_500():
 
 def test_streaming_agent_failure_after_first_event_finishes_with_error():
     def fail_after_content(
-        query, session_id, send_chunk_fn, channel_type="", agent_id=None
+        query,
+        session_id,
+        send_chunk_fn,
+        channel_type="",
+        agent_id=None,
+        request_id=None,
     ):
         send_chunk_fn({"chunk_type": "content", "delta": "partial"})
         raise RuntimeError("provider unavailable")
@@ -325,7 +369,14 @@ def test_streaming_returns_after_first_event_without_waiting_for_completion():
     release_runner = threading.Event()
     prepared_stream = queue.Queue()
 
-    def run(query, session_id, send_chunk_fn, channel_type="", agent_id=None):
+    def run(
+        query,
+        session_id,
+        send_chunk_fn,
+        channel_type="",
+        agent_id=None,
+        request_id=None,
+    ):
         send_chunk_fn({"chunk_type": "content", "delta": "first"})
         release_runner.wait()
         send_chunk_fn({"chunk_type": "content", "delta": "second"})
@@ -357,20 +408,27 @@ def test_streaming_returns_after_first_event_without_waiting_for_completion():
     assert '"content": "second"' in frames[2]
 
 
-def test_streaming_generator_close_cancels_agent_session_once(monkeypatch):
+def test_streaming_generator_close_cancels_agent_request_once(monkeypatch):
     release_runner = threading.Event()
     runner_started = threading.Event()
     cancel_calls = []
 
-    def run(query, session_id, send_chunk_fn, channel_type="", agent_id=None):
+    def run(
+        query,
+        session_id,
+        send_chunk_fn,
+        channel_type="",
+        agent_id=None,
+        request_id=None,
+    ):
         send_chunk_fn({"chunk_type": "content", "delta": "first"})
         runner_started.set()
         release_runner.wait()
 
     monkeypatch.setattr(
         openai_api,
-        "_cancel_agent_session",
-        lambda session_id, agent_id=None: cancel_calls.append((session_id, agent_id)),
+        "_cancel_agent_request",
+        lambda request_id, agent_id=None: cancel_calls.append((request_id, agent_id)),
         raising=False,
     )
     stream = handle_chat_completions(
@@ -383,6 +441,7 @@ def test_streaming_generator_close_cancels_agent_session_once(monkeypatch):
         authorization="Bearer secret",
         external_api_token="secret",
         run_chat=run,
+        completion_id="chatcmpl-close",
     )
 
     try:
@@ -392,15 +451,15 @@ def test_streaming_generator_close_cancels_agent_session_once(monkeypatch):
     finally:
         release_runner.set()
 
-    assert cancel_calls == [("openai:conversation:close-me", None)]
+    assert cancel_calls == [("chatcmpl-close", None)]
 
 
-def test_streaming_normal_completion_does_not_cancel_agent_session(monkeypatch):
+def test_streaming_normal_completion_does_not_cancel_agent_request(monkeypatch):
     cancel_calls = []
     monkeypatch.setattr(
         openai_api,
-        "_cancel_agent_session",
-        lambda session_id, agent_id=None: cancel_calls.append((session_id, agent_id)),
+        "_cancel_agent_request",
+        lambda request_id, agent_id=None: cancel_calls.append((request_id, agent_id)),
         raising=False,
     )
     stream = handle_chat_completions(
@@ -611,16 +670,18 @@ def test_http_stream_first_event_timeout_returns_500_and_cancels(monkeypatch):
     runner_started = threading.Event()
     response_queue = queue.Queue()
     cancel_calls = []
+    request_ids = []
 
     def block_before_first_event(*args, **kwargs):
+        request_ids.append(kwargs["request_id"])
         runner_started.set()
         release_runner.wait()
 
     monkeypatch.setattr(openai_api, "_FIRST_EVENT_TIMEOUT_SECONDS", 0.01, raising=False)
     monkeypatch.setattr(
         openai_api,
-        "_cancel_agent_session",
-        lambda session_id, agent_id=None: cancel_calls.append((session_id, agent_id)),
+        "_cancel_agent_request",
+        lambda request_id, agent_id=None: cancel_calls.append((request_id, agent_id)),
         raising=False,
     )
     app = _http_app(monkeypatch, block_before_first_event)
@@ -654,7 +715,8 @@ def test_http_stream_first_event_timeout_returns_500_and_cancels(monkeypatch):
         "type": "api_error",
         "code": "timeout",
     }
-    assert cancel_calls == [("openai:conversation:timeout", None)]
+    assert len(request_ids) == 1
+    assert cancel_calls == [(request_ids[0], None)]
 
 
 def test_http_stream_returns_sse_body_and_done_marker(monkeypatch):

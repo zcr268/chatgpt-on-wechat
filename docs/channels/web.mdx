@@ -114,7 +114,7 @@ return a structured JSON `500` response.
 For streaming requests, CowAgent waits up to 30 seconds for the Agent to produce
 the first event. An Agent failure before the first event returns a structured
 JSON `500` response because the SSE response has not started. If no first event
-arrives within 30 seconds, the API cancels that session's in-flight Agent and
+arrives within 30 seconds, the API cancels only that request's in-flight Agent and
 returns the same JSON `500` shape with error code `timeout`.
 
 After the SSE response has started, its HTTP status can no longer change.

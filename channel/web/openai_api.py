@@ -180,14 +180,26 @@ def _sse_frame(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _cancel_agent_session(session_id: str, agent_id: str | None = None) -> int:
-    """Cancel only the in-flight run for one Agent-scoped session."""
-    from agent.protocol import get_cancel_registry
+def _request_cancel_key(request_id: str, agent_id: str | None = None) -> str:
+    """Return the Agent-scoped cancellation key for one request."""
     from bridge.bridge import Bridge
 
     agent_bridge = Bridge().get_agent_bridge()
-    scoped_session_id = agent_bridge.scoped_session_key(session_id, agent_id)
-    return get_cancel_registry().cancel_session(scoped_session_id)
+    resolved_agent_id = agent_bridge._resolve_agent_id(agent_id)
+    return agent_bridge._cancel_key(
+        resolved_agent_id,
+        request_id,
+        agent_bridge.agent_registry.default_agent_id,
+    )
+
+
+def _cancel_agent_request(request_id: str, agent_id: str | None = None) -> bool:
+    """Cancel one request without affecting newer runs in the same session."""
+    from agent.protocol import get_cancel_registry
+
+    return get_cancel_registry().cancel_request(
+        _request_cancel_key(request_id, agent_id)
+    )
 
 
 def _stream_completion(
@@ -239,6 +251,7 @@ def _stream_completion(
                     send_chunk,
                     channel_type="openai_api",
                     agent_id=None,
+                    request_id=completion_id,
                 )
         except Exception:  # noqa: BLE001 - worker boundary becomes an SSE error
             logger.exception("[OpenAI API] Chat completion failed")
@@ -251,7 +264,7 @@ def _stream_completion(
         first_item = output.get(timeout=_FIRST_EVENT_TIMEOUT_SECONDS)
     except queue.Empty as error:
         closed.set()
-        _cancel_agent_session(session_id)
+        _cancel_agent_request(completion_id)
         raise OpenAIAPIError(
             500, "CowAgent timed out before producing a response.", "timeout"
         ) from error
@@ -301,7 +314,7 @@ def _stream_completion(
         finally:
             closed.set()
             if not completed:
-                _cancel_agent_session(session_id)
+                _cancel_agent_request(completion_id)
 
     return frames()
 
@@ -336,6 +349,7 @@ def _non_stream_completion(
                 send_chunk,
                 channel_type="openai_api",
                 agent_id=None,
+                request_id=completion_id,
             )
     except Exception as error:
         logger.exception("[OpenAI API] Chat completion failed")
