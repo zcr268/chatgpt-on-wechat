@@ -27,6 +27,7 @@ class OpenAIAPIError(Exception):
 _SESSION_LOCKS = tuple(threading.Lock() for _ in range(64))
 _STREAM_END = object()
 _STREAM_ERROR = object()
+_FIRST_EVENT_TIMEOUT_SECONDS = 30
 
 
 def _authenticate(authorization: str, external_api_token: str) -> None:
@@ -40,7 +41,7 @@ def _authenticate(authorization: str, external_api_token: str) -> None:
     scheme, separator, credential = str(authorization or "").partition(" ")
     if (
         not separator
-        or scheme != "Bearer"
+        or scheme.lower() != "bearer"
         or not credential
         or not hmac.compare_digest(credential.strip(), token)
     ):
@@ -179,6 +180,16 @@ def _sse_frame(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _cancel_agent_session(session_id: str, agent_id: str | None = None) -> int:
+    """Cancel only the in-flight run for one Agent-scoped session."""
+    from agent.protocol import get_cancel_registry
+    from bridge.bridge import Bridge
+
+    agent_bridge = Bridge().get_agent_bridge()
+    scoped_session_id = agent_bridge.scoped_session_key(session_id, agent_id)
+    return get_cancel_registry().cancel_session(scoped_session_id)
+
+
 def _stream_completion(
     run_chat: Callable,
     query: str,
@@ -236,7 +247,14 @@ def _stream_completion(
             publish(_STREAM_END)
 
     threading.Thread(target=execute, name="openai-chat-completion", daemon=True).start()
-    first_item = output.get()
+    try:
+        first_item = output.get(timeout=_FIRST_EVENT_TIMEOUT_SECONDS)
+    except queue.Empty as error:
+        closed.set()
+        _cancel_agent_session(session_id)
+        raise OpenAIAPIError(
+            500, "CowAgent timed out before producing a response.", "timeout"
+        ) from error
     if first_item is _STREAM_ERROR:
         closed.set()
         raise OpenAIAPIError(
@@ -245,6 +263,7 @@ def _stream_completion(
 
     def frames() -> Iterator[str]:
         finish_reason = "stop"
+        completed = False
         item = first_item
         try:
             yield _sse_frame(
@@ -268,6 +287,7 @@ def _stream_completion(
                 else:
                     yield _sse_frame(item)
                 item = output.get()
+            completed = True
             yield _sse_frame(
                 _base_chunk(
                     completion_id,
@@ -280,6 +300,8 @@ def _stream_completion(
             yield "data: [DONE]\n\n"
         finally:
             closed.set()
+            if not completed:
+                _cancel_agent_session(session_id)
 
     return frames()
 
@@ -339,6 +361,17 @@ def _non_stream_completion(
             }
         ],
     }
+
+
+def _encode_stream(stream: Iterator[str]) -> Iterator[bytes]:
+    """Encode SSE frames while propagating client disconnects to the source."""
+    try:
+        for frame in stream:
+            yield frame.encode("utf-8")
+    finally:
+        close = getattr(stream, "close", None)
+        if close is not None:
+            close()
 
 
 def handle_chat_completions(
@@ -426,4 +459,4 @@ class OpenAIChatCompletionsHandler:
         web.header("Content-Type", "text/event-stream; charset=utf-8")
         web.header("Cache-Control", "no-cache")
         web.header("X-Accel-Buffering", "no")
-        return (frame.encode("utf-8") for frame in result)
+        return _encode_stream(result)

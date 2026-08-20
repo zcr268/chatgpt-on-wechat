@@ -107,9 +107,20 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-The API returns `400` for invalid requests, `401` for invalid credentials,
-`503` when `external_api_token` is not configured, and `500` when CowAgent
-cannot complete a non-streaming request.
+The API returns `400` for invalid requests, `401` for invalid credentials, and
+`503` when `external_api_token` is not configured. Non-streaming Agent failures
+return a structured JSON `500` response.
+
+For streaming requests, CowAgent waits up to 30 seconds for the Agent to produce
+the first event. An Agent failure before the first event returns a structured
+JSON `500` response because the SSE response has not started. If no first event
+arrives within 30 seconds, the API cancels that session's in-flight Agent and
+returns the same JSON `500` shape with error code `timeout`.
+
+After the SSE response has started, its HTTP status can no longer change.
+A later Agent failure is therefore emitted as a `cow_event.type=error` chunk,
+followed by a terminal chunk with `finish_reason=error` and then
+`data: [DONE]`.
 
 ## Features
 

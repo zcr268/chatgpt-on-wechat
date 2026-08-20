@@ -78,6 +78,51 @@ def test_external_api_uses_independent_bearer_auth(
     assert exc_info.value.status_code == status_code
 
 
+@pytest.mark.parametrize("scheme", ["bearer", "BEARER", "BeArEr"])
+def test_bearer_scheme_is_case_insensitive(scheme):
+    response = handle_chat_completions(
+        {
+            "model": "cowagent",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        authorization=f"{scheme} secret",
+        external_api_token="secret",
+        run_chat=_runner([{"chunk_type": "content", "delta": "Hello"}], []),
+    )
+
+    assert response["choices"][0]["message"]["content"] == "Hello"
+
+
+def test_cancel_agent_session_uses_bridge_scoped_key(monkeypatch):
+    calls = []
+
+    class FakeAgentBridge:
+        def scoped_session_key(self, session_id, agent_id=None):
+            calls.append(("scope", session_id, agent_id))
+            return f"research::{session_id}"
+
+    class FakeRegistry:
+        def cancel_session(self, session_id):
+            calls.append(("cancel", session_id))
+            return 1
+
+    monkeypatch.setattr(
+        "bridge.bridge.Bridge",
+        lambda: type(
+            "FakeBridge",
+            (),
+            {"get_agent_bridge": lambda self: FakeAgentBridge()},
+        )(),
+    )
+    monkeypatch.setattr("agent.protocol.get_cancel_registry", lambda: FakeRegistry())
+
+    assert openai_api._cancel_agent_session("session-1", agent_id="research") == 1
+    assert calls == [
+        ("scope", "session-1", "research"),
+        ("cancel", "research::session-1"),
+    ]
+
+
 def test_non_streaming_completion_maps_content_reasoning_and_tools():
     calls = []
     response = handle_chat_completions(
@@ -312,6 +357,89 @@ def test_streaming_returns_after_first_event_without_waiting_for_completion():
     assert '"content": "second"' in frames[2]
 
 
+def test_streaming_generator_close_cancels_agent_session_once(monkeypatch):
+    release_runner = threading.Event()
+    runner_started = threading.Event()
+    cancel_calls = []
+
+    def run(query, session_id, send_chunk_fn, channel_type="", agent_id=None):
+        send_chunk_fn({"chunk_type": "content", "delta": "first"})
+        runner_started.set()
+        release_runner.wait()
+
+    monkeypatch.setattr(
+        openai_api,
+        "_cancel_agent_session",
+        lambda session_id, agent_id=None: cancel_calls.append((session_id, agent_id)),
+        raising=False,
+    )
+    stream = handle_chat_completions(
+        {
+            "model": "cowagent",
+            "stream": True,
+            "conversation_id": "close-me",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        authorization="Bearer secret",
+        external_api_token="secret",
+        run_chat=run,
+    )
+
+    try:
+        assert runner_started.wait(timeout=1)
+        next(stream)
+        stream.close()
+    finally:
+        release_runner.set()
+
+    assert cancel_calls == [("openai:conversation:close-me", None)]
+
+
+def test_streaming_normal_completion_does_not_cancel_agent_session(monkeypatch):
+    cancel_calls = []
+    monkeypatch.setattr(
+        openai_api,
+        "_cancel_agent_session",
+        lambda session_id, agent_id=None: cancel_calls.append((session_id, agent_id)),
+        raising=False,
+    )
+    stream = handle_chat_completions(
+        {
+            "model": "cowagent",
+            "stream": True,
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        authorization="Bearer secret",
+        external_api_token="secret",
+        run_chat=_runner([{"chunk_type": "content", "delta": "Hello"}], []),
+    )
+
+    assert list(stream)[-1] == "data: [DONE]\n\n"
+    assert cancel_calls == []
+
+
+def test_encoded_stream_close_propagates_to_source():
+    close_calls = []
+
+    class Source:
+        def __iter__(self):
+            return self
+
+        def __next__(self):
+            return "data: first\n\n"
+
+        def close(self):
+            close_calls.append("closed")
+
+    source = Source()
+    stream = openai_api._encode_stream(source)
+
+    assert next(stream) == b"data: first\n\n"
+    stream.close()
+
+    assert close_calls == ["closed"]
+
+
 def test_invalid_messages_return_400():
     with pytest.raises(OpenAIAPIError) as exc_info:
         handle_chat_completions(
@@ -478,6 +606,57 @@ def test_http_stream_returns_500_when_agent_fails_immediately(monkeypatch):
     assert json.loads(response.data)["error"]["code"] == "internal_error"
 
 
+def test_http_stream_first_event_timeout_returns_500_and_cancels(monkeypatch):
+    release_runner = threading.Event()
+    runner_started = threading.Event()
+    response_queue = queue.Queue()
+    cancel_calls = []
+
+    def block_before_first_event(*args, **kwargs):
+        runner_started.set()
+        release_runner.wait()
+
+    monkeypatch.setattr(openai_api, "_FIRST_EVENT_TIMEOUT_SECONDS", 0.01, raising=False)
+    monkeypatch.setattr(
+        openai_api,
+        "_cancel_agent_session",
+        lambda session_id, agent_id=None: cancel_calls.append((session_id, agent_id)),
+        raising=False,
+    )
+    app = _http_app(monkeypatch, block_before_first_event)
+
+    def request():
+        response_queue.put(
+            _post(
+                app,
+                {
+                    "model": "cowagent",
+                    "stream": True,
+                    "conversation_id": "timeout",
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+            )
+        )
+
+    caller = threading.Thread(target=request)
+    caller.start()
+    try:
+        assert runner_started.wait(timeout=1)
+        response = response_queue.get(timeout=0.5)
+    finally:
+        release_runner.set()
+        caller.join(timeout=1)
+
+    assert response.status == "500 Internal Server Error"
+    assert response.headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json.loads(response.data)["error"] == {
+        "message": "CowAgent timed out before producing a response.",
+        "type": "api_error",
+        "code": "timeout",
+    }
+    assert cancel_calls == [("openai:conversation:timeout", None)]
+
+
 def test_http_stream_returns_sse_body_and_done_marker(monkeypatch):
     app = _http_app(
         monkeypatch,
@@ -511,3 +690,7 @@ def test_route_config_and_english_documentation_expose_the_public_api():
     assert "POST /v1/chat/completions" in docs
     assert "Authorization: Bearer" in docs
     assert '"stream": true' in docs
+    assert "before the first event" in docs
+    assert "30 seconds" in docs
+    assert "`cow_event.type=error`" in docs
+    assert "`finish_reason=error`" in docs
