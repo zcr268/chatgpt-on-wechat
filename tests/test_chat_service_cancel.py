@@ -13,9 +13,11 @@ class _RecordingCancelRegistry:
         self.events = {}
 
     def register(self, request_id, session_id=None):
-        event = threading.Event()
         self.calls.append(("register", request_id, session_id))
-        self.events[request_id] = event
+        event = self.events.get(request_id)
+        if event is None:
+            event = threading.Event()
+            self.events[request_id] = event
         return event
 
     def unregister(self, request_id):
@@ -33,6 +35,7 @@ class _RecordingSteerRegistry:
 
 class _FakeExecutor:
     instances: ClassVar[list] = []
+    run_queries: ClassVar[list] = []
 
     def __init__(self, *, messages, cancel_event, **kwargs):
         self.messages = list(messages)
@@ -40,6 +43,8 @@ class _FakeExecutor:
         self.__class__.instances.append(self)
 
     def run_stream(self, query):
+        self.__class__.run_queries.append(query)
+        self.messages.append({"role": "user", "content": query})
         return ""
 
 
@@ -81,6 +86,7 @@ def _service():
 def cancel_runtime(monkeypatch):
     cancel_registry = _RecordingCancelRegistry()
     _FakeExecutor.instances = []
+    _FakeExecutor.run_queries = []
     monkeypatch.setattr("agent.protocol.get_cancel_registry", lambda: cancel_registry)
     monkeypatch.setattr(
         "agent.protocol.get_steer_registry", lambda: _RecordingSteerRegistry()
@@ -124,3 +130,30 @@ def test_run_without_request_id_remains_session_scoped(cancel_runtime):
         ("register", "research::session-1", "research::session-1"),
         ("unregister", "research::session-1"),
     ]
+
+
+def test_run_reuses_pre_cancelled_event_without_executing_or_writing_history(
+    cancel_runtime,
+):
+    service = _service()
+    cancel_event = cancel_runtime.register(
+        "research::request-1", session_id="research::session-1"
+    )
+    cancel_event.set()
+    cancel_runtime.calls.clear()
+
+    service.run(
+        "hello",
+        "session-1",
+        lambda chunk: None,
+        agent_id="research",
+        request_id="request-1",
+    )
+
+    assert cancel_runtime.calls == [
+        ("register", "research::request-1", "research::session-1"),
+        ("unregister", "research::request-1"),
+    ]
+    assert _FakeExecutor.instances[0].cancel_event is cancel_event
+    assert _FakeExecutor.run_queries == []
+    assert _FakeExecutor.instances[0].messages == []

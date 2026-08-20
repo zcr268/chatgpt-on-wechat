@@ -180,17 +180,31 @@ def _sse_frame(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
-def _request_cancel_key(request_id: str, agent_id: str | None = None) -> str:
-    """Return the Agent-scoped cancellation key for one request."""
+def _request_cancel_scope(
+    request_id: str,
+    session_id: str | None = None,
+    agent_id: str | None = None,
+) -> tuple[str, str | None]:
+    """Return the request key and session group used by ChatService."""
     from bridge.bridge import Bridge
 
     agent_bridge = Bridge().get_agent_bridge()
     resolved_agent_id = agent_bridge._resolve_agent_id(agent_id)
-    return agent_bridge._cancel_key(
-        resolved_agent_id,
-        request_id,
-        agent_bridge.agent_registry.default_agent_id,
+    default_agent_id = agent_bridge.agent_registry.default_agent_id
+    request_key = agent_bridge._cancel_key(
+        resolved_agent_id, request_id, default_agent_id
     )
+    session_key = (
+        agent_bridge._cancel_key(resolved_agent_id, session_id, default_agent_id)
+        if session_id
+        else None
+    )
+    return request_key, session_key
+
+
+def _request_cancel_key(request_id: str, agent_id: str | None = None) -> str:
+    """Return the Agent-scoped cancellation key for one request."""
+    return _request_cancel_scope(request_id, agent_id=agent_id)[0]
 
 
 def _cancel_agent_request(request_id: str, agent_id: str | None = None) -> bool:
@@ -210,6 +224,12 @@ def _stream_completion(
     created: int,
     model: str,
 ) -> Iterator[str]:
+    from agent.protocol import get_cancel_registry
+
+    registry = get_cancel_registry()
+    cancel_key, scoped_session_key = _request_cancel_scope(completion_id, session_id)
+    registry.register(cancel_key, session_id=scoped_session_key)
+
     output = queue.Queue(maxsize=256)
     closed = threading.Event()
 
@@ -259,9 +279,19 @@ def _stream_completion(
             logger.exception("[OpenAI API] Chat completion failed")
             publish(_STREAM_ERROR)
         finally:
-            publish(_STREAM_END)
+            try:
+                publish(_STREAM_END)
+            finally:
+                registry.unregister(cancel_key)
 
-    threading.Thread(target=execute, name="openai-chat-completion", daemon=True).start()
+    worker = threading.Thread(
+        target=execute, name="openai-chat-completion", daemon=True
+    )
+    try:
+        worker.start()
+    except Exception:
+        registry.unregister(cancel_key)
+        raise
     try:
         first_item = output.get(timeout=_FIRST_EVENT_TIMEOUT_SECONDS)
     except queue.Empty as error:

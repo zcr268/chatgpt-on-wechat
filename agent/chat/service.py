@@ -292,6 +292,12 @@ class ChatService:
         )
 
         try:
+            if cancel_event is not None and cancel_event.is_set():
+                logger.info(
+                    f"[ChatService] Skipping pre-cancelled run: agent={resolved_agent_id}, "
+                    f"session={session_id}"
+                )
+                return
             response = executor.run_stream(query)
         except Exception:
             # If executor cleared messages (context overflow), sync back

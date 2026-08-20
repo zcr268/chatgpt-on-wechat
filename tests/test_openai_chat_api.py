@@ -455,6 +455,9 @@ def test_streaming_generator_close_cancels_agent_request_once(monkeypatch):
 
 
 def test_streaming_timeout_while_waiting_for_session_lock_skips_run_chat(monkeypatch):
+    from agent.protocol.cancel import CancelTokenRegistry
+
+    registry = CancelTokenRegistry()
     session_id = "openai:conversation:queued-timeout"
     session_lock = openai_api._SESSION_LOCKS[
         hash(session_id) % len(openai_api._SESSION_LOCKS)
@@ -468,6 +471,15 @@ def test_streaming_timeout_while_waiting_for_session_lock_skips_run_chat(monkeyp
         session_writes.append(args[1])
 
     monkeypatch.setattr(openai_api, "_FIRST_EVENT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr("agent.protocol.get_cancel_registry", lambda: registry)
+    monkeypatch.setattr(
+        openai_api,
+        "_request_cancel_scope",
+        lambda request_id, session_id=None, agent_id=None: (
+            request_id,
+            session_id,
+        ),
+    )
     monkeypatch.setattr(openai_api, "_cancel_agent_request", lambda *args: False)
 
     session_lock.acquire()
@@ -498,8 +510,106 @@ def test_streaming_timeout_while_waiting_for_session_lock_skips_run_chat(monkeyp
     workers[0].join(timeout=1)
     assert not workers[0].is_alive()
     assert exc_info.value.code == "timeout"
+    assert registry.get_event("chatcmpl-queued-timeout") is None
+    assert not registry.has_active(session_id)
     assert run_calls == []
     assert session_writes == []
+
+
+def test_streaming_timeout_after_closed_check_reuses_pre_registered_cancel_event(
+    monkeypatch,
+):
+    from agent.protocol.cancel import CancelTokenRegistry
+
+    registry = CancelTokenRegistry()
+    entered_run_chat = threading.Event()
+    release_run_chat = threading.Event()
+    response_queue = queue.Queue()
+    observed_events = []
+    agent_runs = []
+    history_writes = []
+    session_id = "openai:conversation:registration-race"
+    completion_id = "chatcmpl-registration-race"
+    request_key = f"research::{completion_id}"
+    session_key = f"research::{session_id}"
+    existing_threads = set(threading.enumerate())
+
+    class FakeAgentBridge:
+        agent_registry = type(
+            "FakeAgentRegistry", (), {"default_agent_id": "primary"}
+        )()
+
+        @staticmethod
+        def _resolve_agent_id(agent_id=None):
+            return agent_id or "research"
+
+        @staticmethod
+        def _cancel_key(agent_id, token, default_agent_id):
+            return token if agent_id == default_agent_id else f"{agent_id}::{token}"
+
+    class FakeBridge:
+        @staticmethod
+        def get_agent_bridge():
+            return FakeAgentBridge()
+
+    def run_chat(*args, **kwargs):
+        entered_run_chat.set()
+        release_run_chat.wait()
+        cancel_event = registry.register(request_key, session_id=session_key)
+        observed_events.append(cancel_event)
+        try:
+            if not cancel_event.is_set():
+                agent_runs.append(kwargs["request_id"])
+                history_writes.append(args[1])
+        finally:
+            registry.unregister(request_key)
+
+    monkeypatch.setattr("bridge.bridge.Bridge", FakeBridge)
+    monkeypatch.setattr("agent.protocol.get_cancel_registry", lambda: registry)
+    monkeypatch.setattr(openai_api, "_FIRST_EVENT_TIMEOUT_SECONDS", 0.05)
+
+    def request():
+        try:
+            handle_chat_completions(
+                {
+                    "model": "cowagent",
+                    "stream": True,
+                    "conversation_id": "registration-race",
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+                authorization="Bearer secret",
+                external_api_token="secret",
+                run_chat=run_chat,
+                completion_id=completion_id,
+            )
+        except OpenAIAPIError as error:
+            response_queue.put(error)
+
+    caller = threading.Thread(target=request)
+    caller.start()
+    assert entered_run_chat.wait(timeout=1)
+    error = response_queue.get(timeout=1)
+    pre_registered_event = registry.get_event(request_key)
+    session_was_active = registry.has_active(session_key)
+    workers = [
+        thread
+        for thread in threading.enumerate()
+        if thread not in existing_threads and thread.name == "openai-chat-completion"
+    ]
+    assert len(workers) == 1
+    release_run_chat.set()
+    caller.join(timeout=1)
+    workers[0].join(timeout=1)
+
+    assert error.code == "timeout"
+    assert observed_events == [pre_registered_event]
+    assert pre_registered_event is not None
+    assert pre_registered_event.is_set()
+    assert session_was_active
+    assert agent_runs == []
+    assert history_writes == []
+    assert registry.get_event(request_key) is None
+    assert not registry.has_active(session_key)
 
 
 def test_streaming_generator_close_while_waiting_for_session_lock_skips_run_chat(
