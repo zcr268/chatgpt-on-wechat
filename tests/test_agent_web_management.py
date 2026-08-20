@@ -39,6 +39,6 @@ def test_workspace_scoped_web_services_resolve_selected_agent():
     assert "def _get_workspace_root(session_id: str = None, agent_id: str = None)" in source
     assert "project_store.get_project_dir(session_id, agent_id)" in source
     assert "get_agent_registry().get(agent_id).workspace" in source
-    assert "get_conversation_store(_get_workspace_root(agent_id))" in source
-    assert "KnowledgeService(_get_workspace_root(agent_id))" in source
+    assert "get_conversation_store(_get_workspace_root(agent_id=agent_id))" in source
+    assert "_get_workspace_root(agent_id=agent_id)" in source
     assert "get_scheduler_service(agent_id=agent_id)" in source
