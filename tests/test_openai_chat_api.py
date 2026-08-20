@@ -1,8 +1,12 @@
 import json
+import queue
+import threading
 from pathlib import Path
 
 import pytest
+import web
 
+from channel.web import openai_api, web_channel
 from channel.web.openai_api import (
     OpenAIAPIError,
     handle_chat_completions,
@@ -23,6 +27,30 @@ def _runner(events, calls):
             send_chunk_fn(event)
 
     return run
+
+
+def _http_app(monkeypatch, run_chat, configured_token="secret"):
+    monkeypatch.setattr(
+        openai_api, "conf", lambda: {"external_api_token": configured_token}
+    )
+    monkeypatch.setattr(openai_api, "_run_chat_service", run_chat)
+    return web.application(
+        ("/v1/chat/completions", "OpenAIChatCompletionsHandler"),
+        vars(web_channel),
+        autoreload=False,
+    )
+
+
+def _post(app, payload, authorization="Bearer secret"):
+    return app.request(
+        "/v1/chat/completions",
+        method="POST",
+        data=json.dumps(payload),
+        headers={
+            "Authorization": authorization,
+            "Content-Type": "application/json",
+        },
+    )
 
 
 @pytest.mark.parametrize(
@@ -193,6 +221,97 @@ def test_streaming_completion_uses_standard_deltas_and_additive_cow_events():
     assert calls[0]["session_id"] == "openai:user:user-7"
 
 
+def test_streaming_agent_failure_before_first_event_returns_500():
+    def fail(*args, **kwargs):
+        raise RuntimeError("provider unavailable")
+
+    with pytest.raises(OpenAIAPIError) as exc_info:
+        handle_chat_completions(
+            {
+                "model": "cowagent",
+                "stream": True,
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            authorization="Bearer secret",
+            external_api_token="secret",
+            run_chat=fail,
+        )
+
+    assert exc_info.value.status_code == 500
+    assert exc_info.value.code == "internal_error"
+    assert "provider unavailable" not in exc_info.value.message
+
+
+def test_streaming_agent_failure_after_first_event_finishes_with_error():
+    def fail_after_content(
+        query, session_id, send_chunk_fn, channel_type="", agent_id=None
+    ):
+        send_chunk_fn({"chunk_type": "content", "delta": "partial"})
+        raise RuntimeError("provider unavailable")
+
+    stream = handle_chat_completions(
+        {
+            "model": "cowagent",
+            "stream": True,
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        authorization="Bearer secret",
+        external_api_token="secret",
+        run_chat=fail_after_content,
+        created=1700000000,
+        completion_id="chatcmpl-error",
+    )
+
+    frames = list(stream)
+    payloads = [
+        json.loads(frame.removeprefix("data: ").removesuffix("\n\n"))
+        for frame in frames[:-1]
+    ]
+    assert frames[-1] == "data: [DONE]\n\n"
+    assert payloads[1]["choices"][0]["delta"] == {"content": "partial"}
+    assert payloads[2]["cow_event"] == {
+        "type": "error",
+        "message": "CowAgent failed to complete the request.",
+    }
+    assert payloads[-1]["choices"][0]["finish_reason"] == "error"
+
+
+def test_streaming_returns_after_first_event_without_waiting_for_completion():
+    release_runner = threading.Event()
+    prepared_stream = queue.Queue()
+
+    def run(query, session_id, send_chunk_fn, channel_type="", agent_id=None):
+        send_chunk_fn({"chunk_type": "content", "delta": "first"})
+        release_runner.wait()
+        send_chunk_fn({"chunk_type": "content", "delta": "second"})
+
+    def prepare():
+        prepared_stream.put(
+            handle_chat_completions(
+                {
+                    "model": "cowagent",
+                    "stream": True,
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+                authorization="Bearer secret",
+                external_api_token="secret",
+                run_chat=run,
+            )
+        )
+
+    caller = threading.Thread(target=prepare)
+    caller.start()
+    try:
+        stream = prepared_stream.get(timeout=1)
+    finally:
+        release_runner.set()
+        caller.join(timeout=1)
+
+    frames = list(stream)
+    assert '"content": "first"' in frames[1]
+    assert '"content": "second"' in frames[2]
+
+
 def test_invalid_messages_return_400():
     with pytest.raises(OpenAIAPIError) as exc_info:
         handle_chat_completions(
@@ -229,13 +348,141 @@ def test_non_streaming_agent_failure_returns_500():
     assert "provider unavailable" not in exc_info.value.message
 
 
+@pytest.mark.filterwarnings("ignore:setDaemon\\(\\) is deprecated:DeprecationWarning")
+def test_web_channel_binds_openai_chat_route(monkeypatch):
+    class RoutesCaptured(Exception):
+        pass
+
+    captured = {}
+
+    def capture_application(urls, namespace, autoreload):
+        captured["urls"] = urls
+        captured["namespace"] = namespace
+        captured["autoreload"] = autoreload
+        raise RoutesCaptured
+
+    channel = web_channel.WebChannel()
+    monkeypatch.setattr(channel, "_cleanup_stale_voice_recordings", lambda: None)
+    monkeypatch.setattr(web_channel.web, "application", capture_application)
+    monkeypatch.setattr(
+        web_channel,
+        "conf",
+        lambda: {"web_host": "127.0.0.1", "web_port": 9899},
+    )
+
+    with pytest.raises(RoutesCaptured):
+        channel.startup()
+
+    route_pairs = list(zip(captured["urls"][::2], captured["urls"][1::2]))
+    assert (
+        "/v1/chat/completions",
+        "OpenAIChatCompletionsHandler",
+    ) in route_pairs
+    assert (
+        captured["namespace"]["OpenAIChatCompletionsHandler"]
+        is openai_api.OpenAIChatCompletionsHandler
+    )
+    assert captured["autoreload"] is False
+
+
+def test_http_post_returns_200_json(monkeypatch):
+    app = _http_app(
+        monkeypatch,
+        _runner([{"chunk_type": "content", "delta": "Hello"}], []),
+    )
+
+    response = _post(
+        app,
+        {
+            "model": "cowagent",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert response.status == "200 OK"
+    assert response.headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json.loads(response.data)["choices"][0]["message"]["content"] == "Hello"
+
+
+def test_http_post_returns_401_for_invalid_bearer_token(monkeypatch):
+    app = _http_app(monkeypatch, _runner([], []))
+
+    response = _post(
+        app,
+        {
+            "model": "cowagent",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+        authorization="Bearer wrong",
+    )
+
+    assert response.status == "401 Unauthorized"
+    assert json.loads(response.data)["error"]["code"] == "invalid_api_key"
+
+
+def test_http_post_returns_503_when_external_api_is_disabled(monkeypatch):
+    app = _http_app(monkeypatch, _runner([], []), configured_token="")
+
+    response = _post(
+        app,
+        {
+            "model": "cowagent",
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert response.status == "503 Service Unavailable"
+    assert json.loads(response.data)["error"]["code"] == "api_disabled"
+
+
+def test_http_stream_returns_500_when_agent_fails_immediately(monkeypatch):
+    def fail(*args, **kwargs):
+        raise RuntimeError("provider unavailable")
+
+    app = _http_app(monkeypatch, fail)
+    response = _post(
+        app,
+        {
+            "model": "cowagent",
+            "stream": True,
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    assert response.status == "500 Internal Server Error"
+    assert response.headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json.loads(response.data)["error"]["code"] == "internal_error"
+
+
+def test_http_stream_returns_sse_body_and_done_marker(monkeypatch):
+    app = _http_app(
+        monkeypatch,
+        _runner([{"chunk_type": "content", "delta": "Hello"}], []),
+    )
+
+    response = _post(
+        app,
+        {
+            "model": "cowagent",
+            "stream": True,
+            "messages": [{"role": "user", "content": "hello"}],
+        },
+    )
+
+    body = response.data.decode("utf-8")
+    assert response.status == "200 OK"
+    assert response.headers["Content-Type"] == "text/event-stream; charset=utf-8"
+    assert '"delta": {"role": "assistant"}' in body
+    assert '"delta": {"content": "Hello"}' in body
+    assert '"finish_reason": "stop"' in body
+    assert body.endswith("data: [DONE]\n\n")
+
+
 def test_route_config_and_english_documentation_expose_the_public_api():
     root = Path(__file__).parents[1]
-    web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
     config = json.loads((root / "config-template.json").read_text(encoding="utf-8"))
     docs = (root / "docs/channels/web.mdx").read_text(encoding="utf-8")
 
-    assert "'/v1/chat/completions', 'OpenAIChatCompletionsHandler'" in web_source
     assert config["external_api_token"] == ""
     assert "POST /v1/chat/completions" in docs
     assert "Authorization: Bearer" in docs

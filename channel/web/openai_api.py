@@ -26,6 +26,7 @@ class OpenAIAPIError(Exception):
 
 _SESSION_LOCKS = tuple(threading.Lock() for _ in range(64))
 _STREAM_END = object()
+_STREAM_ERROR = object()
 
 
 def _authenticate(authorization: str, external_api_token: str) -> None:
@@ -230,38 +231,57 @@ def _stream_completion(
                 )
         except Exception:  # noqa: BLE001 - worker boundary becomes an SSE error
             logger.exception("[OpenAI API] Chat completion failed")
-            publish(
+            publish(_STREAM_ERROR)
+        finally:
+            publish(_STREAM_END)
+
+    threading.Thread(target=execute, name="openai-chat-completion", daemon=True).start()
+    first_item = output.get()
+    if first_item is _STREAM_ERROR:
+        closed.set()
+        raise OpenAIAPIError(
+            500, "CowAgent failed to complete the request.", "internal_error"
+        )
+
+    def frames() -> Iterator[str]:
+        finish_reason = "stop"
+        item = first_item
+        try:
+            yield _sse_frame(
+                _base_chunk(completion_id, created, model, {"role": "assistant"})
+            )
+            while item is not _STREAM_END:
+                if item is _STREAM_ERROR:
+                    finish_reason = "error"
+                    yield _sse_frame(
+                        _base_chunk(
+                            completion_id,
+                            created,
+                            model,
+                            {},
+                            cow_event={
+                                "type": "error",
+                                "message": "CowAgent failed to complete the request.",
+                            },
+                        )
+                    )
+                else:
+                    yield _sse_frame(item)
+                item = output.get()
+            yield _sse_frame(
                 _base_chunk(
                     completion_id,
                     created,
                     model,
                     {},
-                    cow_event={
-                        "type": "error",
-                        "message": "CowAgent failed to complete the request.",
-                    },
+                    finish_reason=finish_reason,
                 )
             )
+            yield "data: [DONE]\n\n"
         finally:
-            publish(_STREAM_END)
+            closed.set()
 
-    threading.Thread(target=execute, name="openai-chat-completion", daemon=True).start()
-
-    try:
-        yield _sse_frame(
-            _base_chunk(completion_id, created, model, {"role": "assistant"})
-        )
-        while True:
-            item = output.get()
-            if item is _STREAM_END:
-                break
-            yield _sse_frame(item)
-        yield _sse_frame(
-            _base_chunk(completion_id, created, model, {}, finish_reason="stop")
-        )
-        yield "data: [DONE]\n\n"
-    finally:
-        closed.set()
+    return frames()
 
 
 def _non_stream_completion(
