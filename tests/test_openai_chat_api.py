@@ -454,6 +454,133 @@ def test_streaming_generator_close_cancels_agent_request_once(monkeypatch):
     assert cancel_calls == [("chatcmpl-close", None)]
 
 
+def test_streaming_timeout_while_waiting_for_session_lock_skips_run_chat(monkeypatch):
+    session_id = "openai:conversation:queued-timeout"
+    session_lock = openai_api._SESSION_LOCKS[
+        hash(session_id) % len(openai_api._SESSION_LOCKS)
+    ]
+    run_calls = []
+    session_writes = []
+    existing_threads = set(threading.enumerate())
+
+    def run(*args, **kwargs):
+        run_calls.append((args, kwargs))
+        session_writes.append(args[1])
+
+    monkeypatch.setattr(openai_api, "_FIRST_EVENT_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(openai_api, "_cancel_agent_request", lambda *args: False)
+
+    session_lock.acquire()
+    try:
+        with pytest.raises(OpenAIAPIError) as exc_info:
+            handle_chat_completions(
+                {
+                    "model": "cowagent",
+                    "stream": True,
+                    "conversation_id": "queued-timeout",
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+                authorization="Bearer secret",
+                external_api_token="secret",
+                run_chat=run,
+                completion_id="chatcmpl-queued-timeout",
+            )
+        workers = [
+            thread
+            for thread in threading.enumerate()
+            if thread not in existing_threads
+            and thread.name == "openai-chat-completion"
+        ]
+        assert len(workers) == 1
+    finally:
+        session_lock.release()
+
+    workers[0].join(timeout=1)
+    assert not workers[0].is_alive()
+    assert exc_info.value.code == "timeout"
+    assert run_calls == []
+    assert session_writes == []
+
+
+def test_streaming_generator_close_while_waiting_for_session_lock_skips_run_chat(
+    monkeypatch,
+):
+    real_queue = queue.Queue
+    session_id = "openai:conversation:queued-close"
+    session_lock = openai_api._SESSION_LOCKS[
+        hash(session_id) % len(openai_api._SESSION_LOCKS)
+    ]
+    run_calls = []
+    session_writes = []
+    existing_threads = set(threading.enumerate())
+
+    class PrimedQueue:
+        def __init__(self, maxsize):
+            self._queue = real_queue(maxsize=maxsize)
+            self._first_item = {
+                "id": "chatcmpl-queued-close",
+                "object": "chat.completion.chunk",
+                "created": 1700000000,
+                "model": "cowagent",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {"content": "primed"},
+                        "finish_reason": None,
+                    }
+                ],
+            }
+
+        def put(self, item, timeout=None):
+            return self._queue.put(item, timeout=timeout)
+
+        def get(self, timeout=None):
+            if self._first_item is not None:
+                item = self._first_item
+                self._first_item = None
+                return item
+            return self._queue.get(timeout=timeout)
+
+    def run(*args, **kwargs):
+        run_calls.append((args, kwargs))
+        session_writes.append(args[1])
+
+    monkeypatch.setattr(openai_api.queue, "Queue", PrimedQueue)
+    monkeypatch.setattr(openai_api, "_cancel_agent_request", lambda *args: False)
+
+    session_lock.acquire()
+    try:
+        stream = handle_chat_completions(
+            {
+                "model": "cowagent",
+                "stream": True,
+                "conversation_id": "queued-close",
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+            authorization="Bearer secret",
+            external_api_token="secret",
+            run_chat=run,
+            created=1700000000,
+            completion_id="chatcmpl-queued-close",
+        )
+        next(stream)
+        stream.close()
+        workers = [
+            thread
+            for thread in threading.enumerate()
+            if thread not in existing_threads
+            and thread.name == "openai-chat-completion"
+        ]
+        assert len(workers) == 1
+    finally:
+        session_lock.release()
+
+    workers[0].join(timeout=1)
+    assert not workers[0].is_alive()
+    assert run_calls == []
+    assert session_writes == []
+
+
 def test_streaming_normal_completion_does_not_cancel_agent_request(monkeypatch):
     cancel_calls = []
     monkeypatch.setattr(

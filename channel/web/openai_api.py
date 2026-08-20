@@ -245,6 +245,8 @@ def _stream_completion(
         try:
             lock = _SESSION_LOCKS[hash(session_id) % len(_SESSION_LOCKS)]
             with lock:
+                if closed.is_set():
+                    return
                 run_chat(
                     query,
                     session_id,
