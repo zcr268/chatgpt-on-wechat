@@ -712,7 +712,7 @@ class AgentStreamExecutor:
                 self._emit_event("turn_start", {"turn": turn})
 
                 # Call LLM (enable retry_on_empty for better reliability)
-                assistant_msg, tool_calls = self._call_llm_stream(retry_on_empty=True)
+                assistant_msg, tool_calls, stop_reason = self._call_llm_stream(retry_on_empty=True)
                 final_response = assistant_msg
 
                 # A steer that arrived while the model was streaming takes
@@ -729,6 +729,7 @@ class AgentStreamExecutor:
                         "turn": turn,
                         "has_tool_calls": bool(tool_calls),
                         "tool_count": len(tool_calls),
+                        "stop_reason": stop_reason,
                         "steered": True,
                     })
                     continue
@@ -757,7 +758,7 @@ class AgentStreamExecutor:
                             })
                             
                             # 再调用一次 LLM
-                            assistant_msg, tool_calls = self._call_llm_stream(retry_on_empty=False)
+                            assistant_msg, tool_calls, stop_reason = self._call_llm_stream(retry_on_empty=False)
                             final_response = assistant_msg
                             
                             # Remove the injected prompt from history so it doesn't
@@ -795,6 +796,7 @@ class AgentStreamExecutor:
                             self._emit_event("turn_end", {
                                 "turn": turn,
                                 "has_tool_calls": False,
+                                "stop_reason": stop_reason,
                                 "steered": True,
                             })
                             continue
@@ -802,13 +804,15 @@ class AgentStreamExecutor:
                             self._emit_event("turn_end", {
                                 "turn": turn,
                                 "has_tool_calls": False,
+                                "stop_reason": stop_reason,
                                 "steered": True,
                             })
                             continue
-                        logger.debug(f"✅ Done (no tool calls)")
+                        logger.debug(f"✅ Done (no tool calls, stop_reason={stop_reason or 'none'})")
                         self._emit_event("turn_end", {
                             "turn": turn,
-                            "has_tool_calls": False
+                            "has_tool_calls": False,
+                            "stop_reason": stop_reason
                         })
                         break
 
@@ -989,7 +993,8 @@ class AgentStreamExecutor:
                 self._emit_event("turn_end", {
                     "turn": turn,
                     "has_tool_calls": True,
-                    "tool_count": len(tool_calls)
+                    "tool_count": len(tool_calls),
+                    "stop_reason": stop_reason
                 })
 
             if turn >= self.max_turns:
@@ -1013,7 +1018,7 @@ class AgentStreamExecutor:
                 
                 # Call LLM one more time to get summary (without retry to avoid loops)
                 try:
-                    summary_response, summary_tools = self._call_llm_stream(retry_on_empty=False)
+                    summary_response, summary_tools, _ = self._call_llm_stream(retry_on_empty=False)
                     if summary_response:
                         final_response = summary_response
                         logger.info(f"💭 Summary: {summary_response[:150]}{'...' if len(summary_response) > 150 else ''}")
@@ -1133,7 +1138,7 @@ class AgentStreamExecutor:
             return all_tools
 
     def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=3,
-                         _overflow_stage: int = 0) -> Tuple[str, List[Dict]]:
+                         _overflow_stage: int = 0) -> Tuple[str, List[Dict], Optional[str]]:
         """
         Call LLM with streaming and automatic retry on errors
 
@@ -1145,7 +1150,12 @@ class AgentStreamExecutor:
                 0 = first hit, 1 = after aggressive trim, 2 = after hard compaction.
 
         Returns:
-            (response_text, tool_calls)
+            (response_text, tool_calls, stop_reason), where stop_reason is the
+            provider's finish_reason for this generation, or None when it
+            reported none. A turn that returns text and no tool calls looks
+            finished either way, so stop_reason is the only thing separating a
+            model that chose to stop from one cut off at the output token limit
+            ("length" / "max_tokens").
         """
         # Validate and fix message history (e.g. orphaned tool_result blocks).
         # Context trimming is done once in run_stream() before the loop starts,
@@ -1542,10 +1552,11 @@ class AgentStreamExecutor:
 
         self._emit_event("message_end", {
             "content": full_content,
-            "tool_calls": tool_calls
+            "tool_calls": tool_calls,
+            "stop_reason": stop_reason
         })
 
-        return full_content, tool_calls
+        return full_content, tool_calls, stop_reason
 
     def _required_params(self, tool_name: str) -> list:
         """Parameter names a tool's schema declares as required."""
