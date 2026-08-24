@@ -635,10 +635,11 @@ def _ensure_list(value):
     return [value]
 
 
-def _generate_session_title(user_message: str, assistant_reply: str = "") -> str:
+def _generate_session_title(user_message: str, assistant_reply: str = "",
+                            session_id: str = "") -> str:
     """Delegate to the shared SessionService implementation."""
     from agent.chat.session_service import generate_session_title
-    return generate_session_title(user_message, assistant_reply)
+    return generate_session_title(user_message, assistant_reply, session_id)
 
 
 class WebMessage(ChatMessage):
@@ -2512,10 +2513,10 @@ class ConfigHandler:
         const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
         # claude-opus-5 is the Claude default; claude-sonnet-5 / claude-fable-5 follow right after it.
         const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
-        const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
+        const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
-        const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN38_MAX_PREVIEW, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
+        const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
+        const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
@@ -2540,15 +2541,7 @@ class ConfigHandler:
             "api_base_key": "deepseek_api_base",
             "api_base_default": "https://api.deepseek.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO, const.DEEPSEEK_CHAT, const.DEEPSEEK_REASONER],
-        }),
-        ("minimax", {
-            "label": "MiniMax",
-            "api_key_field": "minimax_api_key",
-            "api_base_key": None,
-            "api_base_default": None,
-            "api_base_placeholder": "",
-            "models": [const.MINIMAX_M3, const.MINIMAX_M2_7, const.MINIMAX_M2_7_HIGHSPEED],
+            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
         }),
         ("claudeAPI", {
             "label": "Claude",
@@ -2558,14 +2551,6 @@ class ConfigHandler:
             "api_base_placeholder": _PLACEHOLDER_V1,
             "models": [const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
         }),
-        ("gemini", {
-            "label": "Gemini",
-            "api_key_field": "gemini_api_key",
-            "api_base_key": "gemini_api_base",
-            "api_base_default": "https://generativelanguage.googleapis.com",
-            "api_base_placeholder": _PLACEHOLDER_GEMINI,
-            "models": [const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
-        }),
         ("openai", {
             "label": "OpenAI",
             "api_key_field": "open_ai_api_key",
@@ -2574,13 +2559,29 @@ class ConfigHandler:
             "api_base_placeholder": _PLACEHOLDER_V1,
             "models": [const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
         }),
+        ("gemini", {
+            "label": "Gemini",
+            "api_key_field": "gemini_api_key",
+            "api_base_key": "gemini_api_base",
+            "api_base_default": "https://generativelanguage.googleapis.com",
+            "api_base_placeholder": _PLACEHOLDER_GEMINI,
+            "models": [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+        }),
+        ("minimax", {
+            "label": "MiniMax",
+            "api_key_field": "minimax_api_key",
+            "api_base_key": None,
+            "api_base_default": None,
+            "api_base_placeholder": "",
+            "models": [const.MINIMAX_M3, const.MINIMAX_M2_7, const.MINIMAX_M2_7_HIGHSPEED],
+        }),
         ("zhipu", {
             "label": {"zh": "智谱AI", "en": "GLM"},
             "api_key_field": "zhipu_ai_api_key",
             "api_base_key": "zhipu_ai_api_base",
             "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
             "api_base_placeholder": _PLACEHOLDER_ZHIPU,
-            "models": [const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
+            "models": [const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
         }),
         ("dashscope", {
             "label": {"zh": "通义千问", "en": "Qwen"},
@@ -2588,15 +2589,7 @@ class ConfigHandler:
             "api_base_key": None,
             "api_base_default": None,
             "api_base_placeholder": "",
-            "models": [const.QWEN38_MAX_PREVIEW, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
-        }),
-        ("doubao", {
-            "label": {"zh": "豆包", "en": "Doubao"},
-            "api_key_field": "ark_api_key",
-            "api_base_key": "ark_base_url",
-            "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
-            "api_base_placeholder": _PLACEHOLDER_DOUBAO,
-            "models": [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE],
+            "models": [const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
         }),
         ("moonshot", {
             "label": "Kimi",
@@ -2605,6 +2598,14 @@ class ConfigHandler:
             "api_base_default": "https://api.moonshot.cn/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
             "models": [const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2],
+        }),
+        ("doubao", {
+            "label": {"zh": "豆包", "en": "Doubao"},
+            "api_key_field": "ark_api_key",
+            "api_base_key": "ark_base_url",
+            "api_base_default": "https://ark.cn-beijing.volces.com/api/v3",
+            "api_base_placeholder": _PLACEHOLDER_DOUBAO,
+            "models": [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO, const.DOUBAO_SEED_2_CODE],
         }),
         ("qianfan", {
             "label": {"zh": "百度千帆", "en": "ERNIE"},
@@ -3227,7 +3228,7 @@ class ModelsHandler:
         # entry is the auto-picked vision model, and image understanding does
         # not justify the Opus price.
         "claudeAPI": [const.CLAUDE_SONNET_5, const.CLAUDE_OPUS_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
-        "gemini":    [const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+        "gemini":    [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         "qianfan":   [const.ERNIE_45_TURBO_VL],
         # Zhipu's bot hard-codes the call to glm-5v-turbo regardless of what
         # name is passed in (see models/zhipuai/zhipuai_bot.py::call_vision),
@@ -3434,6 +3435,65 @@ class ModelsHandler:
         items.sort(key=_sort_key)
         return items
 
+    # Map a chat `model` name to a provider id in PROVIDER_MODELS. Mirrors the
+    # inference in bridge.py::Bridge.__init__ so that a config with an empty
+    # `bot_type` (valid at runtime, since the bridge derives the provider from
+    # `model`) is still recognized as "configured" by the models handler and
+    # doesn't wrongly trigger the onboarding wizard. Prefix rules are ordered
+    # most-specific first; the returned ids are the PROVIDER_MODELS keys.
+    @staticmethod
+    def _infer_provider_from_model(model: str) -> str:
+        """Best-effort provider id from a model name. Returns "" when unknown.
+
+        Kept deliberately tolerant: any unexpected input yields "" rather than
+        raising, so callers can treat "no inference" and "bad input" the same.
+        """
+        try:
+            if not model or not isinstance(model, str):
+                return ""
+            m = model.strip().lower()
+            if not m:
+                return ""
+            # Exact matches first (models whose name isn't a clean prefix).
+            exact = {
+                "wenxin": "qianfan",
+                "wenxin-4": "qianfan",
+                "abab6.5": "minimax",
+                "abab6.5-chat": "minimax",
+            }
+            if m in exact:
+                return exact[m]
+            # Prefix rules — order matters where prefixes could overlap.
+            prefix_rules = (
+                ("deepseek", "deepseek"),
+                ("gemini", "gemini"),
+                ("glm", "zhipu"),
+                ("claude", "claudeAPI"),
+                ("kimi", "moonshot"),
+                ("moonshot", "moonshot"),
+                ("doubao", "doubao"),
+                ("mimo-", "mimo"),
+                ("qwen", "dashscope"),
+                ("qwq", "dashscope"),
+                ("qvq", "dashscope"),
+                ("ernie", "qianfan"),
+                ("minimax", "minimax"),
+                ("gpt", "openai"),
+                ("o1", "openai"),
+                ("o3", "openai"),
+                ("o4", "openai"),
+            )
+            for prefix, pid in prefix_rules:
+                if m.startswith(prefix):
+                    return pid
+            # `qianfan` is sometimes used directly as the model name.
+            if m == "qianfan":
+                return "qianfan"
+            return ""
+        except Exception:
+            # Never let inference break the models endpoint / startup.
+            return ""
+
     @classmethod
     def _chat_capability(cls, local_config: dict) -> dict:
         """Main chat model — drives the agent. bot_type maps to a provider id."""
@@ -3443,6 +3503,18 @@ class ModelsHandler:
         if (provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id
                 and local_config.get("use_linkai")):
             provider_id = "linkai"
+        # When `bot_type` doesn't resolve to a known provider (e.g. it was
+        # left empty by a config edit, which the runtime bridge tolerates by
+        # inferring from `model`), fall back to the same model-based inference
+        # here. Otherwise the wizard would treat a working setup as unconfigured
+        # and re-open on every launch. Guarded so a failure can't affect startup.
+        if provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id:
+            try:
+                inferred = cls._infer_provider_from_model(local_config.get("model", ""))
+                if inferred in ConfigHandler.PROVIDER_MODELS:
+                    provider_id = inferred
+            except Exception:
+                pass
         # In multi-provider mode, replace the single "custom" entry with the
         # expanded "custom:<id>" ids so the chat dropdown matches the cards.
         # The legacy "custom" entry stays when its flat config is still used.
@@ -3477,7 +3549,7 @@ class ModelsHandler:
         ("doubao",    "ark_api_key",       const.DOUBAO_SEED_2_PRO),
         ("dashscope", "dashscope_api_key", const.QWEN37_PLUS),
         ("claudeAPI", "claude_api_key",    const.CLAUDE_SONNET_5),
-        ("gemini",    "gemini_api_key",    const.GEMINI_35_FLASH),
+        ("gemini",    "gemini_api_key",    const.GEMINI_37_FLASH),
         ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
         ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
         ("minimax",   "minimax_api_key",   const.MINIMAX_TEXT_01),
@@ -6053,6 +6125,7 @@ def _session_model_catalog() -> List[dict]:
     active_provider = "openai" if active_bot_type == const.CHATGPT else active_bot_type
     if local_config.get("use_linkai") and local_config.get("linkai_api_key"):
         active_provider = "linkai"
+    active_model = str(local_config.get("model") or "").strip()
 
     catalog: List[dict] = []
     for pid, pinfo in ConfigHandler.PROVIDER_MODELS.items():
@@ -6062,23 +6135,50 @@ def _session_model_catalog() -> List[dict]:
         has_key = bool(key_field and str(local_config.get(key_field) or "").strip())
         if not has_key and pid != active_provider:
             continue
+        models = list(pinfo["models"])
+        # The user can pin a custom model name to a built-in provider (via the
+        # global config / capability "custom model" field). That model won't be
+        # in the preset list, so surface it here for the active provider so the
+        # chat picker can both display and re-select it.
+        if pid == active_provider and active_model and active_model not in models:
+            models.insert(0, active_model)
         catalog.append({
             "id": pid,
             "label": pinfo["label"],
-            "models": list(pinfo["models"]),
+            "models": models,
         })
 
-    # User-defined OpenAI-compatible providers carry their own credentials.
+    # User-defined OpenAI-compatible providers carry their own credentials, so
+    # offer any that have a key on file (or are the active provider). Their model
+    # list combines the provider's configured default with the globally active
+    # model when this custom provider is the one in use — otherwise a custom
+    # provider added without a preset model would be unselectable in chat.
     try:
         from models.custom_provider import get_custom_providers
         for cp in get_custom_providers():
-            if not cp.get("model"):
+            cid = cp.get("id")
+            if not cid:
                 continue
-            name = cp.get("name") or cp.get("id")
+            pid = f"custom:{cid}"
+            is_active = pid == active_provider
+            has_key = bool(str(cp.get("api_key") or "").strip())
+            if not has_key and not is_active:
+                continue
+            models = []
+            cp_model = str(cp.get("model") or "").strip()
+            if cp_model:
+                models.append(cp_model)
+            if is_active and active_model and active_model not in models:
+                models.insert(0, active_model)
+            if not models:
+                # Nothing concrete to select yet (no default model and not the
+                # active provider) — skip rather than render an empty group.
+                continue
+            name = cp.get("name") or cid
             catalog.append({
-                "id": f"custom:{cp.get('id')}",
+                "id": pid,
                 "label": {"zh": name, "en": name},
-                "models": [cp["model"]],
+                "models": models,
             })
     except Exception as e:
         logger.debug(f"[WebChannel] custom providers unavailable: {e}")
@@ -6221,7 +6321,7 @@ class SessionTitleHandler:
             if not user_message:
                 return json.dumps({"status": "error", "message": "user_message required"})
 
-            title = _generate_session_title(user_message, assistant_reply)
+            title = _generate_session_title(user_message, assistant_reply, session_id)
 
             from agent.memory import get_conversation_store
             store = get_conversation_store(_get_workspace_root(agent_id=agent_id))

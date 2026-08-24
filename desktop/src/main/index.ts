@@ -29,6 +29,18 @@ let isQuitting = false
 const isDev = !app.isPackaged
 const VITE_DEV_PORTS = [5173, 5174, 5175, 5176]
 
+// Launched by the OS at login (Windows passes --hidden; macOS reports it via
+// getLoginItemSettings().wasOpenedAsHidden). Start minimized to the tray so
+// autostart is unobtrusive.
+function launchedHidden(): boolean {
+  if (process.argv.includes('--hidden')) return true
+  try {
+    return app.getLoginItemSettings().wasOpenedAsHidden === true
+  } catch {
+    return false
+  }
+}
+
 function probePort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get(`http://localhost:${port}`, (res) => {
@@ -156,6 +168,9 @@ function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => {
+    // Skip the initial paint when autostarted hidden: the window stays in the
+    // tray/Dock until the user opens it, matching the "unobtrusive" intent.
+    if (launchedHidden()) return
     mainWindow?.show()
   })
 
@@ -332,6 +347,50 @@ function setupIPC() {
   // Current app version, shown in the NavRail footer.
   ipcMain.handle('get-app-version', () => app.getVersion())
 
+  // Launch-at-login: backed by the OS login-item registry on macOS and the
+  // Run registry key on Windows (both handled natively by Electron). Linux has
+  // no reliable cross-desktop mechanism, so it reports/accepts nothing there.
+  //
+  // Windows caveat: we register our Run key WITH `args: ['--hidden']`. Per the
+  // Electron docs, `openAtLogin` only reports true when getLoginItemSettings()
+  // is called with the SAME `args` — so we MUST pass them here to match, or the
+  // toggle "snaps back" to off (a false readback overwrites the flip). We do NOT
+  // use `executableWillLaunchAtLogin`: it ignores args and reports true for ANY
+  // startup entry for this exe (e.g. one added by an installer / Startup-folder
+  // shortcut), which made the toggle appear ON by default. Matching args keeps
+  // the default OFF and only reflects the entry this app actually created.
+  const WIN_LOGIN_ARGS = ['--hidden']
+  const isLaunchAtLoginEnabled = (): boolean => {
+    if (isWin) return app.getLoginItemSettings({ args: WIN_LOGIN_ARGS }).openAtLogin === true
+    if (isMac) return app.getLoginItemSettings().openAtLogin
+    return false
+  }
+  ipcMain.handle('get-login-item', () => isLaunchAtLoginEnabled())
+  // Returns the real outcome so the UI never lies: { ok, enabled, error }.
+  // - ok=false + error: writing the login item threw (surface it, don't swallow).
+  // - ok=true but enabled!=requested: the OS/policy silently refused the change.
+  // The renderer shows the reason instead of just snapping the toggle back.
+  ipcMain.handle('set-login-item', (_event, enabled: boolean) => {
+    if (!isMac && !isWin) {
+      return { ok: false, enabled: false, error: 'unsupported-platform' }
+    }
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        // Start hidden/minimized so autostart is unobtrusive; the window can
+        // still be brought up from the Dock/tray.
+        openAsHidden: isMac ? true : undefined,
+        args: isWin ? WIN_LOGIN_ARGS : undefined,
+      })
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      console.error('[login-item] setLoginItemSettings failed:', error)
+      return { ok: false, enabled: isLaunchAtLoginEnabled(), error }
+    }
+    const effective = isLaunchAtLoginEnabled()
+    return { ok: effective === !!enabled, enabled: effective, error: '' }
+  })
+
   // Auto-update controls (renderer-driven: check, then opt-in download/install).
   // The renderer passes its current UI language so downloads can be routed to
   // the China CDN mirror (zh) or R2 (others).
@@ -351,6 +410,18 @@ function setupIPC() {
     // Squirrel.Mac can't swap the app bundle (the update silently no-ops and
     // relaunching still shows the old version).
     isQuitting = true
+    // Kill the backend SYNCHRONOUSLY before handing off to the installer. On
+    // Windows the NSIS silent updater deletes the old install right away, and a
+    // still-running cowagent-backend.exe locks those files, aborting the update
+    // with "卸载旧应用程序文件失败:2". before-quit's async stop() sends SIGTERM
+    // and returns immediately (a no-op for a native Windows exe), so it loses
+    // the race. stopSync() blocks until the process tree is gone. Best-effort:
+    // never let a teardown hiccup block the update.
+    try {
+      pythonBackend?.stopSync()
+    } catch {
+      // ignore — proceed with the install regardless
+    }
     quitAndInstall()
   })
 

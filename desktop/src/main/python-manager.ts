@@ -1,3 +1,4 @@
+import { app } from 'electron'
 import { ChildProcess, spawn, execFileSync } from 'child_process'
 import { EventEmitter } from 'events'
 import path from 'path'
@@ -163,6 +164,21 @@ export class PythonBackend extends EventEmitter {
    */
   getDataDir(): string {
     return this.packaged ? COW_DATA_DIR : this.backendPath
+  }
+
+  // Optional runtime-origin tag from the bundled app-config, forwarded to the
+  // backend so it can be attached to outbound requests for stats.
+  private clientSource(): string {
+    try {
+      const cfgPath = this.packaged
+        ? path.join(process.resourcesPath, 'app-config.json')
+        : path.resolve(__dirname, '../../resources', 'app-config.json')
+      const raw = fs.readFileSync(cfgPath, 'utf8')
+      const val = JSON.parse(raw)?.clientSource
+      return typeof val === 'string' ? val.trim() : ''
+    } catch {
+      return ''
+    }
   }
 
   getStatus(): string {
@@ -770,6 +786,8 @@ export class PythonBackend extends EventEmitter {
         // two sides can never disagree (and we avoid the 9899 web-console clash).
         COW_WEB_PORT: String(this.port),
         ...(bundled ? { COW_DATA_DIR } : {}),
+        ...(this.clientSource() ? { COW_CLIENT_SOURCE: this.clientSource() } : {}),
+        COW_CLIENT_VERSION: app.getVersion(),
       },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
@@ -919,6 +937,64 @@ export class PythonBackend extends EventEmitter {
       this.process = null
     }
     this.status = 'stopped'
+  }
+
+  /**
+   * Synchronously, forcefully tear the backend down and BLOCK until its files
+   * are no longer held. Used only on the update-install path: the NSIS silent
+   * updater starts deleting the old install almost immediately, and on Windows a
+   * still-running cowagent-backend.exe (plus the hundreds of DLLs it maps from
+   * _internal) keeps those files locked, so the installer aborts with "卸载旧
+   * 应用程序文件失败:2". The normal stop() only sends SIGTERM and returns before
+   * the process is actually gone — which on Windows is a no-op for a native exe.
+   *
+   * Best-effort throughout: any failure here must never block the update, so we
+   * still fall through to quitAndInstall even if the kill didn't fully succeed.
+   */
+  stopSync(): void {
+    this.shuttingDown = true
+    this.stopHealthMonitor()
+    this.closeLogStream()
+    const proc = this.process
+    this.process = null
+    this.status = 'stopped'
+    const pid = proc?.pid
+    if (process.platform === 'win32') {
+      // SIGTERM/SIGKILL are effectively meaningless for a native Windows exe, so
+      // use taskkill to end the whole process TREE (/T) forcibly (/F). This
+      // reaches child processes the backend may have spawned (rg.exe, agent bash
+      // tool, etc.) that would otherwise keep files locked. taskkill is
+      // synchronous, so once it returns the handles are released.
+      try {
+        if (pid) {
+          execFileSync('taskkill', ['/pid', String(pid), '/T', '/F'], {
+            stdio: 'ignore',
+            timeout: 5000,
+          })
+        }
+      } catch {
+        // already gone / access denied — fall through to the by-name sweep
+      }
+      // Belt-and-suspenders: kill any stray backend by image name too, in case
+      // the tree walk missed a re-parented child. Scoped to our exe name so it
+      // can't touch unrelated processes.
+      try {
+        execFileSync('taskkill', ['/im', 'cowagent-backend.exe', '/T', '/F'], {
+          stdio: 'ignore',
+          timeout: 5000,
+        })
+      } catch {
+        // no such process / nothing to do
+      }
+    } else if (proc) {
+      // POSIX: SIGKILL is immediate and reliable; no file-lock concern for the
+      // in-place bundle swap, but we still want the child gone before we quit.
+      try {
+        proc.kill('SIGKILL')
+      } catch {
+        // already gone — ignore
+      }
+    }
   }
 
   async restart(): Promise<void> {

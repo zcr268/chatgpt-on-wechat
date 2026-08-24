@@ -7,6 +7,7 @@ import { Modal, Btn, TextInput } from '../pages/settings/primitives'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import { useSessionStore } from '../store/sessionStore'
 import { useSessionSettingsStore } from '../store/sessionSettingsStore'
+import { useUIStore } from '../store/uiStore'
 import Tooltip from './Tooltip'
 
 interface WorkspaceSelectorProps {
@@ -48,6 +49,13 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
     refresh()
   }, [refresh])
 
+  // Also reload when project records change elsewhere (e.g. a project is
+  // renamed/deleted from the session sidebar), so recents stay in sync.
+  const projectsRev = useSessionStore((s) => s.projectsRev)
+  useEffect(() => {
+    refresh()
+  }, [projectsRev, refresh])
+
   // Close the menu on outside click.
   useEffect(() => {
     if (!menuOpen) return
@@ -69,8 +77,22 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
     setState(next)
     openPanel('files')
     reloadRoot()
+    // Reveal the history sidebar so the current session shows under the space
+    // it was just bound to (mirrors the web console behavior).
+    useUIStore.getState().setSessionsCollapsed(false)
     // Grouping in the session list depends on how many spaces are in play.
-    useSessionStore.getState().loadSessions(1)
+    const sessionStore = useSessionStore.getState()
+    sessionStore.loadSessions(1).then(() => {
+      // A brand-new session has no backend record yet, so the reload above
+      // won't include it. Add it optimistically under the space it was just
+      // bound to, so the user sees the current conversation inside the project.
+      const inList = useSessionStore.getState().sessions.some((s) => s.session_id === sessionId)
+      if (!inList) {
+        useSessionStore
+          .getState()
+          .addOptimistic(sessionId, next.current ? { path: next.current.path, name: next.current.name } : null)
+      }
+    })
   }
 
   const selectProject = async (projectDir: string | null) => {
@@ -142,7 +164,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
           }`}
         >
           <FolderOpen size={13} className="shrink-0" />
-          <span className="truncate">{label}</span>
+          <span className="composer-chip-label truncate">{label}</span>
           <ChevronDown size={11} className="opacity-60 shrink-0" />
         </button>
       </Tooltip>
@@ -150,7 +172,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
       {menuOpen && (
         <div className="absolute bottom-full left-0 mb-1.5 w-80 max-h-[380px] overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
           <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
-            {t('ws_sel_title')}
+            {t('ws_sel_system_space')}
           </div>
 
           {/* Default workspace (~/cow) */}
@@ -166,33 +188,33 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
             {!current && <Check size={14} className="shrink-0" />}
           </button>
 
-          {recents.length > 0 && (
-            <>
-              <div className="my-1 h-px bg-default" />
-              <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
-                {t('ws_sel_recents')}
-              </div>
-              {recents.map((r) => {
-                const active = current?.path === r.path
-                return (
-                  <button
-                    key={r.path}
-                    onClick={() => selectProject(r.path)}
-                    title={r.path}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
-                      active ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'
-                    }`}
-                  >
-                    <Folder size={14} className="shrink-0" />
-                    <span className="flex-1 min-w-0 text-[13px] truncate">{r.name}</span>
-                    {active && <Check size={14} className="shrink-0" />}
-                  </button>
-                )
-              })}
-            </>
-          )}
+          {/* Project space: recent projects plus the open/new actions all live
+              under one heading, separated from the system space by a divider. */}
+          <div className="my-1 mx-1.5 border-t border-default" />
+          <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-content-tertiary">
+            {t('ws_sel_project_space')}
+          </div>
 
-          <div className="my-1 h-px bg-default" />
+          {recents.map((r) => {
+            const active = current?.path === r.path
+            return (
+              <button
+                key={r.path}
+                onClick={() => selectProject(r.path)}
+                title={r.path}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
+                  active ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'
+                }`}
+              >
+                <Folder size={14} className="shrink-0" />
+                <span className="flex-1 min-w-0 text-[13px] truncate">{r.name}</span>
+                {active && <Check size={14} className="shrink-0" />}
+              </button>
+            )
+          })}
+
+          {/* Divider between the project list and the open/new-project actions. */}
+          <div className="my-1 mx-1.5 border-t border-default" />
           <button
             onClick={openProject}
             className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors hover:bg-surface-2 text-content"

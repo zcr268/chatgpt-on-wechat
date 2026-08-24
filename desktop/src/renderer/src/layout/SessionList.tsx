@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Plus,
   MessageSquare,
@@ -13,12 +13,14 @@ import {
   House,
   GripVertical,
 } from 'lucide-react'
-import { t } from '../i18n'
+import { t, getLang } from '../i18n'
 import { useSessionStore, DEFAULT_SPACE_KEY } from '../store/sessionStore'
 import { useUIStore } from '../store/uiStore'
+import { useWorkspaceStore } from '../store/workspaceStore'
 import { usePlatform } from '../hooks/usePlatform'
 import type { SessionItem } from '../types'
 import apiClient from '../api/client'
+import Tooltip from '../components/Tooltip'
 import { Modal, Btn, TextInput } from '../pages/settings/primitives'
 
 const COLLAPSED_KEY = 'cow_collapsed_projects'
@@ -91,14 +93,27 @@ function buildGroups(
       buckets.get(key)!.items.push(s)
     }
     const groups = Array.from(buckets.values())
-    if (projectOrder.length) {
-      const rank = new Map(projectOrder.map((k, i) => [k, i]))
-      groups.sort((a, b) => {
-        const ra = rank.has(a.key) ? rank.get(a.key)! : Infinity
-        const rb = rank.has(b.key) ? rank.get(b.key)! : Infinity
-        return ra - rb
-      })
-    }
+    // Group order must be independent of the session array order: creating a
+    // new chat unshifts a session to the top, which would otherwise float its
+    // project group to the front. We rank by the user's saved projectOrder
+    // first, then fall back to each group's "birth time" (its earliest session
+    // created_at) — a stable key that an optimistic (now-timestamped) session
+    // never changes. This preserves the manual drag order and keeps untouched
+    // groups put.
+    const rank = new Map(projectOrder.map((k, i) => [k, i]))
+    const birth = new Map(
+      groups.map((g) => [
+        g.key,
+        Math.min(...g.items.map((s) => s.created_at || s.last_active || 0)),
+      ])
+    )
+    groups.sort((a, b) => {
+      const ra = rank.has(a.key) ? rank.get(a.key)! : Infinity
+      const rb = rank.has(b.key) ? rank.get(b.key)! : Infinity
+      if (ra !== rb) return ra - rb
+      // Neither (or both) in the saved order: oldest group first, stable.
+      return (birth.get(a.key) ?? 0) - (birth.get(b.key) ?? 0)
+    })
     return groups
   }
 
@@ -136,6 +151,7 @@ const SessionList: React.FC = () => {
     hasMore,
     setActive,
     newSession,
+    addOptimistic,
     rename,
     remove,
     togglePin,
@@ -144,7 +160,10 @@ const SessionList: React.FC = () => {
     reorderSpaces,
   } = useSessionStore()
   const toggleSessions = useUIStore((s) => s.toggleSessions)
+  const setSessionsCollapsed = useUIStore((s) => s.setSessionsCollapsed)
   const navCollapsed = useUIStore((s) => s.navCollapsed)
+  const reloadRoot = useWorkspaceStore((s) => s.reloadRoot)
+  const openPanel = useWorkspaceStore((s) => s.openPanel)
   const { isMac } = usePlatform()
   const trafficOffset = isMac && navCollapsed ? 'ml-2' : ''
   const trafficDrop = isMac ? 'mt-1' : ''
@@ -158,14 +177,18 @@ const SessionList: React.FC = () => {
   const [deleteTarget, setDeleteTarget] = useState<{ path: string; name: string } | null>(null)
   const [deleteSessionTarget, setDeleteSessionTarget] = useState<SessionItem | null>(null)
   const [busy, setBusy] = useState(false)
+  const activeRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     loadSessions(1)
   }, [loadSessions])
 
+  // getLang() is included so group labels (e.g. the default-space name) rebuild
+  // when the user switches language, since buildGroups resolves them via t().
   const groups = useMemo(
     () => buildGroups(sessions, groupMode, projectOrder),
-    [sessions, groupMode, projectOrder]
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [sessions, groupMode, projectOrder, getLang()]
   )
 
   // When several project groups are shown, indent their sessions so they read
@@ -194,6 +217,65 @@ const SessionList: React.FC = () => {
     })
   }
 
+  const expandSpace = (key: string) => {
+    setCollapsed((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      saveCollapsed(next)
+      return next
+    })
+  }
+
+  // Start a fresh conversation filed under a given space (a project path, or
+  // null for the default workspace), triggered by the "+" on a group header.
+  // Auto-expands the sidebar + group so the new session is immediately visible.
+  const newChatInSpace = async (spaceKey: string) => {
+    const id = newSession()
+    setSessionsCollapsed(false)
+    const isDefault = spaceKey === DEFAULT_SPACE_KEY
+    const group = groups.find((g) => g.key === spaceKey)
+    // Show the fresh (not-yet-persisted) session under its space right away.
+    addOptimistic(
+      id,
+      isDefault ? null : { path: spaceKey, name: group?.label || spaceKey }
+    )
+    expandSpace(spaceKey)
+    try {
+      // Bind the new session to the space (default clears any binding) so it
+      // stays under the right group once the list reloads.
+      await apiClient.selectProject(id, isDefault ? null : spaceKey)
+      openPanel('files')
+      reloadRoot()
+    } catch {
+      /* transient; the optimistic item keeps the session visible locally */
+    }
+  }
+
+  // Whenever the active session changes, make sure its group is expanded so the
+  // user can see which conversation is selected (the row itself is highlighted
+  // via isActive; scrolling into view is handled by the browser on focus).
+  useEffect(() => {
+    if (groupMode !== 'project') return
+    const active = sessions.find((s) => s.session_id === activeId)
+    if (!active) return
+    const key = active.project?.path || DEFAULT_SPACE_KEY
+    expandSpace(key)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeId, sessions, groupMode])
+
+  // Scroll the active session into view after its group is expanded/rendered.
+  // Depends on `sessions` too, so switching/creating a project (which inserts a
+  // new group, often at the bottom) re-scrolls to the active session even
+  // though activeId itself did not change. `center` makes a bottom group clearly
+  // visible rather than just peeking above the fold.
+  useEffect(() => {
+    const el = activeRef.current
+    if (!el) return
+    const id = requestAnimationFrame(() => el.scrollIntoView({ block: 'center' }))
+    return () => cancelAnimationFrame(id)
+  }, [activeId, collapsed, sessions])
+
   const commitRename = async () => {
     if (!renameTarget) return
     const name = renameValue.trim()
@@ -204,6 +286,7 @@ const SessionList: React.FC = () => {
       if (res.status === 'success') {
         setRenameTarget(null)
         await loadSessions(1)
+        useSessionStore.getState().bumpProjects()
       }
     } finally {
       setBusy(false)
@@ -218,6 +301,7 @@ const SessionList: React.FC = () => {
       if (res.status === 'success') {
         setDeleteTarget(null)
         await loadSessions(1)
+        useSessionStore.getState().bumpProjects()
       }
     } finally {
       setBusy(false)
@@ -227,16 +311,23 @@ const SessionList: React.FC = () => {
   return (
     <div className="w-[240px] flex-shrink-0 flex flex-col h-full bg-surface border-r border-default">
       <div className="flex items-center justify-between px-2 h-[44px] flex-shrink-0 titlebar-drag border-b border-default">
+        <Tooltip label={t('session_history')}>
+          <button
+            onClick={toggleSessions}
+            className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${trafficDrop} ${trafficOffset}`}
+          >
+            <History size={16} />
+          </button>
+        </Tooltip>
         <button
-          onClick={toggleSessions}
-          title={t('session_history')}
-          className={`titlebar-no-drag inline-flex items-center justify-center w-7 h-7 rounded-btn text-content-tertiary hover:text-content hover:bg-surface-2 cursor-pointer transition-colors ${trafficDrop} ${trafficOffset}`}
-        >
-          <History size={16} />
-        </button>
-        <button
-          onClick={() => newSession()}
-          title={t('session_new')}
+          onClick={() => {
+            // Inherit the current session's project; fall back to default.
+            const inherited = useSessionStore.getState().currentProject()
+            const id = newSession()
+            addOptimistic(id, inherited)
+            expandSpace(inherited ? inherited.path : DEFAULT_SPACE_KEY)
+            if (inherited) apiClient.selectProject(id, inherited.path).catch(() => {})
+          }}
           className={`titlebar-no-drag inline-flex items-center gap-1.5 px-2.5 h-7 rounded-btn text-[12px] font-medium text-accent hover:bg-accent-soft cursor-pointer transition-colors ${trafficDrop}`}
         >
           <Plus size={15} />
@@ -284,7 +375,8 @@ const SessionList: React.FC = () => {
                   }}
                   onDrop={(e) => {
                     e.preventDefault()
-                    if (dragKey && dragKey !== group.key) reorderSpaces(dragKey, group.key)
+                    if (dragKey && dragKey !== group.key)
+                      reorderSpaces(dragKey, group.key, groups.map((g) => g.key))
                     setDragKey(null)
                     setDropKey(null)
                   }}
@@ -323,30 +415,41 @@ const SessionList: React.FC = () => {
                   <span className="ml-auto text-[11px] text-content-disabled tabular-nums group-hover/header:invisible">
                     {group.items.length}
                   </span>
-                  {!group.isDefault && (
-                    <span className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/header:flex items-center gap-0.5">
-                      <IconBtn
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setRenameTarget({ path: group.key, name: group.label })
-                          setRenameValue(group.label)
-                        }}
-                        title={t('project_rename')}
-                      >
-                        <Pencil size={12} />
-                      </IconBtn>
-                      <IconBtn
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setDeleteTarget({ path: group.key, name: group.label })
-                        }}
-                        title={t('project_delete')}
-                        danger
-                      >
-                        <Trash2 size={12} />
-                      </IconBtn>
-                    </span>
-                  )}
+                  <span className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover/header:flex items-center gap-0.5">
+                    <IconBtn
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        newChatInSpace(group.key)
+                      }}
+                      title={t('project_new_chat')}
+                    >
+                      <Plus size={12} />
+                    </IconBtn>
+                    {!group.isDefault && (
+                      <>
+                        <IconBtn
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setRenameTarget({ path: group.key, name: group.label })
+                            setRenameValue(group.label)
+                          }}
+                          title={t('project_rename')}
+                        >
+                          <Pencil size={12} />
+                        </IconBtn>
+                        <IconBtn
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteTarget({ path: group.key, name: group.label })
+                          }}
+                          title={t('project_delete')}
+                          danger
+                        >
+                          <Trash2 size={12} />
+                        </IconBtn>
+                      </>
+                    )}
+                  </span>
                 </div>
               ) : (
                 <div className="px-2 pt-2 pb-1 text-[11px] font-medium uppercase tracking-wide text-content-disabled">
@@ -361,6 +464,7 @@ const SessionList: React.FC = () => {
                   return (
                     <div
                       key={s.session_id}
+                      ref={isActive ? activeRef : undefined}
                       onClick={() => !isEditing && setActive(s.session_id)}
                       className={`group relative flex items-center gap-1.5 pr-2 h-9 rounded-btn cursor-pointer transition-colors ${
                         indentSessions ? 'pl-[22px]' : 'pl-2'
@@ -541,16 +645,18 @@ const IconBtn: React.FC<{
   title?: string
   danger?: boolean
   children: React.ReactNode
-}> = ({ onClick, title, danger, children }) => (
-  <button
-    onClick={onClick}
-    title={title}
-    className={`inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer transition-colors text-content-tertiary ${
-      danger ? 'hover:text-danger hover:bg-danger-soft' : 'hover:text-content hover:bg-surface'
-    }`}
-  >
-    {children}
-  </button>
-)
+}> = ({ onClick, title, danger, children }) => {
+  const btn = (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center justify-center w-6 h-6 rounded cursor-pointer transition-colors text-content-tertiary ${
+        danger ? 'hover:text-danger hover:bg-danger-soft' : 'hover:text-content hover:bg-surface'
+      }`}
+    >
+      {children}
+    </button>
+  )
+  return title ? <Tooltip label={title}>{btn}</Tooltip> : btn
+}
 
 export default SessionList
