@@ -27,7 +27,10 @@ let pythonBackend: PythonBackend | null = null
 let isQuitting = false
 
 const isDev = !app.isPackaged
-const VITE_DEV_PORTS = [5173, 5174, 5175, 5176]
+// Must match `server.port` in vite.config.ts. A single port, not a range:
+// strictPort there means our server never drifts, so a neighbouring port can
+// only ever belong to somebody else.
+const VITE_DEV_PORTS = [5173]
 
 // Launched by the OS at login (Windows passes --hidden; macOS reports it via
 // getLoginItemSettings().wasOpenedAsHidden). Start minimized to the tray so
@@ -41,10 +44,34 @@ function launchedHidden(): boolean {
   }
 }
 
-function probePort(port: number): Promise<boolean> {
+// The renderer's entry module, as it appears in the index.html Vite serves.
+// Used to tell our own dev server apart from an unrelated one holding the port
+// (another project's Vite, a static file server). Answering the probe is not
+// enough of a test: loading a stranger's page into the window looks exactly
+// like the app being broken.
+const RENDERER_MARKER = 'src/main.tsx'
+
+function probeViteDevServer(port: number): Promise<boolean> {
   return new Promise((resolve) => {
     const req = http.get(`http://localhost:${port}`, (res) => {
-      resolve(res.statusCode !== undefined)
+      if (res.statusCode !== 200) {
+        res.resume()
+        resolve(false)
+        return
+      }
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk) => {
+        body += chunk
+        // The document we're after is a few KB. Anything much larger isn't it,
+        // so stop reading rather than buffering an unrelated response.
+        if (body.length > 64 * 1024) {
+          req.destroy()
+          resolve(false)
+        }
+      })
+      res.on('end', () => resolve(body.includes(RENDERER_MARKER)))
+      res.on('error', () => resolve(false))
     })
     req.on('error', () => resolve(false))
     req.setTimeout(500, () => { req.destroy(); resolve(false) })
@@ -53,7 +80,7 @@ function probePort(port: number): Promise<boolean> {
 
 async function findViteDevServer(): Promise<string | null> {
   for (const port of VITE_DEV_PORTS) {
-    if (await probePort(port)) {
+    if (await probeViteDevServer(port)) {
       return `http://localhost:${port}`
     }
   }
