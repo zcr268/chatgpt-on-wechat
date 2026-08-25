@@ -19,7 +19,9 @@ import type {
   KnowledgeAction,
   KnowledgeImportPayload,
   WorkspaceEntry,
+  WorkspaceReadResult,
   WorkspaceTree,
+  WorkspaceWriteResult,
   ProjectState,
 } from '../types'
 import { getLang } from '../i18n'
@@ -260,6 +262,41 @@ class ApiClient {
 
   async workspaceResolve(path: string, session?: string): Promise<{ file: WorkspaceEntry } & ApiResult> {
     return this.request(`/api/workspace/resolve?path=${encodeURIComponent(path)}${this.sessionQuery(session)}`)
+  }
+
+  /**
+   * Text content of one workspace file, for the preview panel's editor.
+   *
+   * Unlike the preview URL used for rendering, this reports the `mtime` to pass
+   * back on save and whether the file is editable at all.
+   */
+  async workspaceRead(path: string, session?: string): Promise<WorkspaceReadResult & ApiResult> {
+    return this.request(`/api/workspace/read?path=${encodeURIComponent(path)}${this.sessionQuery(session)}`)
+  }
+
+  /**
+   * Save edited text back to a workspace file.
+   *
+   * The backend answers 200 even when it refuses, so the caller must check
+   * `status`: `code === 'conflict'` means the file changed since
+   * `expectedMtime` and the user has to choose between reloading and
+   * overwriting. Pass `expectedMtime: null` to force the overwrite.
+   */
+  async workspaceWrite(args: {
+    path: string
+    content: string
+    session?: string
+    expectedMtime?: number | null
+  }): Promise<WorkspaceWriteResult & ApiResult> {
+    return this.request('/api/workspace/write', {
+      method: 'POST',
+      body: JSON.stringify({
+        path: args.path,
+        content: args.content,
+        session: args.session || '',
+        expected_mtime: args.expectedMtime ?? null,
+      }),
+    })
   }
 
   // ---------------------------------------------------------

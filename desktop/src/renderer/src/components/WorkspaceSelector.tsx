@@ -96,6 +96,9 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
   }
 
   const selectProject = async (projectDir: string | null) => {
+    // Re-scoping the panel closes any open editor, so settle it here, while the
+    // binding has not been committed yet and declining can still stop it.
+    if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     setOpenMenu(null)
     setBusy(true)
     try {
@@ -132,6 +135,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
       setNewError(t('ws_sel_name_no_slash'))
       return
     }
+    if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     setBusy(true)
     try {
       const res = await apiClient.createProject(sessionId, name)

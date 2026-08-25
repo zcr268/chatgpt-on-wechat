@@ -264,6 +264,19 @@ const I18N = {
         ws_no_inline_preview: '该类型不支持内嵌预览',
         ws_empty_dir: '空目录', ws_no_results: '没有匹配的文件',
         ws_truncated: '文件过多，仅显示部分',
+        ws_edit: '编辑', ws_edit_save: '保存 (Ctrl+S)', ws_edit_cancel: '退出编辑',
+        ws_edit_saved: '已保存',
+        ws_edit_load_failed: '打开编辑器失败',
+        ws_edit_save_failed: '保存失败',
+        ws_edit_too_large: '文件过大，无法在面板中编辑',
+        ws_edit_unsupported: '该类型不支持编辑',
+        ws_edit_encoding: '该文件不是 UTF-8 编码，编辑会损坏内容',
+        ws_edit_conflict_title: '文件已被改动',
+        ws_edit_conflict_msg: '这个文件在你编辑期间被改动过（可能是 Agent 写入的）。覆盖保存会丢弃磁盘上的新内容。',
+        ws_edit_overwrite: '覆盖保存',
+        ws_edit_discard_title: '放弃未保存的修改？',
+        ws_edit_discard_msg: '当前文件有未保存的修改，继续操作会丢失这些内容。',
+        ws_edit_discard_ok: '放弃修改',
         today: '今天', yesterday: '昨天', earlier: '更早',
         session_pinned_group: '置顶',
         pin_session: '置顶',
@@ -585,6 +598,19 @@ const I18N = {
         ws_no_inline_preview: '該類型不支援內嵌預覽',
         ws_empty_dir: '空目錄', ws_no_results: '沒有符合的檔案',
         ws_truncated: '檔案過多，僅顯示部分',
+        ws_edit: '編輯', ws_edit_save: '儲存 (Ctrl+S)', ws_edit_cancel: '離開編輯',
+        ws_edit_saved: '已儲存',
+        ws_edit_load_failed: '開啟編輯器失敗',
+        ws_edit_save_failed: '儲存失敗',
+        ws_edit_too_large: '檔案過大，無法在面板中編輯',
+        ws_edit_unsupported: '該類型不支援編輯',
+        ws_edit_encoding: '該檔案不是 UTF-8 編碼，編輯會損壞內容',
+        ws_edit_conflict_title: '檔案已被變更',
+        ws_edit_conflict_msg: '這個檔案在你編輯期間被變更過（可能是 Agent 寫入的）。覆寫儲存會丟棄磁碟上的新內容。',
+        ws_edit_overwrite: '覆寫儲存',
+        ws_edit_discard_title: '放棄未儲存的變更？',
+        ws_edit_discard_msg: '目前檔案有未儲存的變更，繼續操作會遺失這些內容。',
+        ws_edit_discard_ok: '放棄變更',
         today: '今天', yesterday: '昨天', earlier: '更早',
         session_pinned_group: '置頂',
         pin_session: '置頂',
@@ -901,6 +927,19 @@ const I18N = {
         ws_no_inline_preview: 'No inline preview for this file type',
         ws_empty_dir: 'Empty directory', ws_no_results: 'No matching files',
         ws_truncated: 'Too many files, showing a subset',
+        ws_edit: 'Edit', ws_edit_save: 'Save (Ctrl+S)', ws_edit_cancel: 'Leave editor',
+        ws_edit_saved: 'Saved',
+        ws_edit_load_failed: 'Could not open the editor',
+        ws_edit_save_failed: 'Save failed',
+        ws_edit_too_large: 'File is too large to edit in the panel',
+        ws_edit_unsupported: 'This file type cannot be edited',
+        ws_edit_encoding: 'This file is not UTF-8; editing would corrupt it',
+        ws_edit_conflict_title: 'File changed on disk',
+        ws_edit_conflict_msg: 'This file changed while you were editing it, most likely written by the agent. Overwriting discards the newer content on disk.',
+        ws_edit_overwrite: 'Overwrite',
+        ws_edit_discard_title: 'Discard unsaved changes?',
+        ws_edit_discard_msg: 'This file has unsaved changes and continuing will lose them.',
+        ws_edit_discard_ok: 'Discard',
         today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier',
         session_pinned_group: 'Pinned',
         pin_session: 'Pin',
@@ -5310,6 +5349,10 @@ function addLoadingIndicator() {
 }
 
 function newChat(optimistic = true, inherit = true) {
+    // A fresh session resets the preview panel, discarding an open editor.
+    if (typeof wsGuardUnsaved === 'function'
+        && !wsGuardUnsaved(() => newChat(optimistic, inherit))) return;
+
     // Do NOT close active streams: other sessions keep streaming in the
     // background (each stream self-guards against the foreign view) and their
     // replies still complete and persist.
@@ -6139,6 +6182,11 @@ function switchSession(newSessionId) {
         if (currentView !== 'chat') navigateTo('chat');
         return;
     }
+
+    // The preview panel is scoped to a session's workspace, so switching tears
+    // down an open editor. Settle unsaved edits before committing to the switch.
+    if (typeof wsGuardUnsaved === 'function'
+        && !wsGuardUnsaved(() => switchSession(newSessionId))) return;
 
     // Do NOT close active streams here: sessions run in parallel, so any
     // in-flight reply for another session must keep streaming in the

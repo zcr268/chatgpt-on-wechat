@@ -216,6 +216,30 @@ export interface WorkspaceEntry {
   preview_url?: string
 }
 
+/** Response of GET /api/workspace/read: the editor's initial content. */
+export interface WorkspaceReadResult {
+  path: string
+  content: string
+  /** The read stopped at the size cap, so the tail is missing. */
+  truncated: boolean
+  /** Bytes had to be replaced to decode as UTF-8. */
+  lossy: boolean
+  size: number
+  /** Baseline passed back on save so the backend can detect a mid-edit rewrite. */
+  mtime: number
+  /** False when saving would be refused: wrong kind, truncated or lossy. */
+  editable: boolean
+}
+
+/** Response of POST /api/workspace/write. */
+export interface WorkspaceWriteResult {
+  path?: string
+  size?: number
+  mtime?: number
+  /** `"conflict"` when the file changed on disk since `expected_mtime`. */
+  code?: string
+}
+
 export interface WorkspaceTree {
   path: string
   root: string

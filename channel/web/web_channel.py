@@ -1971,6 +1971,8 @@ class WebChannel(ChatChannel):
             '/api/workspace/search', 'WorkspaceSearchHandler',
             '/api/workspace/resolve', 'WorkspaceResolveHandler',
             '/api/workspace/meta', 'WorkspaceMetaHandler',
+            '/api/workspace/read', 'WorkspaceReadHandler',
+            '/api/workspace/write', 'WorkspaceWriteHandler',
             '/api/projects', 'ProjectsHandler',
             '/api/projects/select', 'ProjectSelectHandler',
             '/api/projects/create', 'ProjectCreateHandler',
@@ -6564,6 +6566,101 @@ class WorkspaceMetaHandler:
             return json.dumps({"status": "success", **svc.meta()}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Workspace meta error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+def _editable_target(raw_path: str, session_id: str = None, agent_id: str = None):
+    """
+    Locate a file for the preview panel's text editor: (service, rel_path).
+
+    Narrower than `/api/workspace/resolve`, which only has to serve bytes and so
+    accepts anything under the configured serve roots. Reading and writing text
+    stay inside the session's workspace (its project dir or the default state
+    root), with a fallback to the state root for the memory / knowledge / persona
+    assets that live there even while a project is open.
+    """
+    svc = _workspace_service(session_id, agent_id)
+    system = _system_workspace_service()
+    try:
+        rel = svc.to_workspace_rel(raw_path)
+    except ValueError:
+        # Absolute path outside the session workspace: the state root is the
+        # only other place the console is allowed to edit.
+        return system, system.to_workspace_rel(raw_path)
+    if svc.root != system.root and _is_system_asset_rel(rel) \
+            and not os.path.isfile(svc.resolve(rel)):
+        return system, rel
+    return svc, rel
+
+
+class WorkspaceReadHandler:
+    """
+    Text content of one workspace file, for the preview panel's editor.
+
+    Returns the `mtime` the client passes back on save and an `editable` flag,
+    so the editor never opens a file it would be unable to write back.
+    """
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(path='', session='', agent='')
+            raw_path = (params.path or '').strip()
+            if not raw_path:
+                return json.dumps({"status": "error", "message": "path is required"})
+            svc, rel = _editable_target(raw_path, params.session or None, params.agent or None)
+            return json.dumps({"status": "success", **svc.read_text(rel)}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Workspace read error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class WorkspaceWriteHandler:
+    """
+    Save edited text back to a workspace file.
+
+    A human editing a file in the console is not an agent tool call, so the
+    session's agent permission mode does not apply here; the guard is the
+    workspace boundary enforced by `_editable_target`.
+
+    `expected_mtime` carries the timestamp the editor loaded. When it no longer
+    matches, the response is `code: "conflict"` so the client can offer to
+    reload or overwrite rather than silently discarding the newer content -
+    which the agent may well have written mid-edit.
+    """
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.workspace.service import WorkspaceConflictError
+
+            body = json.loads(web.data() or b'{}')
+            raw_path = (body.get("path") or "").strip()
+            if not raw_path:
+                return json.dumps({"status": "error", "message": "path is required"})
+            content = body.get("content")
+            if not isinstance(content, str):
+                return json.dumps({"status": "error", "message": "content must be a string"})
+
+            svc, rel = _editable_target(raw_path, body.get("session") or None,
+                                        body.get("agent") or None)
+            try:
+                result = svc.write_text(rel, content, expected_mtime=body.get("expected_mtime"))
+            except WorkspaceConflictError as e:
+                return json.dumps({"status": "error", "code": "conflict", "message": str(e)})
+
+            logger.info(f"[WebChannel] Workspace file saved: {result['path']} ({result['size']} bytes)")
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except PermissionError:
+            return json.dumps({"status": "error", "message": "permission denied"})
+        except Exception as e:
+            logger.error(f"[WebChannel] Workspace write error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 

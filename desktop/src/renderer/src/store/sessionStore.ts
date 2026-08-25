@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
 import { t } from '../i18n'
+import { useWorkspaceStore } from './workspaceStore'
 import type { SessionItem } from '../types'
 
 const ACTIVE_KEY = 'cow_session_id'
@@ -22,7 +23,7 @@ interface SessionState {
 
   loadSessions: (page?: number) => Promise<void>
   loadMore: () => Promise<void>
-  setActive: (id: string) => void
+  setActive: (id: string) => Promise<void>
   newSession: () => string
   /** The project the currently-active session is bound to, or null (default). */
   currentProject: () => { path: string; name: string } | null
@@ -92,7 +93,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     await get().loadSessions(page + 1)
   },
 
-  setActive: (id) => {
+  setActive: async (id) => {
+    // The workspace panel is scoped to the session, so switching drops any
+    // editor open on the old one. Ask before that throws work away.
+    if (id !== get().activeId && !(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     localStorage.setItem(ACTIVE_KEY, id)
     set({ activeId: id })
   },

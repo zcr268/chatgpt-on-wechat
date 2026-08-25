@@ -14,6 +14,7 @@ import { useSessionStore } from './store/sessionStore'
 import { useWorkspaceStore } from './store/workspaceStore'
 import WorkspacePanel from './components/WorkspacePanel'
 import Lightbox from './components/Lightbox'
+import WorkspaceConfirm from './components/WorkspaceConfirm'
 import { initUpdateListener } from './store/updateStore'
 import { useOnboardingStore } from './store/onboardingStore'
 import OnboardingWizard from './components/OnboardingWizard'
@@ -143,8 +144,9 @@ const App: React.FC = () => {
 
   // Handle app-menu / shortcut actions forwarded from the main process.
   useEffect(() => {
-    const off = window.electronAPI?.onMenuAction?.((action) => {
+    const off = window.electronAPI?.onMenuAction?.(async (action) => {
       if (action === 'new-chat') {
+        if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
         useSessionStore.getState().newSession()
         navigate('/')
       } else if (action === 'open-settings') {
@@ -194,6 +196,7 @@ const App: React.FC = () => {
     <div className="flex h-screen overflow-hidden bg-base text-content">
       {onboardingOpen && <OnboardingWizard onDone={handleLangChange} />}
       <Lightbox />
+      <WorkspaceConfirm />
       <NavRail onLangChange={handleLangChange} />
 
       {showSessions && <SessionList />}

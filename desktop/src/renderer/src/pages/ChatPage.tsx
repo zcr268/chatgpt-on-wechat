@@ -177,7 +177,9 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
     [activeId, send, loadSessions]
   )
 
-  const handleNewChat = useCallback(() => {
+  const handleNewChat = useCallback(async () => {
+    // A new chat re-scopes the workspace panel, closing any open editor.
+    if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     // Inherit the current session's project so a new chat stays in the same
     // space; fall back to the default workspace when none is bound.
     const inherited = useSessionStore.getState().currentProject()

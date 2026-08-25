@@ -231,6 +231,7 @@ const SessionList: React.FC = () => {
   // null for the default workspace), triggered by the "+" on a group header.
   // Auto-expands the sidebar + group so the new session is immediately visible.
   const newChatInSpace = async (spaceKey: string) => {
+    if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     const id = newSession()
     setSessionsCollapsed(false)
     const isDefault = spaceKey === DEFAULT_SPACE_KEY
@@ -320,7 +321,8 @@ const SessionList: React.FC = () => {
           </button>
         </Tooltip>
         <button
-          onClick={() => {
+          onClick={async () => {
+            if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
             // Inherit the current session's project; fall back to default.
             const inherited = useSessionStore.getState().currentProject()
             const id = newSession()

@@ -546,6 +546,18 @@
                                     </button>
                                 </div>
                                 <div class="workspace-header-actions">
+                                    <button id="ws-btn-save" class="workspace-icon-btn hidden" onclick="savePreviewEdit()"
+                                            data-i18n-title="ws_edit_save" title="保存 (Ctrl+S)">
+                                        <i class="fas fa-floppy-disk"></i>
+                                    </button>
+                                    <button id="ws-btn-edit-cancel" class="workspace-icon-btn hidden" onclick="cancelPreviewEdit()"
+                                            data-i18n-title="ws_edit_cancel" title="退出编辑">
+                                        <i class="fas fa-rotate-left"></i>
+                                    </button>
+                                    <button id="ws-btn-edit" class="workspace-icon-btn hidden" onclick="startPreviewEdit()"
+                                            data-i18n-title="ws_edit" title="编辑">
+                                        <i class="fas fa-pen-to-square"></i>
+                                    </button>
                                     <button id="ws-btn-external" class="workspace-icon-btn hidden" onclick="openPreviewExternally()"
                                             data-i18n-title="ws_open_external" title="在新标签页打开">
                                         <i class="fas fa-up-right-from-square"></i>

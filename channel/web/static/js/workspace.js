@@ -12,6 +12,14 @@ const WS_MIN_WIDTH = 280;
 let wsPanelOpen = false;
 let wsActiveTab = 'preview';
 let wsCurrentFile = null;
+// Preview editor state. `wsEditBaseline` is the text area's own value as loaded,
+// so comparing against it tells whether anything actually changed;
+// `wsEditBaseMtime` is the timestamp the server checks to detect that the agent
+// rewrote the file mid-edit.
+let wsEditing = false;
+let wsEditBaseline = '';
+let wsEditBaseMtime = null;
+let wsSaving = false;
 // Set once the user closes the panel by hand: from then on we stop
 // auto-opening artifacts for the rest of the page session.
 let wsAutoOpenSuppressed = false;
@@ -68,6 +76,10 @@ const WS_EXT_KIND = (() => {
 const WS_PREVIEWABLE = new Set(
     ['html', 'markdown', 'image', 'video', 'audio', 'pdf', 'csv', 'code', 'text']
 );
+
+// Kinds the panel offers an editor for. Mirrors EDITABLE_KINDS in
+// agent/protocol/artifact.py; the server rejects anything else on save.
+const WS_EDITABLE = new Set(['html', 'markdown', 'csv', 'code', 'text']);
 
 function wsKindOf(name) {
     const ext = (name || '').split('.').pop().toLowerCase();
@@ -154,9 +166,16 @@ function switchWorkspaceTab(tab) {
 }
 
 function wsUpdateHeaderActions() {
-    const show = wsActiveTab === 'preview' && !!wsCurrentFile;
+    const onFile = wsActiveTab === 'preview' && !!wsCurrentFile;
+    // While editing, the viewer actions would act on the saved file rather than
+    // on what is in the text area, which reads as a bug. Hide them instead.
     ['ws-btn-external', 'ws-btn-download', 'ws-btn-copy'].forEach(id => {
-        document.getElementById(id)?.classList.toggle('hidden', !show);
+        document.getElementById(id)?.classList.toggle('hidden', !onFile || wsEditing);
+    });
+    document.getElementById('ws-btn-edit')
+        ?.classList.toggle('hidden', !onFile || wsEditing || !wsIsEditable(wsCurrentFile));
+    ['ws-btn-save', 'ws-btn-edit-cancel'].forEach(id => {
+        document.getElementById(id)?.classList.toggle('hidden', !onFile || !wsEditing);
     });
 }
 
@@ -215,6 +234,9 @@ function wsSetPreviewEmpty(message, icon) {
  * @param {object|string} target - file metadata, or a path to resolve first.
  */
 async function openInPreview(target) {
+    // Opening another file replaces the editor, so settle unsaved edits first.
+    if (!wsGuardUnsaved(() => openInPreview(target))) return;
+
     let meta = target;
     if (typeof target === 'string') {
         try {
@@ -235,16 +257,25 @@ async function openInPreview(target) {
     }
 
     wsCurrentFile = meta;
+    wsEditing = false;
     openWorkspacePanel('preview');
     switchWorkspaceTab('preview');
-
-    const title = document.getElementById('ws-preview-title');
-    if (title) {
-        title.textContent = meta.path || meta.file_name || meta.name || '';
-        title.classList.remove('hidden');
-    }
+    wsRenderPreviewTitle();
     wsUpdateHeaderActions();
     await wsRenderPreview(meta);
+}
+
+/** Show the current file's path, marked with a dot while edits are unsaved. */
+function wsRenderPreviewTitle() {
+    const title = document.getElementById('ws-preview-title');
+    if (!title) return;
+    if (!wsCurrentFile) {
+        title.classList.add('hidden');
+        return;
+    }
+    const name = wsCurrentFile.path || wsCurrentFile.file_name || wsCurrentFile.name || '';
+    title.textContent = wsEditorDirty() ? `${name} •` : name;
+    title.classList.remove('hidden');
 }
 
 async function wsRenderPreview(meta) {
@@ -351,6 +382,228 @@ function copyPreviewPath() {
 }
 
 // =====================================================================
+// Preview editor
+// =====================================================================
+function wsIsEditable(meta) {
+    if (!meta || meta.is_dir) return false;
+    return WS_EDITABLE.has(meta.kind || wsKindOf(meta.file_name || meta.name || meta.path));
+}
+
+/**
+ * Path to send to the read/write API. The absolute path is unambiguous, which
+ * matters for files the panel reaches outside the session's workspace root
+ * (memory / knowledge assets while a project is open).
+ */
+function wsEditTargetPath(meta) {
+    return meta.abs_path || meta.path || meta.rel_path || '';
+}
+
+function wsEditorTextarea() {
+    return document.getElementById('ws-editor');
+}
+
+function wsEditorDirty() {
+    const ta = wsEditorTextarea();
+    return wsEditing && !!ta && ta.value !== wsEditBaseline;
+}
+
+/** Forget the editor's state, leaving what is on screen to the caller. */
+function wsDiscardEditState() {
+    wsEditing = false;
+    wsEditBaseline = '';
+    wsEditBaseMtime = null;
+}
+
+/**
+ * Gate an action that would throw away the editor's contents.
+ *
+ * @param {function} next - run once the user agrees to discard the edits, and
+ *   responsible for whatever replaces the editor. It runs with edit mode
+ *   already off, so it must not be a function that bails out when not editing.
+ * @returns {boolean} true when there is nothing to lose and the caller may
+ *   proceed immediately; false once the confirmation has been put on screen.
+ */
+function wsGuardUnsaved(next) {
+    if (!wsEditorDirty()) return true;
+    showConfirmDialog({
+        title: t('ws_edit_discard_title'),
+        message: t('ws_edit_discard_msg'),
+        okText: t('ws_edit_discard_ok'),
+        onConfirm: () => {
+            wsDiscardEditState();
+            next();
+        },
+    });
+    return false;
+}
+
+/**
+ * Why the server refused to make a file editable. Truncation is reported first:
+ * a partial read can also split a multi-byte character and so come back lossy,
+ * but the size is the reason the user needs to hear.
+ */
+function wsUneditableReason(data) {
+    if (data.truncated) return 'ws_edit_too_large';
+    if (data.lossy) return 'ws_edit_encoding';
+    return 'ws_edit_unsupported';
+}
+
+/** Load the file's current text into an editable text area. */
+async function startPreviewEdit() {
+    if (wsEditing || !wsIsEditable(wsCurrentFile)) return;
+    const target = wsCurrentFile;
+    const body = document.getElementById('ws-preview-content');
+    if (!body) return;
+    body.innerHTML = `<div class="workspace-empty"><i class="fas fa-spinner fa-spin"></i></div>`;
+
+    let data;
+    try {
+        data = await wsApi(`/api/workspace/read?path=${encodeURIComponent(wsEditTargetPath(target))}`);
+    } catch (e) {
+        _wsToast(`${t('ws_edit_load_failed')}: ${e.message}`);
+        await wsRenderPreview(target);
+        return;
+    }
+    // The user may have navigated away while the request was in flight.
+    if (wsCurrentFile !== target) return;
+    if (!data.editable) {
+        _wsToast(t(wsUneditableReason(data)));
+        await wsRenderPreview(target);
+        return;
+    }
+
+    wsEditing = true;
+    wsEditBaseMtime = data.mtime;
+    // Read the baseline back out of the text area rather than using the response
+    // text: a text area normalizes CRLF to LF in its value, so a CRLF file would
+    // compare as modified from the moment it loaded.
+    wsEditBaseline = wsMountEditor(body, data.content).value;
+    wsRenderPreviewTitle();
+    wsUpdateHeaderActions();
+}
+
+/** @returns {HTMLTextAreaElement} the text area now holding the file. */
+function wsMountEditor(body, content) {
+    body.innerHTML = '';
+    const ta = document.createElement('textarea');
+    ta.id = 'ws-editor';
+    ta.className = 'ws-editor';
+    ta.spellcheck = false;
+    ta.value = content;
+    body.appendChild(ta);
+
+    ta.addEventListener('input', wsRenderPreviewTitle);
+    ta.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+            // Save in place, the way an editor does. The Save button instead
+            // returns to the rendered preview.
+            e.preventDefault();
+            savePreviewEdit({ keepEditing: true });
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            cancelPreviewEdit();
+        } else if (e.key === 'Tab') {
+            // Otherwise Tab leaves the text area, which is never what indenting
+            // a line of code is meant to do.
+            e.preventDefault();
+            wsInsertAtCursor(ta, '    ');
+        }
+    });
+    ta.focus();
+    return ta;
+}
+
+function wsInsertAtCursor(ta, text) {
+    const { selectionStart: start, selectionEnd: end } = ta;
+    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + text.length;
+    wsRenderPreviewTitle();
+}
+
+/**
+ * Write the text area back to disk.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.keepEditing] - stay in the editor after saving.
+ * @param {boolean} [opts.force] - save even though the file changed on disk.
+ */
+async function savePreviewEdit(opts) {
+    const { keepEditing = false, force = false } = opts || {};
+    const ta = wsEditorTextarea();
+    if (!wsEditing || !wsCurrentFile || !ta) return;
+    // Ctrl+S bypasses the button's disabled state, and a second save sent
+    // before the first reply carries a stale mtime - which would come back as a
+    // conflict against our own write.
+    if (wsSaving) return;
+    // Writing an untouched file would bump its mtime for nothing.
+    if (!force && !wsEditorDirty()) {
+        if (!keepEditing) await wsExitEdit();
+        return;
+    }
+
+    const target = wsCurrentFile;
+    const content = ta.value;
+    const btn = document.getElementById('ws-btn-save');
+    wsSaving = true;
+    btn?.classList.add('ws-btn-busy');
+    try {
+        const res = await fetch('/api/workspace/write', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                path: wsEditTargetPath(target),
+                content: content,
+                session: (typeof sessionId !== 'undefined') ? sessionId : '',
+                expected_mtime: force ? null : wsEditBaseMtime,
+            }),
+        });
+        const data = await res.json();
+        if (data.code === 'conflict') {
+            showConfirmDialog({
+                title: t('ws_edit_conflict_title'),
+                message: t('ws_edit_conflict_msg'),
+                okText: t('ws_edit_overwrite'),
+                onConfirm: () => savePreviewEdit({ keepEditing: keepEditing, force: true }),
+            });
+            return;
+        }
+        if (data.status !== 'success') throw new Error(data.message || 'save failed');
+
+        wsEditBaseline = content;
+        wsEditBaseMtime = data.mtime;
+        target.size = data.size;
+        target.mtime = data.mtime;
+        _wsToast(t('ws_edit_saved'));
+        if (keepEditing) {
+            wsRenderPreviewTitle();
+        } else {
+            await wsExitEdit();
+        }
+    } catch (e) {
+        _wsToast(`${t('ws_edit_save_failed')}: ${e.message}`);
+    } finally {
+        wsSaving = false;
+        btn?.classList.remove('ws-btn-busy');
+    }
+}
+
+function cancelPreviewEdit() {
+    if (!wsEditing) return;
+    // Retry through wsExitEdit rather than through this function, which bails
+    // out on the very flag the guard clears before retrying.
+    if (!wsGuardUnsaved(wsExitEdit)) return;
+    wsExitEdit();
+}
+
+/** Leave edit mode and show the rendered preview again. */
+async function wsExitEdit() {
+    wsDiscardEditState();
+    wsRenderPreviewTitle();
+    wsUpdateHeaderActions();
+    if (wsCurrentFile) await wsRenderPreview(wsCurrentFile);
+}
+
+// =====================================================================
 // Artifact cards in messages
 // =====================================================================
 
@@ -405,12 +658,13 @@ function resetTurnArtifacts() {
 
 /**
  * Auto-open policy: only when the turn produced exactly one previewable
- * artifact, and only while the user hasn't dismissed the panel by hand.
+ * artifact, only while the user hasn't dismissed the panel by hand, and never
+ * over an open editor - the file cards stay in the message either way.
  */
 function maybeAutoOpenArtifact() {
     const items = wsTurnArtifacts.filter(a => a.previewable);
     wsTurnArtifacts = [];
-    if (wsAutoOpenSuppressed || items.length !== 1) return;
+    if (wsAutoOpenSuppressed || wsEditing || items.length !== 1) return;
     openInPreview(items[0]);
 }
 
@@ -944,6 +1198,8 @@ function wsOnSessionSwitch() {
     wsSearchMode = false;
     wsCurrentFile = null;
     wsTurnArtifacts = [];
+    wsDiscardEditState();
+    wsUpdateHeaderActions();
     if (!wsPanelOpen) return;
     if (wsActiveTab === 'files') {
         loadWorkspaceDir('');
@@ -961,6 +1217,13 @@ function initWorkspacePanel() {
     initWorkspaceDropTarget();
     initMention();
     wsSetPreviewEmpty(t('ws_preview_empty'));
+
+    // Reloading or closing the tab would drop an open editor's changes silently.
+    window.addEventListener('beforeunload', (e) => {
+        if (!wsEditorDirty()) return;
+        e.preventDefault();
+        e.returnValue = '';
+    });
 
     // The panel belongs to the chat view only; follow view switches.
     const toggle = document.getElementById('workspace-toggle-btn');
