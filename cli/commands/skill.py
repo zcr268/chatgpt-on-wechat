@@ -68,7 +68,7 @@ def _parse_github_url(url: str):
     if not m:
         return None
     owner, repo, branch, subpath = m.groups()
-    return owner, repo, branch or "main", subpath
+    return owner, repo, branch, subpath
 
 
 def _parse_gitlab_url(url: str):
@@ -84,7 +84,7 @@ def _parse_gitlab_url(url: str):
     if not m:
         return None
     owner, repo, branch, subpath = m.groups()
-    return owner, repo, branch or "main", subpath
+    return owner, repo, branch, subpath
 
 
 def _parse_git_ssh_url(url: str):
@@ -120,6 +120,20 @@ def _clone_repo(git_url: str):
         shutil.rmtree(tmp_dir, ignore_errors=True)
         raise RuntimeError(f"git clone failed: {e}")
     return tmp_dir, repo_dir
+
+
+def _resolve_github_default_branch(owner: str, repo: str, timeout: int = 30) -> str:
+    """Resolve the default branch of a GitHub repository via the API.
+
+    Falls back to 'main' if the API call fails.
+    """
+    try:
+        api_url = f"https://api.github.com/repos/{owner}/{repo}"
+        resp = requests.get(api_url, timeout=timeout, headers={"Accept": "application/vnd.github.v3+json"})
+        resp.raise_for_status()
+        return resp.json().get("default_branch", "main")
+    except Exception:
+        return "main"
 
 
 def _download_repo_zip(spec: str, branch: str = "main", host: str = "github", timeout: int = 30):
@@ -1149,7 +1163,7 @@ def _install_hub(name, result: InstallResult, provider=None):
     raise SkillInstallError("Unexpected response from Skill Hub.")
 
 
-def _install_github(spec, result: InstallResult, subpath=None, skill_name=None, branch="main", source="github", timeout=30):
+def _install_github(spec, result: InstallResult, subpath=None, skill_name=None, branch=None, source="github", timeout=30):
     """Install skill(s) from a GitHub repo.
 
     Strategy: zip download first (no API rate limit), Contents API as fallback.
@@ -1162,6 +1176,10 @@ def _install_github(spec, result: InstallResult, subpath=None, skill_name=None, 
     skills_dir = get_skills_dir()
     os.makedirs(skills_dir, exist_ok=True)
     owner, repo = spec.split("/", 1)
+
+    # Resolve default branch if not specified (#3069)
+    if not branch:
+        branch = _resolve_github_default_branch(owner, repo, timeout=timeout)
 
     result.messages.append(f"Downloading from GitHub: {spec} (branch: {branch})...")
 
@@ -1263,12 +1281,24 @@ def _install_from_repo_root(repo_root, spec, subpath, skill_name, skills_dir, so
         _batch_install_skills(discovered, spec, skills_dir, source, result)
 
 
-def _install_gitlab(spec, result: InstallResult, subpath=None, branch="main"):
+def _install_gitlab(spec, result: InstallResult, subpath=None, branch=None):
     """Install skill(s) from a GitLab repo via zip download."""
     _check_github_spec(spec)
 
     skills_dir = get_skills_dir()
     os.makedirs(skills_dir, exist_ok=True)
+
+    owner, repo = spec.split("/", 1)
+
+    # Resolve default branch if not specified
+    if not branch:
+        try:
+            api_url = f"https://gitlab.com/api/v4/projects/{owner}%2F{repo}"
+            resp = requests.get(api_url, timeout=30)
+            resp.raise_for_status()
+            branch = resp.json().get("default_branch", "main")
+        except Exception:
+            branch = "main"
 
     result.messages.append(f"Downloading from GitLab: {spec} (branch: {branch})...")
 
