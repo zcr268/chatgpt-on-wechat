@@ -175,3 +175,80 @@ def test_legacy_db_is_migrated():
             assert old == ""
         finally:
             conn.close()
+
+
+def test_legacy_runs_table_of_a_different_shape_is_set_aside():
+    """An earlier feature shipped a differently shaped runs table. It must be
+    moved aside -- not left to abort schema init -- and its rows kept.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Path(tmp) / "index.db"
+        conn = sqlite3.connect(str(db))
+        conn.executescript(
+            """
+            CREATE TABLE sessions (
+                session_id TEXT PRIMARY KEY, created_at INTEGER,
+                last_active INTEGER, msg_count INTEGER DEFAULT 0
+            );
+            CREATE TABLE messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT,
+                seq INTEGER, role TEXT, content TEXT, created_at INTEGER,
+                UNIQUE(session_id, seq)
+            );
+            CREATE TABLE runs (
+                run_id TEXT PRIMARY KEY, goal TEXT, trigger_type TEXT
+            );
+            CREATE INDEX idx_runs_goal ON runs (goal);
+            INSERT INTO runs VALUES ('old-run', 'ship it', 'message');
+            INSERT INTO sessions VALUES ('s1', 1, 1, 1);
+            """
+        )
+        conn.commit()
+        conn.close()
+
+        store = ConversationStore(db)
+
+        # History opens, and run tracking is live on the correct schema.
+        assert store.list_sessions()["total"] == 1
+        assert store._runs_ready is True
+        assert store.create_run("new-run", session_id="s1") is True
+
+        conn = sqlite3.connect(str(db))
+        try:
+            run_cols = {r[1] for r in conn.execute("PRAGMA table_info(runs)")}
+            assert "task_source" in run_cols
+            # The old rows survive under the backup name.
+            backup = conn.execute(
+                "SELECT goal FROM runs_legacy_backup WHERE run_id = 'old-run'"
+            ).fetchone()
+            assert backup[0] == "ship it"
+        finally:
+            conn.close()
+
+
+def test_history_opens_even_when_run_setup_fails(monkeypatch):
+    """Runs are auxiliary: whatever goes wrong setting them up, conversation
+    history must still open and run bookkeeping must degrade to a no-op.
+    """
+    import agent.memory.conversation_store as cs
+
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Path(tmp) / "index.db"
+        seed = ConversationStore(db)
+        seed.append_messages(
+            "s1", [{"role": "user", "content": "keep me"}], channel_type="web"
+        )
+        del seed
+
+        monkeypatch.setattr(cs, "_RUNS_DDL", "CREATE INDEX x ON does_not_exist(y);")
+        store = ConversationStore(db)
+
+        assert store._runs_ready is False
+        assert store.list_sessions()["total"] == 1
+        assert store.load_messages("s1")[0]["content"] == "keep me"
+        # Every run entry point degrades quietly rather than raising.
+        assert store.create_run("r1", session_id="s1") is False
+        assert store.finish_run("r1") is False
+        assert store.update_run_extras("r1", {"a": 1}) is False
+        assert store.get_run("r1") is None
+        assert store.list_runs() == []

@@ -28,6 +28,9 @@ from common.log import logger
 # Schema
 # ---------------------------------------------------------------------------
 
+# Core conversation schema. Sessions and messages are the irreplaceable part
+# of this file, so their creation must always succeed; nothing optional belongs
+# in this script.
 _DDL = """
 CREATE TABLE IF NOT EXISTS sessions (
     session_id        TEXT    PRIMARY KEY,
@@ -56,12 +59,18 @@ CREATE INDEX IF NOT EXISTS idx_messages_session
 
 CREATE INDEX IF NOT EXISTS idx_sessions_last_active
     ON sessions (last_active);
+"""
 
--- A run is one addressable, persisted unit of an agent's work: the thing a
--- delegated task, a subagent spawn or a scheduled job can be looked up by,
--- resumed from and reported on after the call that started it has returned.
--- Distinct from a session (who the conversation is with) and an agent (who is
--- doing the work). Kept in the same per-agent database as sessions/messages.
+# Runs are an auxiliary table in the same file. Kept out of the core script so
+# that any problem here -- a legacy table of the same name, a partial upgrade --
+# degrades run tracking rather than taking conversation history down with it.
+#
+# A run is one addressable, persisted unit of an agent's work: the thing a
+# delegated task, a subagent spawn or a scheduled job can be looked up by,
+# resumed from and reported on after the call that started it has returned.
+# Distinct from a session (who the conversation is with) and an agent (who is
+# doing the work).
+_RUNS_DDL = """
 CREATE TABLE IF NOT EXISTS runs (
     run_id       TEXT    PRIMARY KEY,
     agent_id     TEXT    NOT NULL DEFAULT '',
@@ -419,6 +428,10 @@ class ConversationStore:
         self._db_path = db_path
         self._lock = threading.RLock()  # Use RLock to allow reentrant locking
         self._schema_identity: tuple = ()
+        # True once the runs table is confirmed present. When it is not, run
+        # bookkeeping degrades to a no-op so it can never break a turn or a
+        # history query -- runs are auxiliary to conversation storage.
+        self._runs_ready = False
         self._init_db()
 
     # ------------------------------------------------------------------
@@ -1093,6 +1106,8 @@ class ConversationStore:
         """
         if not run_id:
             raise ValueError("run_id is required")
+        if not self._runs_ready:
+            return False
         now = int(time.time())
         extras_json = (
             json.dumps(extras, ensure_ascii=False) if extras else ""
@@ -1129,7 +1144,7 @@ class ConversationStore:
         merges ``extras`` into the stored sidecar. Returns True if the run
         existed.
         """
-        if not run_id:
+        if not run_id or not self._runs_ready:
             return False
         now = int(time.time())
         with self._lock:
@@ -1178,7 +1193,7 @@ class ConversationStore:
         status stays owned by whoever actually ran the work. Returns True if
         the run existed.
         """
-        if not run_id or not extras:
+        if not run_id or not extras or not self._runs_ready:
             return False
         with self._lock:
             conn = self._connect()
@@ -1206,7 +1221,7 @@ class ConversationStore:
 
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Return a single run by id, or None."""
-        if not run_id:
+        if not run_id or not self._runs_ready:
             return None
         with self._lock:
             conn = self._connect()
@@ -1231,6 +1246,8 @@ class ConversationStore:
         """List runs, newest first, filtered by any combination of the given
         dimensions. ``parent_run_id=''`` selects top-level runs only.
         """
+        if not self._runs_ready:
+            return []
         clauses: List[str] = []
         params: List[Any] = []
         if session_id is not None:
@@ -1522,12 +1539,83 @@ class ConversationStore:
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = self._raw_connect()
         try:
+            # Core tables first and unguarded: if these cannot be created the
+            # store is genuinely unusable and the error should surface.
             conn.executescript(_DDL)
             conn.commit()
             self._migrate(conn)
+            # Runs are auxiliary. Their setup is isolated so a legacy table, a
+            # half-applied upgrade or any other surprise degrades run tracking
+            # instead of taking conversation history offline.
+            self._init_runs(conn)
         finally:
             conn.close()
         self._schema_identity = self._db_identity()
+
+    def _init_runs(self, conn: sqlite3.Connection) -> None:
+        """Create the runs table without ever risking the core schema."""
+        try:
+            self._retire_incompatible_runs_table(conn)
+            conn.executescript(_RUNS_DDL)
+            conn.commit()
+            self._runs_ready = True
+        except Exception as e:
+            self._runs_ready = False
+            logger.warning(
+                f"[ConversationStore] Run tracking unavailable ({e}); "
+                "conversation history is unaffected"
+            )
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+
+    def _retire_incompatible_runs_table(self, conn: sqlite3.Connection) -> None:
+        """Move aside a pre-existing ``runs`` table that predates this schema.
+
+        An earlier, since-removed feature shipped a differently shaped ``runs``
+        table in the same file. Its columns do not match the one the current
+        code owns, so ``CREATE TABLE IF NOT EXISTS`` leaves the old table in
+        place and a later ``CREATE INDEX`` on a column it lacks aborts the whole
+        init script -- which takes every conversation query down with it. The
+        old table is renamed rather than dropped so its rows stay recoverable,
+        and the marker column check makes this a no-op on both the current
+        schema and a database that never had the legacy table.
+        """
+        try:
+            exists = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='runs'"
+            ).fetchone()
+            if not exists:
+                return
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+            if "task_source" in cols:
+                return
+            backup = "runs_legacy_backup"
+            # Never clobber an earlier backup; keep the current file untouched
+            # if one is already parked there.
+            if conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+                (backup,),
+            ).fetchone():
+                backup = f"runs_legacy_backup_{int(time.time())}"
+            # Indexes on the old table would otherwise collide with the new
+            # ones the DDL is about to create.
+            for (idx_name,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND tbl_name='runs' AND name NOT LIKE 'sqlite_%'"
+            ).fetchall():
+                conn.execute(f'DROP INDEX IF EXISTS "{idx_name}"')
+            conn.execute(f"ALTER TABLE runs RENAME TO {backup}")
+            conn.commit()
+            logger.warning(
+                "[ConversationStore] Renamed a legacy runs table to "
+                f"{backup}; its rows are preserved there"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[ConversationStore] Could not retire legacy runs table: {e}"
+            )
 
     def _db_identity(self) -> tuple:
         """Identify the physical file behind _db_path, or () when it is missing."""
