@@ -189,9 +189,11 @@ def test_multi_agent_backup_restore_preserves_all_isolated_workspaces(tmp_path):
         item["id"]: Path(item["workspace"])
         for item in restored_config["agents"]
     }
+    # Same layout AgentRegistry.from_config derives: the default Agent owns the
+    # instance root, the rest live under agents/<id>.
     assert destinations == {
-        "primary": (target_root / "primary").resolve(),
-        "research": (target_root / "research").resolve(),
+        "primary": target_root.resolve(),
+        "research": (target_root / "agents" / "research").resolve(),
     }
     assert restored_config["agent_workspace"] == str(destinations["primary"])
     assert restored_config["agent_bindings"][0]["agent_id"] == "research"
@@ -271,3 +273,127 @@ def test_multi_agent_restore_rejects_manifest_registry_mismatch(tmp_path):
 
     with pytest.raises(ValueError, match="does not match"):
         restore_backup_archive(archive, tmp_path / "data", tmp_path / "agents")
+
+
+def test_nested_agent_workspace_is_archived_once(tmp_path):
+    """The default Agent owns the instance root, so every other Agent's
+    workspace sits inside it. Walking the root must not pack them a second
+    time under the default Agent's archive root."""
+    source_data = tmp_path / "source-data"
+    instance_root = tmp_path / "instance-root"
+    nested = instance_root / "agents" / "beta"
+    instance_root.mkdir(parents=True)
+    nested.mkdir(parents=True)
+    (instance_root / "AGENT.md").write_text("main persona", encoding="utf-8")
+    (nested / "AGENT.md").write_text("beta persona", encoding="utf-8")
+    # "beta" has no explicit workspace, so the registry derives the nested path.
+    _write_json(
+        source_data / "config.json",
+        {
+            "agent_workspace": str(instance_root),
+            "default_agent_id": "main",
+            "agents": [
+                {"id": "main", "name": "Main", "workspace": str(instance_root)},
+                {"id": "beta", "name": "Beta"},
+            ],
+        },
+    )
+
+    archive = tmp_path / "nested.zip"
+    summary = create_backup_archive(archive, source_data, instance_root)
+
+    with zipfile.ZipFile(archive) as bundle:
+        names = sorted(n for n in bundle.namelist() if n.endswith("AGENT.md"))
+    assert names == [
+        "agents/beta/workspace/AGENT.md",
+        "agents/main/workspace/AGENT.md",
+    ]
+    assert summary["contents"]["workspace_files"] == 2
+
+    target_data = tmp_path / "target-data"
+    target_root = tmp_path / "restored"
+    restore_backup_archive(archive, target_data, target_root)
+
+    assert (target_root / "AGENT.md").read_text(encoding="utf-8") == "main persona"
+    assert (
+        target_root / "agents" / "beta" / "AGENT.md"
+    ).read_text(encoding="utf-8") == "beta persona"
+
+
+def test_manifest_reserves_the_user_dimension(tmp_path):
+    source_data = tmp_path / "source-data"
+    source_workspace = tmp_path / "source-workspace"
+    source_workspace.mkdir()
+    (source_workspace / "MEMORY.md").write_text("shared", encoding="utf-8")
+    _write_json(
+        source_data / "config.json", {"agent_workspace": str(source_workspace)}
+    )
+
+    archive = tmp_path / "reserved.zip"
+    summary = create_backup_archive(archive, source_data, source_workspace)
+
+    assert summary["users"] == []
+    with zipfile.ZipFile(archive) as bundle:
+        manifest = json.loads(bundle.read("manifest.json").decode("utf-8"))
+    assert manifest["users"] == []
+
+
+def test_single_workspace_archive_still_declares_version_one(tmp_path):
+    """A single-Agent archive is structurally what v1 produced, so it must keep
+    declaring v1 and stay restorable by an older CowAgent. Only the
+    multi-Agent layout is v2."""
+    source_data = tmp_path / "source-data"
+    single = tmp_path / "single"
+    single.mkdir()
+    (single / "AGENT.md").write_text("solo", encoding="utf-8")
+    _write_json(source_data / "config.json", {"agent_workspace": str(single)})
+
+    single_archive = tmp_path / "single.zip"
+    summary = create_backup_archive(single_archive, source_data, single)
+    assert summary["version"] == 1
+    assert summary["layout"] == "workspace"
+    with zipfile.ZipFile(single_archive) as bundle:
+        assert sorted(bundle.namelist()) == [
+            "data/config.json",
+            "manifest.json",
+            "workspace/AGENT.md",
+        ]
+
+    multi_data = tmp_path / "multi-data"
+    beta = tmp_path / "beta"
+    beta.mkdir()
+    (beta / "AGENT.md").write_text("beta", encoding="utf-8")
+    _write_json(
+        multi_data / "config.json",
+        {
+            "agent_workspace": str(single),
+            "default_agent_id": "main",
+            "agents": [
+                {"id": "main", "workspace": str(single)},
+                {"id": "beta", "workspace": str(beta)},
+            ],
+        },
+    )
+    multi_archive = tmp_path / "multi.zip"
+    assert create_backup_archive(multi_archive, multi_data, single)["version"] == 2
+
+
+def test_restore_rejects_archive_carrying_user_scoped_workspaces(tmp_path):
+    """A future writer may emit per-user roots. Refuse such an archive loudly
+    instead of restoring an Agent workspace and silently dropping a user's."""
+    archive = tmp_path / "with-users.zip"
+    manifest = {
+        "format": "cowagent-backup",
+        "version": 2,
+        "layout": "agents",
+        "agents": [{"id": "main", "archive_root": "agents/main/workspace"}],
+        "users": [{"id": "u-1", "archive_root": "users/u-1"}],
+    }
+    with zipfile.ZipFile(archive, "w") as output:
+        output.writestr("manifest.json", json.dumps(manifest))
+        output.writestr("data/config.json", json.dumps({"agents": [{"id": "main"}]}))
+        output.writestr("agents/main/workspace/AGENT.md", "main")
+        output.writestr("users/u-1/MEMORY.md", "private")
+
+    with pytest.raises(ValueError, match="user-scoped"):
+        restore_backup_archive(archive, tmp_path / "data", tmp_path / "root")

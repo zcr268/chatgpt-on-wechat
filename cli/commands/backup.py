@@ -17,8 +17,12 @@ from cli.utils import get_project_root
 
 
 BACKUP_FORMAT = "cowagent-backup"
+# v2 only describes the multi-Agent layout. A single-workspace archive is
+# structurally identical to what v1 produced, so it keeps declaring v1 and
+# stays restorable by older CowAgent versions.
 BACKUP_VERSION = 2
-_SUPPORTED_BACKUP_VERSIONS = {1, BACKUP_VERSION}
+_SINGLE_WORKSPACE_VERSION = 1
+_SUPPORTED_BACKUP_VERSIONS = {_SINGLE_WORKSPACE_VERSION, BACKUP_VERSION}
 _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 _SKIP_DIRS = {".git", "__pycache__", "tmp"}
 _SKIP_FILES = {".DS_Store"}
@@ -71,14 +75,21 @@ def _is_within(path: Path, root: Path) -> bool:
         return False
 
 
-def _iter_workspace_files(workspace: Path, excluded: Set[Path]):
+def _iter_workspace_files(
+    workspace: Path,
+    excluded: Set[Path],
+    pruned_dirs: Optional[Set[Path]] = None,
+):
+    pruned = {Path(path).resolve() for path in (pruned_dirs or ())}
     if not workspace.is_dir():
         return
     for current, dirnames, filenames in os.walk(str(workspace), followlinks=False):
         current_path = Path(current)
         dirnames[:] = [
             name for name in dirnames
-            if name not in _SKIP_DIRS and not (current_path / name).is_symlink()
+            if name not in _SKIP_DIRS
+            and not (current_path / name).is_symlink()
+            and (current_path / name).resolve() not in pruned
         ]
         for name in filenames:
             path = current_path / name
@@ -108,12 +119,26 @@ def create_backup_archive(
     config = _read_config(data_root)
     legacy_path = _legacy_user_data_path(data_root, config)
     profiles, explicit_registry = _configured_workspaces(config, workspace)
+    sources = {
+        profile.id: Path(profile.workspace).expanduser().resolve()
+        for profile in profiles
+    }
     workspace_entries = []
     total_files = 0
     total_bytes = 0
     for profile in profiles:
-        source = Path(profile.workspace).expanduser().resolve()
-        files = list(_iter_workspace_files(source, excluded))
+        source = sources[profile.id]
+        # The registry only rejects workspaces that are exactly equal, and the
+        # default layout nests on purpose: the default Agent owns the instance
+        # root while every other Agent lives in `<root>/agents/<id>`. Without
+        # pruning, walking the default Agent packs every other Agent a second
+        # time under its archive root.
+        nested = {
+            other
+            for other_id, other in sources.items()
+            if other_id != profile.id and other != source and _is_within(other, source)
+        }
+        files = list(_iter_workspace_files(source, excluded, nested))
         size = sum(path.stat().st_size for path in files)
         archive_root = (
             f"agents/{profile.id}/workspace"
@@ -126,7 +151,7 @@ def create_backup_archive(
 
     manifest = {
         "format": BACKUP_FORMAT,
-        "version": BACKUP_VERSION,
+        "version": BACKUP_VERSION if explicit_registry else _SINGLE_WORKSPACE_VERSION,
         "created_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "layout": "agents" if explicit_registry else "workspace",
         "workspace_source": str(
@@ -149,6 +174,12 @@ def create_backup_archive(
             }
             for profile, source, archive_root, files, size in workspace_entries
         ],
+        # Reserved for the user dimension. User assets live under
+        # `<shared root>/users/<user_id>/`, so today they travel inside the
+        # default Agent's workspace and this list stays empty. Declaring the
+        # slot now means adding per-user archive roots later is an additive
+        # change to the v2 manifest instead of a v3 format break.
+        "users": [],
         "contents": {
             "config": config_path.is_file(),
             "legacy_user_data": legacy_path.is_file(),
@@ -202,6 +233,20 @@ def _validate_archive(archive: zipfile.ZipFile) -> dict:
         or version not in _SUPPORTED_BACKUP_VERSIONS
     ):
         raise ValueError("unsupported CowAgent backup format or version")
+
+    # The user dimension is declared but not yet produced. Checked at any
+    # version, because the slot travels on single-workspace archives too.
+    # Refuse an archive that carries per-user roots instead of silently
+    # dropping them: a restore that quietly loses one user's memory is worse
+    # than one that stops.
+    users = manifest.get("users", [])
+    if not isinstance(users, list):
+        raise ValueError("archive manifest has an invalid users list")
+    if users:
+        raise ValueError(
+            "archive contains user-scoped workspaces, which this CowAgent "
+            "version cannot restore; upgrade before restoring"
+        )
 
     allowed_agent_roots = set()
     if version >= 2 and manifest.get("layout") == "agents":
@@ -290,11 +335,15 @@ def _multi_agent_destinations(
         except ValueError:
             current_registry = None
 
+    # An explicit --workspace wins; otherwise reuse the instance root this
+    # machine already runs on, and only fall back to the single-Agent default
+    # on a fresh machine.
     base = (
         Path(workspace_root).expanduser().resolve()
         if workspace_root is not None
-        else Path("~/cow-agents").expanduser().resolve()
+        else _workspace_from_config(current_config)
     )
+    default_agent_id = archived_registry.default_agent_id
     destinations = {}
     for agent_id in manifest_ids:
         current = None
@@ -303,8 +352,18 @@ def _multi_agent_destinations(
                 current = current_registry.get(agent_id, require_enabled=False)
             except KeyError:
                 pass
-        destination = current.workspace_path.resolve() if current else (base / agent_id)
-        if current is None and not _is_within(destination, base):
+        if current is not None:
+            destinations[agent_id] = current.workspace_path.resolve()
+            continue
+        # Mirror AgentRegistry.from_config: the default Agent owns the instance
+        # root, every other Agent lands in `agents/<id>`. Restoring into the
+        # same layout the registry derives keeps the workspace keys in the
+        # restored config redundant rather than load-bearing, so hand-removing
+        # one later cannot relocate an Agent away from its restored data.
+        destination = (
+            base if agent_id == default_agent_id else base / "agents" / agent_id
+        )
+        if not _is_within(destination, base):
             raise ValueError(f"unsafe Agent workspace destination: {agent_id}")
         destinations[agent_id] = destination
     if len({str(path) for path in destinations.values()}) != len(destinations):
