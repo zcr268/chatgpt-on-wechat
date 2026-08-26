@@ -94,7 +94,6 @@
                 "group": "Installation",
                 "pages": [
                   "guide/quick-start",
-                  "guide/multi-agent",
                   "guide/desktop",
                   "guide/manual-install",
                   "guide/upgrade"
@@ -339,7 +338,6 @@
                 "group": "安装部署",
                 "pages": [
                   "zh/guide/quick-start",
-                  "zh/guide/multi-agent",
                   "zh/guide/desktop",
                   "zh/guide/manual-install",
                   "zh/guide/upgrade"
@@ -584,7 +582,6 @@
                 "group": "インストール",
                 "pages": [
                   "ja/guide/quick-start",
-                  "ja/guide/multi-agent",
                   "ja/guide/desktop",
                   "ja/guide/manual-install",
                   "ja/guide/upgrade"

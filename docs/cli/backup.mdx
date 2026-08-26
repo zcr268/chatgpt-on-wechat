@@ -44,9 +44,12 @@ Use `--workspace` to migrate workspace files to a different location:
 cow restore cow-backup.zip --workspace ~/cow-restored
 ```
 
-For a multi-Agent archive, `--workspace` is a root directory. CowAgent restores
-each workspace under `<root>/<agent-id>`. Without the option, existing Agent IDs
-reuse their current local workspace; new Agents use `~/cow-agents/<agent-id>`.
+For a multi-Agent archive, `--workspace` is the instance root. CowAgent restores
+the default Agent into that root and every other Agent into
+`<root>/agents/<agent-id>`, the same layout the Agent registry derives on its
+own. Without the option, Agent IDs that already exist locally keep their current
+workspace, and the rest are placed under the instance root this machine already
+uses.
 
 Restore validates the archive format and paths before writing anything. It
 overwrites matching files but does not delete unrelated files already present

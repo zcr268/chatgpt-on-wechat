@@ -41,7 +41,7 @@ cow restore /safe/location/cow-backup.zip
 cow restore cow-backup.zip --workspace ~/cow-restored
 ```
 
-恢复多 Agent 归档时，`--workspace` 表示统一根目录，各工作区会写入 `<根目录>/<agent-id>`。未传该参数时，本机已有的同名 Agent 沿用当前工作区，新 Agent 默认写入 `~/cow-agents/<agent-id>`。
+恢复多 Agent 归档时，`--workspace` 表示实例根目录：默认 Agent 恢复到该根目录，其余 Agent 恢复到 `<根目录>/agents/<agent-id>`，与 Agent registry 自身推导的布局一致。未传该参数时，本机已存在的同名 Agent 沿用当前工作区，其余 Agent 落在本机当前使用的实例根目录下。
 
 恢复命令会在写入前校验归档格式和所有路径。它会覆盖同名文件，但不会删除目标目录中无关的现有文件。如果检测到当前 CowAgent 数据，会先在所选归档旁创建 `cow-pre-restore-*.zip` 回滚备份。
 
