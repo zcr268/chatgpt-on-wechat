@@ -4,6 +4,7 @@ Agent Bridge - Integrates Agent system with existing COW bridge
 
 import os
 import threading
+import uuid
 from typing import Dict, Iterator, Optional, List, Tuple
 
 from agent.protocol import (
@@ -484,6 +485,60 @@ class AgentBridge:
         from agent.memory import get_conversation_store
         return get_conversation_store(profile.workspace)
 
+    def _begin_run(self, session_id: str, agent_id: str, context: Context = None):
+        """Open a run for this turn and make its id the ambient one.
+
+        Returns ``(run_id, token, store)``; every element is None when the run
+        could not be recorded. Bookkeeping must never break a reply, so any
+        failure here degrades to "no run row" rather than raising: the turn
+        still runs, it just is not addressable afterwards.
+
+        A run id already in scope means this turn was started by another run
+        (a delegation or a spawn), so that one becomes the parent and the tree
+        stays walkable from either end.
+        """
+        from common.utils import current_agent_run_id, set_agent_run_id
+
+        try:
+            parent_run_id = current_agent_run_id() or ""
+            run_id = uuid.uuid4().hex
+            store = self.get_conversation_store(agent_id)
+            # An external system driving this work passes its own handle
+            # through the context; a native turn leaves both empty.
+            task_id = str((context.get("task_id") if context else "") or "")
+            task_source = str((context.get("task_source") if context else "") or "")
+            store.create_run(
+                run_id,
+                agent_id=agent_id or "",
+                session_id=session_id or "",
+                parent_run_id=parent_run_id,
+                task_id=task_id,
+                task_source=task_source,
+            )
+            # Set last: once the ambient id changes, the caller owes us a reset.
+            token = set_agent_run_id(run_id)
+            return run_id, token, store
+        except Exception as e:
+            logger.warning(f"[AgentBridge] Could not open run: {e}")
+            return None, None, None
+
+    def _end_run(self, store, run_id: str, token, status: str, error: str = "") -> None:
+        """Close a run and restore the previous ambient run id.
+
+        The reset happens even when the status update fails, or the ambient id
+        would leak into whatever this thread handles next.
+        """
+        from common.utils import clear_agent_run_id
+
+        try:
+            if store is not None and run_id:
+                store.finish_run(run_id, status=status, error=error)
+        except Exception as e:
+            logger.warning(f"[AgentBridge] Could not close run {run_id}: {e}")
+        finally:
+            if token is not None:
+                clear_agent_run_id(token)
+
     @staticmethod
     def _runtime_key(agent_id: str, session_id: str) -> Tuple[str, str]:
         return agent_id, session_id
@@ -665,6 +720,11 @@ class AgentBridge:
         cancel_event = None
         token_key = None
         steer_inbox = None
+        run_id = None
+        run_token = None
+        run_store = None
+        run_status = "done"
+        run_error = ""
         try:
             # Extract session_id from context for user isolation
             if context:
@@ -750,6 +810,13 @@ class AgentBridge:
                 )
                 self._trim_in_memory_to_turns(agent, scheduler_keep_turns)
 
+            # Open the run before anything is persisted, so both the user turn
+            # and the reply are attributed to it and the work is addressable
+            # while it is still in flight.
+            run_id, run_token, run_store = self._begin_run(
+                session_id, resolved_agent_id, context
+            )
+
             # Eagerly persist the user message BEFORE running the agent so the
             # session and the user's bubble are immediately visible — even if
             # the user switches away or refreshes before the reply finishes.
@@ -807,6 +874,12 @@ class AgentBridge:
                         pass
                 if session_id and steer_inbox is not None:
                     get_steer_registry().unregister(session_id, steer_inbox)
+
+            # A cancelled turn is not a failure, but it is not a completed run
+            # either: the distinction is what tells a reader whether the result
+            # is trustworthy or simply absent.
+            if cancel_event is not None and cancel_event.is_set():
+                run_status = "cancelled"
 
             # Persist new messages generated during this run
             if session_id:
@@ -876,6 +949,8 @@ class AgentBridge:
             
         except Exception as e:
             logger.error(f"Agent reply error: {e}")
+            run_status = "failed"
+            run_error = str(e)
             # The in-memory context may have been reset to recover from a format
             # error or overflow, but the stored history is deliberately left
             # intact: it is irreplaceable and is never reloaded with tool blocks.
@@ -891,6 +966,9 @@ class AgentBridge:
                 except Exception:
                     pass
             return Reply(ReplyType.ERROR, f"Agent error: {str(e)}")
+
+        finally:
+            self._end_run(run_store, run_id, run_token, run_status, run_error)
     
     def _schedule_mcp_hot_reload(self, agent):
         """
