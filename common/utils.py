@@ -276,7 +276,8 @@ def current_agent_run_id() -> Optional[str]:
 
     One source of truth: subagents and delegated work set the run id through
     ``RuntimeIdentity`` (via ``identity_scope``), and this reads the same field
-    so the id carried on state paths matches the one tagged onto LinkAI calls.
+    so the id carried on state paths matches the one tagged onto outbound
+    requests via the ``X-Agent-Run-Id`` header.
     """
     from common.runtime_identity import current_identity
 

@@ -696,7 +696,7 @@ class AgentStreamExecutor:
         # Respect a run id an outer scope already set (a subagent spawn or a
         # delegated task passes one down); only mint a fresh one when this turn
         # is the top of its own run. Writing through set_agent_run_id keeps the
-        # LinkAI-tagging path and RuntimeIdentity on the same id.
+        # outbound header-tagging path and RuntimeIdentity on the same id.
         import uuid as _uuid
         from common.utils import set_agent_run_id, clear_agent_run_id, current_agent_run_id
         _run_token = None
