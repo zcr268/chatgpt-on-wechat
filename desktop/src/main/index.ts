@@ -1,6 +1,7 @@
-import { app, BrowserWindow, session, shell, ipcMain, dialog, nativeImage, Notification, systemPreferences } from 'electron'
+import { app, BrowserWindow, session, shell, ipcMain, dialog, nativeImage, Notification, systemPreferences, crashReporter } from 'electron'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 import http from 'http'
 import { PythonBackend, BackendError } from './python-manager'
 import { buildAppMenu } from './menu'
@@ -8,12 +9,108 @@ import { createTray, destroyTray, getTray } from './tray'
 import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
-import { setupAppIconIPC, applyCachedAppIcon, getRuntimeAppIcon } from './app-icon'
+import {
+  setupAppIconIPC,
+  applyCachedAppIcon,
+  applyCachedAppName,
+  repairWindowsShortcuts,
+  getRuntimeAppIcon,
+} from './app-icon'
+
+// Where the packaged backend keeps its writable data (config.json, run.log).
+// Kept in sync with COW_DATA_DIR in python-manager.ts so the desktop shell
+// writes its own diagnostics into the SAME run.log the "open log folder" button
+// reveals and the in-app Logs page tails — one place to look for both layers.
+const COW_DATA_DIR = path.join(os.homedir(), '.cow')
+
+// Mirror the main process's console output and any uncaught crash to run.log.
+// Packaged builds have no terminal, so every console.log/error and every
+// Electron-layer crash (renderer/GPU gone, main-process exception) used to
+// vanish: the backend's run.log covered Python failures, but a white screen or
+// a silent app quit left nothing behind. This closes that gap without a crash
+// server — the evidence lands locally where the user can already find it.
+function initDesktopLogging(): void {
+  let stream: fs.WriteStream | null = null
+  try {
+    fs.mkdirSync(COW_DATA_DIR, { recursive: true })
+    // Append so we never clobber the backend's own run.log history; both sides
+    // are line-based, so interleaving is fine.
+    stream = fs.createWriteStream(path.join(COW_DATA_DIR, 'run.log'), { flags: 'a' })
+    stream.on('error', () => { stream = null })
+  } catch {
+    stream = null
+  }
+
+  const write = (level: string, args: unknown[]) => {
+    if (!stream) return
+    const text = args
+      .map((a) => (typeof a === 'string' ? a : a instanceof Error ? a.stack || a.message : JSON.stringify(a)))
+      .join(' ')
+    try {
+      stream.write(`[MAIN][${new Date().toISOString()}] [${level}] ${text}\n`)
+    } catch {
+      // logging must never break the app
+    }
+  }
+
+  // Wrap console so existing console.* calls throughout main also persist,
+  // while still printing to stdout for `npm run dev`.
+  const patch = (name: 'log' | 'warn' | 'error') => {
+    const original = console[name].bind(console)
+    console[name] = (...args: unknown[]) => {
+      write(name.toUpperCase(), args)
+      original(...args)
+    }
+  }
+  patch('log')
+  patch('warn')
+  patch('error')
+
+  // Native minidumps for hard crashes (segfaults in Electron/Chromium). Stored
+  // locally under userData/Crashpad; no upload server is configured.
+  try {
+    crashReporter.start({ uploadToServer: false })
+  } catch {
+    // crashReporter is best-effort; never let it block startup
+  }
+
+  // Main-process JS errors that would otherwise kill the app silently.
+  process.on('uncaughtException', (err) => {
+    console.error('[crash] uncaughtException:', err?.stack || err)
+  })
+  process.on('unhandledRejection', (reason) => {
+    console.error('[crash] unhandledRejection:', reason instanceof Error ? reason.stack : reason)
+  })
+
+  // Renderer/GPU/utility process crashes. These are the "white screen" and
+  // "window vanished" cases the user sees but that leave no trace by default.
+  app.on('render-process-gone', (_e, _wc, details) => {
+    console.error(`[crash] render-process-gone: reason=${details.reason} exitCode=${details.exitCode}`)
+  })
+  app.on('child-process-gone', (_e, details) => {
+    console.error(`[crash] child-process-gone: type=${details.type} reason=${details.reason} exitCode=${details.exitCode}`)
+  })
+
+  app.on('before-quit', () => {
+    try {
+      stream?.end()
+    } catch {
+      // ignore
+    }
+  })
+}
+
+// Set up main-process logging + crash capture before anything else runs, so the
+// earliest console output and any startup crash are already being persisted.
+initDesktopLogging()
 
 // Force the product name so the Dock/menu shows the app name even in dev mode,
 // where the default Electron binary would otherwise report "Electron". The name
 // can be overridden by the bundled app-config (appName); defaults to CowAgent.
 app.setName(loadAppConfig()?.appName || 'CowAgent')
+  // The web layer may have overridden the name at runtime. Re-apply it here,
+  // before app.getPath('userData') is read anywhere, since setName moves it.
+applyCachedAppName()
 
 // Windows shows notifications only when an AppUserModelID is set; without it
 // they are silently dropped. Harmless on macOS/Linux.
@@ -28,6 +125,18 @@ let isQuitting = false
 
 const isDev = !app.isPackaged
 const VITE_DEV_PORTS = [5173, 5174, 5175, 5176]
+
+// Launched by the OS at login (Windows passes --hidden; macOS reports it via
+// getLoginItemSettings().wasOpenedAsHidden). Start minimized to the tray so
+// autostart is unobtrusive.
+function launchedHidden(): boolean {
+  if (process.argv.includes('--hidden')) return true
+  try {
+    return app.getLoginItemSettings().wasOpenedAsHidden === true
+  } catch {
+    return false
+  }
+}
 
 function probePort(port: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -156,6 +265,9 @@ function createWindow() {
   })
 
   mainWindow.once('ready-to-show', () => {
+    // Skip the initial paint when autostarted hidden: the window stays in the
+    // tray/Dock until the user opens it, matching the "unobtrusive" intent.
+    if (launchedHidden()) return
     mainWindow?.show()
   })
 
@@ -332,6 +444,50 @@ function setupIPC() {
   // Current app version, shown in the NavRail footer.
   ipcMain.handle('get-app-version', () => app.getVersion())
 
+  // Launch-at-login: backed by the OS login-item registry on macOS and the
+  // Run registry key on Windows (both handled natively by Electron). Linux has
+  // no reliable cross-desktop mechanism, so it reports/accepts nothing there.
+  //
+  // Windows caveat: we register our Run key WITH `args: ['--hidden']`. Per the
+  // Electron docs, `openAtLogin` only reports true when getLoginItemSettings()
+  // is called with the SAME `args` — so we MUST pass them here to match, or the
+  // toggle "snaps back" to off (a false readback overwrites the flip). We do NOT
+  // use `executableWillLaunchAtLogin`: it ignores args and reports true for ANY
+  // startup entry for this exe (e.g. one added by an installer / Startup-folder
+  // shortcut), which made the toggle appear ON by default. Matching args keeps
+  // the default OFF and only reflects the entry this app actually created.
+  const WIN_LOGIN_ARGS = ['--hidden']
+  const isLaunchAtLoginEnabled = (): boolean => {
+    if (isWin) return app.getLoginItemSettings({ args: WIN_LOGIN_ARGS }).openAtLogin === true
+    if (isMac) return app.getLoginItemSettings().openAtLogin
+    return false
+  }
+  ipcMain.handle('get-login-item', () => isLaunchAtLoginEnabled())
+  // Returns the real outcome so the UI never lies: { ok, enabled, error }.
+  // - ok=false + error: writing the login item threw (surface it, don't swallow).
+  // - ok=true but enabled!=requested: the OS/policy silently refused the change.
+  // The renderer shows the reason instead of just snapping the toggle back.
+  ipcMain.handle('set-login-item', (_event, enabled: boolean) => {
+    if (!isMac && !isWin) {
+      return { ok: false, enabled: false, error: 'unsupported-platform' }
+    }
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        // Start hidden/minimized so autostart is unobtrusive; the window can
+        // still be brought up from the Dock/tray.
+        openAsHidden: isMac ? true : undefined,
+        args: isWin ? WIN_LOGIN_ARGS : undefined,
+      })
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      console.error('[login-item] setLoginItemSettings failed:', error)
+      return { ok: false, enabled: isLaunchAtLoginEnabled(), error }
+    }
+    const effective = isLaunchAtLoginEnabled()
+    return { ok: effective === !!enabled, enabled: effective, error: '' }
+  })
+
   // Auto-update controls (renderer-driven: check, then opt-in download/install).
   // The renderer passes its current UI language so downloads can be routed to
   // the China CDN mirror (zh) or R2 (others).
@@ -351,6 +507,18 @@ function setupIPC() {
     // Squirrel.Mac can't swap the app bundle (the update silently no-ops and
     // relaunching still shows the old version).
     isQuitting = true
+    // Kill the backend SYNCHRONOUSLY before handing off to the installer. On
+    // Windows the NSIS silent updater deletes the old install right away, and a
+    // still-running cowagent-backend.exe locks those files, aborting the update
+    // with "卸载旧应用程序文件失败:2". before-quit's async stop() sends SIGTERM
+    // and returns immediately (a no-op for a native Windows exe), so it loses
+    // the race. stopSync() blocks until the process tree is gone. Best-effort:
+    // never let a teardown hiccup block the update.
+    try {
+      pythonBackend?.stopSync()
+    } catch {
+      // ignore — proceed with the install regardless
+    }
     quitAndInstall()
   })
 
@@ -466,6 +634,8 @@ app.whenReady().then(async () => {
   }
   // Re-apply a previously set icon/title before the page loads.
   applyCachedAppIcon()
+  // Undo any damage the last update did to this app's shortcuts.
+  repairWindowsShortcuts()
   await startBackend()
 
   // Wire auto-update: a first silent check a few seconds after launch (so it

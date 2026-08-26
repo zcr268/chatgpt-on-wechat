@@ -36,7 +36,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     context_start_seq INTEGER NOT NULL DEFAULT 0,
     created_at        INTEGER NOT NULL,
     last_active       INTEGER NOT NULL,
-    msg_count         INTEGER NOT NULL DEFAULT 0
+    msg_count         INTEGER NOT NULL DEFAULT 0,
+    pinned            INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -55,6 +56,43 @@ CREATE INDEX IF NOT EXISTS idx_messages_session
 
 CREATE INDEX IF NOT EXISTS idx_sessions_last_active
     ON sessions (last_active);
+
+-- A run is one addressable, persisted unit of an agent's work: the thing a
+-- delegated task, a subagent spawn or a scheduled job can be looked up by,
+-- resumed from and reported on after the call that started it has returned.
+-- Distinct from a session (who the conversation is with) and an agent (who is
+-- doing the work). Kept in the same per-agent database as sessions/messages.
+CREATE TABLE IF NOT EXISTS runs (
+    run_id       TEXT    PRIMARY KEY,
+    agent_id     TEXT    NOT NULL DEFAULT '',
+    -- Reserved for the tenancy dimension; empty until per-user isolation lands,
+    -- so filtering by owner is an additive query change rather than a schema one.
+    user_id      TEXT    NOT NULL DEFAULT '',
+    session_id   TEXT    NOT NULL DEFAULT '',
+    -- The run that spawned this one (a delegation or subagent). Empty for a
+    -- top-level run. Lets a whole delegation tree be walked from any node.
+    parent_run_id TEXT   NOT NULL DEFAULT '',
+    -- Free-form external work handle and where it came from. task_source is
+    -- empty for a native CowAgent run; a non-empty value names the external
+    -- system and task_id then addresses a work item within it. TEXT on purpose:
+    -- it must hold external ids, never a foreign key into a table we own.
+    task_id      TEXT    NOT NULL DEFAULT '',
+    task_source  TEXT    NOT NULL DEFAULT '',
+    status       TEXT    NOT NULL DEFAULT 'running',
+    started_at   INTEGER NOT NULL,
+    ended_at     INTEGER,
+    error        TEXT    NOT NULL DEFAULT '',
+    extras       TEXT    NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_runs_session
+    ON runs (session_id, started_at);
+
+CREATE INDEX IF NOT EXISTS idx_runs_parent
+    ON runs (parent_run_id);
+
+CREATE INDEX IF NOT EXISTS idx_runs_task
+    ON runs (task_source, task_id);
 """
 
 # Migration: add channel_type column to existing databases that predate it.
@@ -70,10 +108,22 @@ _MIGRATION_ADD_CONTEXT_START_SEQ = """
 ALTER TABLE sessions ADD COLUMN context_start_seq INTEGER NOT NULL DEFAULT 0;
 """
 
+# User-pinned conversations, kept at the top of the session list.
+_MIGRATION_ADD_PINNED = """
+ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0;
+"""
+
 # Generic JSON sidecar for per-message attachments (TTS audio URL, future use).
 # Always optional — readers must tolerate missing column / empty / invalid JSON.
 _MIGRATION_ADD_MSG_EXTRAS = """
 ALTER TABLE messages ADD COLUMN extras TEXT NOT NULL DEFAULT '';
+"""
+
+# Attribute each message to the run that produced it, so a run's trace can be
+# reconstructed and a delegated/subagent turn is distinguishable from its
+# parent's. Empty for messages written before runs were tracked.
+_MIGRATION_ADD_MSG_RUN_ID = """
+ALTER TABLE messages ADD COLUMN run_id TEXT NOT NULL DEFAULT '';
 """
 
 DEFAULT_MAX_AGE_DAYS: int = 30
@@ -458,6 +508,7 @@ class ConversationStore:
         messages: List[Dict[str, Any]],
         channel_type: str = "",
         create_if_missing: bool = True,
+        run_id: Optional[str] = None,
     ) -> bool:
         """
         Append new messages to a session's history.
@@ -474,6 +525,10 @@ class ConversationStore:
                           gone. Callers that already stored the user turn use
                           this so a session deleted mid-run is not recreated
                           from the reply alone.
+            run_id: The run these messages belong to. Falls back to the ambient
+                          RuntimeIdentity's run id, so callers inside a run do
+                          not have to thread it through. A per-message ``run_id``
+                          key overrides it for that one message.
 
         Returns:
             True when the messages were written, False when the session was
@@ -481,6 +536,10 @@ class ConversationStore:
         """
         if not messages:
             return False
+
+        if run_id is None:
+            from common.utils import current_agent_run_id
+            run_id = current_agent_run_id() or ""
 
         now = int(time.time())
         with self._lock:
@@ -525,13 +584,14 @@ class ConversationStore:
                         )
                         extras_obj = msg.get("extras") or {}
                         extras = json.dumps(extras_obj, ensure_ascii=False) if extras_obj else ""
+                        msg_run_id = str(msg.get("run_id") or run_id or "")
                         conn.execute(
                             """
                             INSERT OR IGNORE INTO messages
-                                (session_id, seq, role, content, created_at, extras)
-                            VALUES (?, ?, ?, ?, ?, ?)
+                                (session_id, seq, role, content, created_at, extras, run_id)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
                             """,
-                            (session_id, next_seq, role, content, now, extras),
+                            (session_id, next_seq, role, content, now, extras, msg_run_id),
                         )
                         next_seq += 1
 
@@ -977,6 +1037,198 @@ class ConversationStore:
             finally:
                 conn.close()
 
+    # ------------------------------------------------------------------
+    # Runs: addressable, persisted units of work
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _run_row_to_dict(row: tuple) -> Dict[str, Any]:
+        (
+            run_id, agent_id, user_id, session_id, parent_run_id,
+            task_id, task_source, status, started_at, ended_at, error, raw_extras,
+        ) = row
+        try:
+            extras = json.loads(raw_extras) if raw_extras else {}
+            if not isinstance(extras, dict):
+                extras = {}
+        except Exception:
+            extras = {}
+        return {
+            "run_id": run_id,
+            "agent_id": agent_id,
+            "user_id": user_id,
+            "session_id": session_id,
+            "parent_run_id": parent_run_id,
+            "task_id": task_id,
+            "task_source": task_source,
+            "status": status,
+            "started_at": started_at,
+            "ended_at": ended_at,
+            "error": error,
+            "extras": extras,
+        }
+
+    _RUN_COLUMNS = (
+        "run_id, agent_id, user_id, session_id, parent_run_id, "
+        "task_id, task_source, status, started_at, ended_at, error, extras"
+    )
+
+    def create_run(
+        self,
+        run_id: str,
+        *,
+        agent_id: str = "",
+        user_id: str = "",
+        session_id: str = "",
+        parent_run_id: str = "",
+        task_id: str = "",
+        task_source: str = "",
+        status: str = "running",
+        extras: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Record the start of a run. Idempotent: a second call with the same
+        run_id is ignored so a retried entry point does not duplicate the row.
+
+        Returns True when a new row was written, False when it already existed.
+        """
+        if not run_id:
+            raise ValueError("run_id is required")
+        now = int(time.time())
+        extras_json = (
+            json.dumps(extras, ensure_ascii=False) if extras else ""
+        )
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    cur = conn.execute(
+                        """
+                        INSERT OR IGNORE INTO runs
+                            (run_id, agent_id, user_id, session_id, parent_run_id,
+                             task_id, task_source, status, started_at, ended_at,
+                             error, extras)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, '', ?)
+                        """,
+                        (
+                            run_id, agent_id, user_id, session_id, parent_run_id,
+                            task_id, task_source, status, now, extras_json,
+                        ),
+                    )
+                    return cur.rowcount > 0
+            finally:
+                conn.close()
+
+    def finish_run(
+        self,
+        run_id: str,
+        status: str = "done",
+        error: str = "",
+        extras: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Mark a run finished (or failed). Sets ended_at and, when given,
+        merges ``extras`` into the stored sidecar. Returns True if the run
+        existed.
+        """
+        if not run_id:
+            return False
+        now = int(time.time())
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    if extras:
+                        row = conn.execute(
+                            "SELECT extras FROM runs WHERE run_id = ?", (run_id,)
+                        ).fetchone()
+                        if row is None:
+                            return False
+                        try:
+                            cur_extras = json.loads(row[0]) if row[0] else {}
+                            if not isinstance(cur_extras, dict):
+                                cur_extras = {}
+                        except Exception:
+                            cur_extras = {}
+                        cur_extras.update(extras)
+                        extras_json = json.dumps(cur_extras, ensure_ascii=False)
+                        cur = conn.execute(
+                            """
+                            UPDATE runs
+                            SET status = ?, error = ?, ended_at = ?, extras = ?
+                            WHERE run_id = ?
+                            """,
+                            (status, error, now, extras_json, run_id),
+                        )
+                    else:
+                        cur = conn.execute(
+                            """
+                            UPDATE runs
+                            SET status = ?, error = ?, ended_at = ?
+                            WHERE run_id = ?
+                            """,
+                            (status, error, now, run_id),
+                        )
+                    return cur.rowcount > 0
+            finally:
+                conn.close()
+
+    def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
+        """Return a single run by id, or None."""
+        if not run_id:
+            return None
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    f"SELECT {self._RUN_COLUMNS} FROM runs WHERE run_id = ?",
+                    (run_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+        return self._run_row_to_dict(row) if row else None
+
+    def list_runs(
+        self,
+        session_id: Optional[str] = None,
+        parent_run_id: Optional[str] = None,
+        task_source: Optional[str] = None,
+        task_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """List runs, newest first, filtered by any combination of the given
+        dimensions. ``parent_run_id=''`` selects top-level runs only.
+        """
+        clauses: List[str] = []
+        params: List[Any] = []
+        if session_id is not None:
+            clauses.append("session_id = ?")
+            params.append(session_id)
+        if parent_run_id is not None:
+            clauses.append("parent_run_id = ?")
+            params.append(parent_run_id)
+        if task_source is not None:
+            clauses.append("task_source = ?")
+            params.append(task_source)
+        if task_id is not None:
+            clauses.append("task_id = ?")
+            params.append(task_id)
+        if status is not None:
+            clauses.append("status = ?")
+            params.append(status)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(1, limit))
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    f"SELECT {self._RUN_COLUMNS} FROM runs {where} "
+                    "ORDER BY started_at DESC, run_id DESC LIMIT ?",
+                    tuple(params),
+                ).fetchall()
+            finally:
+                conn.close()
+        return [self._run_row_to_dict(r) for r in rows]
+
     def load_history_page(
         self,
         session_id: str,
@@ -1083,11 +1335,17 @@ class ConversationStore:
         page_size: int = 50,
     ) -> Dict[str, Any]:
         """
-        List sessions ordered by last_active DESC, with optional channel_type filter.
+        List sessions with pinned ones first, then last_active DESC, with an
+        optional channel_type filter.
+
+        Pinned sessions sort ahead of everything else rather than only ahead of
+        the rows on the same page, so a pin still reaches the top of the list
+        when the conversation is old enough to sit several pages down.
 
         Returns:
             {
-                "sessions": [{session_id, title, created_at, last_active, msg_count}, ...],
+                "sessions": [{session_id, title, created_at, last_active,
+                              msg_count, pinned}, ...],
                 "total": int,
                 "page": int,
                 "page_size": int,
@@ -1105,10 +1363,10 @@ class ConversationStore:
                     ).fetchone()[0]
                     rows = conn.execute(
                         """
-                        SELECT session_id, title, created_at, last_active, msg_count
+                        SELECT session_id, title, created_at, last_active, msg_count, pinned
                         FROM sessions
                         WHERE channel_type = ?
-                        ORDER BY last_active DESC
+                        ORDER BY pinned DESC, last_active DESC
                         LIMIT ? OFFSET ?
                         """,
                         (channel_type, page_size, (page - 1) * page_size),
@@ -1119,9 +1377,9 @@ class ConversationStore:
                     ).fetchone()[0]
                     rows = conn.execute(
                         """
-                        SELECT session_id, title, created_at, last_active, msg_count
+                        SELECT session_id, title, created_at, last_active, msg_count, pinned
                         FROM sessions
-                        ORDER BY last_active DESC
+                        ORDER BY pinned DESC, last_active DESC
                         LIMIT ? OFFSET ?
                         """,
                         (page_size, (page - 1) * page_size),
@@ -1136,6 +1394,7 @@ class ConversationStore:
                 "created_at": r[2],
                 "last_active": r[3],
                 "msg_count": r[4],
+                "pinned": bool(r[5]),
             }
             for r in rows
         ]
@@ -1160,6 +1419,40 @@ class ConversationStore:
                     return cur.rowcount > 0
             finally:
                 conn.close()
+
+    def set_pinned(self, session_id: str, pinned: bool) -> bool:
+        """Pin or unpin a session. Returns True if the session existed."""
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    cur = conn.execute(
+                        "UPDATE sessions SET pinned = ? WHERE session_id = ?",
+                        (1 if pinned else 0, session_id),
+                    )
+                    return cur.rowcount > 0
+            finally:
+                conn.close()
+
+    def list_session_ids(self, channel_type: Optional[str] = None) -> List[str]:
+        """Every session id, optionally filtered by channel.
+
+        One cheap single-column scan, used to work out how many distinct project
+        spaces are actually in play without paging through full session rows.
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                if channel_type:
+                    rows = conn.execute(
+                        "SELECT session_id FROM sessions WHERE channel_type = ?",
+                        (channel_type,),
+                    ).fetchall()
+                else:
+                    rows = conn.execute("SELECT session_id FROM sessions").fetchall()
+            finally:
+                conn.close()
+        return [r[0] for r in rows]
 
     def get_stats(self) -> Dict[str, Any]:
         """Return basic stats keyed by channel_type, for monitoring."""
@@ -1253,6 +1546,13 @@ class ConversationStore:
                 logger.info("[ConversationStore] Migrated: added context_start_seq column")
             except Exception as e:
                 logger.warning(f"[ConversationStore] Migration (context_start_seq) failed: {e}")
+        if "pinned" not in cols:
+            try:
+                conn.execute(_MIGRATION_ADD_PINNED)
+                conn.commit()
+                logger.info("[ConversationStore] Migrated: added pinned column")
+            except Exception as e:
+                logger.warning(f"[ConversationStore] Migration (pinned) failed: {e}")
 
         msg_cols = {
             row[1]
@@ -1265,6 +1565,13 @@ class ConversationStore:
                 logger.info("[ConversationStore] Migrated: added messages.extras column")
             except Exception as e:
                 logger.warning(f"[ConversationStore] Migration (extras) failed: {e}")
+        if "run_id" not in msg_cols:
+            try:
+                conn.execute(_MIGRATION_ADD_MSG_RUN_ID)
+                conn.commit()
+                logger.info("[ConversationStore] Migrated: added messages.run_id column")
+            except Exception as e:
+                logger.warning(f"[ConversationStore] Migration (run_id) failed: {e}")
 
     def _connect(self) -> sqlite3.Connection:
         with self._lock:

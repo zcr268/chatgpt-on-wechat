@@ -2,6 +2,7 @@ import io
 import os
 import re
 import sys
+from typing import Optional
 from urllib.parse import urlparse
 from common.log import logger
 
@@ -211,6 +212,100 @@ def apply_cloud_user(headers: dict) -> dict:
     return headers
 
 
+def _deployment_id() -> str:
+    """Server-side deployment id, or '' when unset."""
+    dep = os.environ.get("CLOUD_DEPLOYMENT_ID", "")
+    if dep:
+        return dep
+    try:
+        from config import conf
+        return conf().get("cloud_deployment_id", "") or ""
+    except Exception:
+        return ""
+
+
+def get_client_source() -> str:
+    """Coarse runtime origin, for stats only. First match wins."""
+    if _deployment_id():
+        return "cloud"
+    explicit = (os.environ.get("COW_CLIENT_SOURCE") or "").strip()
+    if explicit:
+        return explicit
+    if os.environ.get("COW_DESKTOP") == "1":
+        return "desktop"
+    return "open-source"
+
+
+def _client_os() -> str:
+    """Coarse OS family (mac / windows / linux), for stats only."""
+    p = sys.platform
+    if p.startswith("darwin"):
+        return "mac"
+    if p.startswith("win"):
+        return "windows"
+    if p.startswith("linux"):
+        return "linux"
+    return p or ""
+
+
+def set_agent_run_id(run_id: Optional[str]):
+    """Set the ambient run id. Kept for callers that only need the run id and
+    do not carry a full RuntimeIdentity; it writes the single source of truth,
+    ``RuntimeIdentity.run_id``, so this value and the identity never diverge.
+
+    Returns a token accepted by ``clear_agent_run_id``.
+    """
+    from common.runtime_identity import current_identity, _current
+
+    value = str(run_id).strip() if run_id is not None and str(run_id).strip() else None
+    return _current.set(current_identity().derive(run_id=value))
+
+
+def clear_agent_run_id(token) -> None:
+    from common.runtime_identity import _current
+
+    try:
+        _current.reset(token)
+    except Exception:
+        pass
+
+
+def current_agent_run_id() -> Optional[str]:
+    """Current run id: the ambient ``RuntimeIdentity`` first, else the value
+    passed to a child process via the COW_AGENT_RUN_ID env var.
+
+    One source of truth: subagents and delegated work set the run id through
+    ``RuntimeIdentity`` (via ``identity_scope``), and this reads the same field
+    so the id carried on state paths matches the one tagged onto outbound
+    requests via the ``X-Agent-Run-Id`` header.
+    """
+    from common.runtime_identity import current_identity
+
+    return (
+        current_identity().run_id
+        or (os.environ.get("COW_AGENT_RUN_ID") or "").strip()
+        or None
+    )
+
+
+def apply_client_source(headers: dict) -> dict:
+    """Tag headers with the runtime origin (and deployment id when set)."""
+    headers["X-Client-Source"] = get_client_source()
+    os_family = _client_os()
+    if os_family:
+        headers["X-Client-OS"] = os_family
+    version = (os.environ.get("COW_CLIENT_VERSION") or "").strip()
+    if version:
+        headers["X-Client-Version"] = version
+    run_id = current_agent_run_id()
+    if run_id:
+        headers["X-Agent-Run-Id"] = run_id
+    dep = _deployment_id()
+    if dep:
+        headers["X-Deployment-Id"] = dep
+    return headers
+
+
 def get_cloud_headers(api_key: str) -> dict:
     """
     Build standard headers for LinkAI API requests,
@@ -227,4 +322,5 @@ def get_cloud_headers(api_key: str) -> dict:
             headers["X-Client-Id"] = client_id
     except Exception:
         pass
+    apply_client_source(headers)
     return apply_cloud_user(headers)
