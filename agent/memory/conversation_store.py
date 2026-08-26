@@ -1171,6 +1171,39 @@ class ConversationStore:
             finally:
                 conn.close()
 
+    def update_run_extras(self, run_id: str, extras: Dict[str, Any]) -> bool:
+        """Merge keys into a run's sidecar without touching its lifecycle.
+
+        Lets an observer attach a payload to a run it did not execute, so the
+        status stays owned by whoever actually ran the work. Returns True if
+        the run existed.
+        """
+        if not run_id or not extras:
+            return False
+        with self._lock:
+            conn = self._connect()
+            try:
+                with conn:
+                    row = conn.execute(
+                        "SELECT extras FROM runs WHERE run_id = ?", (run_id,)
+                    ).fetchone()
+                    if row is None:
+                        return False
+                    try:
+                        merged = json.loads(row[0]) if row[0] else {}
+                        if not isinstance(merged, dict):
+                            merged = {}
+                    except Exception:
+                        merged = {}
+                    merged.update(extras)
+                    conn.execute(
+                        "UPDATE runs SET extras = ? WHERE run_id = ?",
+                        (json.dumps(merged, ensure_ascii=False), run_id),
+                    )
+                    return True
+            finally:
+                conn.close()
+
     def get_run(self, run_id: str) -> Optional[Dict[str, Any]]:
         """Return a single run by id, or None."""
         if not run_id:

@@ -495,13 +495,20 @@ class AgentBridge:
 
         A run id already in scope means this turn was started by another run
         (a delegation or a spawn), so that one becomes the parent and the tree
-        stays walkable from either end.
+        stays walkable from either end. A caller that hands work to another
+        thread cannot rely on that ambient id, since context variables do not
+        cross threads, so it may instead name the run and its parent through
+        the context and keep the tree intact.
         """
         from common.utils import current_agent_run_id, set_agent_run_id
 
         try:
-            parent_run_id = current_agent_run_id() or ""
-            run_id = uuid.uuid4().hex
+            parent_run_id = str(
+                (context.get("parent_run_id") if context else "")
+                or current_agent_run_id()
+                or ""
+            )
+            run_id = str((context.get("run_id") if context else "") or "") or uuid.uuid4().hex
             store = self.get_conversation_store(agent_id)
             # An external system driving this work passes its own handle
             # through the context; a native turn leaves both empty.
