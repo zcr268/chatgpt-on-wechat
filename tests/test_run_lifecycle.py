@@ -99,6 +99,54 @@ class RunLifecycleTest(unittest.TestCase):
         self.bridge._end_run(outer_store, outer_id, outer_token, "done")
         self.assertIsNone(current_agent_run_id())
 
+    def test_caller_may_name_the_run_before_the_work_starts(self):
+        """A handle has to exist before the turn does, or it cannot be handed
+        back to a caller that is not going to wait for the answer.
+        """
+        run_id, token, store = self.bridge._begin_run(
+            "s1", "sales", _context(run_id="handle-1")
+        )
+
+        self.assertEqual(run_id, "handle-1")
+        self.assertIsNotNone(self.store.get_run("handle-1"))
+        self.bridge._end_run(store, run_id, token, "done")
+
+    def test_parent_can_be_named_when_it_cannot_be_inherited(self):
+        """Context variables do not cross threads, so a run handed to another
+        thread has to be told who its parent is.
+        """
+        parent_id, parent_token, parent_store = self.bridge._begin_run(
+            "s1", "sales", None
+        )
+        # Leaving the parent's scope stands in for arriving on another thread,
+        # where the ambient id reads as empty.
+        self.bridge._end_run(parent_store, parent_id, parent_token, "done")
+        self.assertIsNone(current_agent_run_id())
+
+        child_id, child_token, child_store = self.bridge._begin_run(
+            "s2", "support", _context(parent_run_id=parent_id)
+        )
+
+        self.assertEqual(self.store.get_run(child_id)["parent_run_id"], parent_id)
+        self.assertEqual(
+            [c["run_id"] for c in self.store.list_runs(parent_run_id=parent_id)],
+            [child_id],
+        )
+        self.bridge._end_run(child_store, child_id, child_token, "done")
+
+    def test_an_explicit_parent_wins_over_the_ambient_one(self):
+        outer_id, outer_token, outer_store = self.bridge._begin_run("s1", "sales", None)
+
+        child_id, child_token, child_store = self.bridge._begin_run(
+            "s2", "support", _context(parent_run_id="somewhere-else")
+        )
+
+        self.assertEqual(
+            self.store.get_run(child_id)["parent_run_id"], "somewhere-else"
+        )
+        self.bridge._end_run(child_store, child_id, child_token, "done")
+        self.bridge._end_run(outer_store, outer_id, outer_token, "done")
+
     def test_external_task_handle_is_carried_from_the_context(self):
         run_id, token, store = self.bridge._begin_run(
             "s1", "sales", _context(task_id="T-1", task_source="board")
