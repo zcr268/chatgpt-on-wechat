@@ -38,6 +38,10 @@ class _FakeParent:
     def __init__(self, tools, workspace_dir):
         self.tools = tools
         self.workspace_dir = workspace_dir
+        # The runner copies both onto the child so a sub agent cannot widen
+        # the session's reach. Unset here, as on a fresh Agent.
+        self.project_dir = None
+        self.permission_mode = None
         self.model = object()
         self.max_steps = 7
         self.max_context_tokens = 1234
