@@ -12,16 +12,22 @@ def test_web_backend_exposes_agent_and_core_file_routes():
     source = _read("channel/web/web_channel.py")
     assert "'/api/agents', 'AgentsHandler'" in source
     assert "'/api/agents/([^/]+)/files/([^/]+)', 'AgentCoreFileHandler'" in source
+    assert "'/api/agents/([^/]+)/avatar', 'AgentAvatarHandler'" in source
     assert "class AgentsHandler:" in source
     assert "class AgentCoreFileHandler:" in source
+    assert "scope" in source and "_list_sessions_across_agents" in source
 
 
-def test_console_has_agent_selector_workspace_manager_and_core_files():
+def test_console_has_agent_cards_not_a_tenant_switcher():
     html = _read("channel/web/chat.html")
-    assert 'id="agent-selector"' in html
-    assert 'id="view-agents"' in html
-    assert 'id="agents-list"' in html
+    assert 'id="agent-selector"' not in html
+    # The list lives under Settings rather than in the sidebar: managing the
+    # team is a setup task, not somewhere to spend the day.
+    assert 'id="config-panel-team"' in html
+    assert 'data-view="agents"' not in html
+    assert 'id="agents-grid"' in html
     assert 'id="agent-core-editor"' in html
+    assert 'id="composer-agent-btn"' in html
     for filename in ("AGENT.md", "USER.md", "RULE.md", "MEMORY.md", "BOOTSTRAP.md"):
         assert f"<option>{filename}</option>" in html
 
@@ -30,8 +36,10 @@ def test_console_carries_agent_id_through_existing_feature_requests():
     source = _read("channel/web/static/js/console.js")
     assert "body.agent_id = activeAgentId" in source
     assert "agent_id=${encodeURIComponent(activeAgentId)}" in source
-    assert "function selectActiveAgent(agentId)" in source
     assert "function runtimeSessionKey" in source
+    assert "scope=all" in source
+    assert "function startChatWithAgent" in source
+    assert "function bindChannelAgent" in source
 
 
 def test_workspace_scoped_web_services_resolve_selected_agent():

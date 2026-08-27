@@ -832,24 +832,52 @@ function renderMentionMenu() {
         menu.classList.remove('hidden');
         return;
     }
-    menu.innerHTML = mentionItems.map((item, i) => `
-        <div class="mention-item ${i === mentionIndex ? 'active' : ''}" data-idx="${i}">
+    menu.innerHTML = mentionItems.map((item, i) => {
+        if (item.kind === 'agent') {
+            const face = typeof agentAvatarHTML === 'function'
+                ? agentAvatarHTML(item, 20)
+                : `<i class="fas fa-user"></i>`;
+            return `<div class="mention-item ${i === mentionIndex ? 'active' : ''}" data-idx="${i}">
+                ${face}
+                <span class="m-name">${escapeHtml(item.name)}</span>
+                <span class="m-path">@${escapeHtml(item.id)}</span>
+            </div>`;
+        }
+        return `<div class="mention-item ${i === mentionIndex ? 'active' : ''}" data-idx="${i}">
             <i class="${wsIconClass(item.kind)}"></i>
             <span class="m-name">${escapeHtml(item.name)}</span>
             <span class="m-path">${escapeHtml(item.path)}</span>
-        </div>`).join('');
+        </div>`;
+    }).join('');
     menu.classList.remove('hidden');
 }
 
+function matchingAgentMentions(query) {
+    // With a single Agent there is nobody to address, so @ stays what it was:
+    // a file picker.
+    if (typeof multiAgentMode !== 'function' || !multiAgentMode()) return [];
+    const q = String(query || '').toLowerCase();
+    return enabledAgents()
+        .filter(agent => agent.id !== (typeof activeAgentId !== 'undefined' ? activeAgentId : ''))
+        .filter(agent => !q || agent.id.toLowerCase().includes(q) || String(agent.name).toLowerCase().includes(q))
+        .slice(0, 6)
+        .map(agent => ({ kind: 'agent', id: agent.id, name: agent.name, avatar: agent.avatar || '' }));
+}
+
 async function updateMentionQuery(query) {
+    const agents = matchingAgentMentions(query);
     try {
         const data = await wsApi(`/api/workspace/search?q=${encodeURIComponent(query)}&limit=12`);
         if (!mentionActive) return;
-        mentionItems = data.results || [];
+        mentionItems = agents.concat(data.results || []);
         mentionIndex = 0;
         renderMentionMenu();
     } catch (_) {
-        hideMentionMenu();
+        if (!mentionActive) return;
+        mentionItems = agents;
+        mentionIndex = 0;
+        if (agents.length) renderMentionMenu();
+        else hideMentionMenu();
     }
 }
 
@@ -857,12 +885,21 @@ function acceptMention(idx) {
     const item = mentionItems[idx];
     const input = document.getElementById('chat-input');
     if (!item || !input) return;
-    addWorkspaceRefAttachment(item);
-    // Drop the "@query" fragment: the file travels as an attachment, not as text.
     const before = input.value.slice(0, mentionStart);
     const after = input.value.slice(input.selectionStart);
-    input.value = before + after;
-    input.selectionStart = input.selectionEnd = before.length;
+    if (item.kind === 'agent') {
+        // Write the name, not the id: the mention is addressed to a colleague
+        // and should read like one. The server resolves either form.
+        const inserted = `@${item.name || item.id} `;
+        input.value = before + inserted + after;
+        input.selectionStart = input.selectionEnd = before.length + inserted.length;
+        if (typeof addTeamMember === 'function') addTeamMember(item.id);
+    } else {
+        addWorkspaceRefAttachment(item);
+        // Drop the "@query" fragment: the file travels as an attachment, not as text.
+        input.value = before + after;
+        input.selectionStart = input.selectionEnd = before.length;
+    }
     hideMentionMenu();
     input.focus();
     input.dispatchEvent(new Event('input'));

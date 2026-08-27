@@ -1429,6 +1429,9 @@ class WebChannel(ChatChannel):
                 explicit_agent_id=json_data.get("agent_id"),
             )
             prompt = json_data.get('message', '')
+            # Kept before any prefixing or attachment lines, so mention parsing
+            # still sees what the user actually typed.
+            typed_prompt = prompt
             use_sse = json_data.get('stream', True)
             attachments = json_data.get('attachments', [])
             # Tag the message as originating from voice input so the post-reply
@@ -1561,6 +1564,16 @@ class WebChannel(ChatChannel):
             context["receiver"] = session_id
             context["request_id"] = request_id
             context["agent_id"] = resolved_agent_id
+            # Addressing a teammate hands them the turn. The conversation still
+            # belongs to `resolved_agent_id`, so this only changes who answers.
+            # The composer already knows who it wrote; parsing the text is the
+            # fallback for a mention typed by hand or replayed from history.
+            roster = _session_roster(session_id, resolved_agent_id)
+            addressed = (json_data.get("speaker_agent_id") or "").strip()
+            if not addressed or not any(item["id"] == addressed for item in roster):
+                addressed = _addressed_agent_id(typed_prompt, roster)
+            if addressed and addressed != resolved_agent_id:
+                context["speaker_agent_id"] = addressed
             if is_voice_input:
                 # Web channel runs its own TTS post-pipeline via
                 # _maybe_dispatch_auto_tts; don't set desire_rtype here or
@@ -1572,7 +1585,14 @@ class WebChannel(ChatChannel):
 
             threading.Thread(target=self.produce, args=(context,)).start()
 
-            return json.dumps({"status": "success", "request_id": request_id, "stream": use_sse})
+            return json.dumps({
+                "status": "success",
+                "request_id": request_id,
+                "stream": use_sse,
+                # Lets the live bubble carry the right name and face while the
+                # reply streams, before any of it has been persisted.
+                "speaker": context.get("speaker_agent_id") or "",
+            })
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
@@ -2009,6 +2029,7 @@ class WebChannel(ChatChannel):
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
             '/api/agents', 'AgentsHandler',
+            '/api/agents/([^/]+)/avatar', 'AgentAvatarHandler',
             '/api/agents/([^/]+)/files/([^/]+)', 'AgentCoreFileHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
@@ -5536,10 +5557,13 @@ class SkillsHandler:
         try:
             from agent.skills.service import SkillService
             from agent.skills.manager import SkillManager
-            from common import i18n
+            from common import i18n, state_dir
             params = web.input(agent_id='')
             workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
-            manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
+            # The library page lists everything installed, unnarrowed by the
+            # Agent's selection: a skill it has not selected still has to be
+            # visible here for the selection to be editable at all.
+            manager = SkillManager(custom_dir=str(state_dir.skills_dir(base=workspace_root)))
             service = SkillService(manager)
             skills = service.query()
             if i18n.get_language() == i18n.ZH_HANT:
@@ -5559,13 +5583,14 @@ class SkillsHandler:
         try:
             from agent.skills.service import SkillService
             from agent.skills.manager import SkillManager
+            from common import state_dir
             body = json.loads(web.data())
             action = body.get("action")
             name = body.get("name")
             if not action or not name:
                 return json.dumps({"status": "error", "message": "action and name are required"})
             workspace_root = _get_workspace_root(agent_id=_request_agent_id(body))
-            manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
+            manager = SkillManager(custom_dir=str(state_dir.skills_dir(base=workspace_root)))
             service = SkillService(manager)
             if action == "open":
                 service.open({"name": name})
@@ -5839,9 +5864,6 @@ def _reload_agent_runtime(service) -> None:
     router = AgentRouter.from_config(settings, registry)
     set_agent_registry(registry)
     set_agent_router(router)
-    conf()["agents"] = [profile.to_dict() for profile in registry.list()]
-    conf()["default_agent_id"] = registry.default_agent_id
-    conf()["agent_bindings"] = list(settings.get("agent_bindings") or [])
 
     from bridge.bridge import Bridge
     bridge = Bridge()
@@ -5880,24 +5902,56 @@ class AgentsHandler:
             body = json.loads(web.data())
             action = body.get("action")
             service = _agent_admin_service()
+            revision = body.get("revision") or None
             if action == "create":
                 result = service.create_agent(
                     agent_id=body.get("id", ""),
                     name=body.get("name", ""),
-                    workspace=body.get("workspace", ""),
+                    # Blank means "put it where a new one goes", which is what
+                    # the console sends: it asks for a name, not a path.
+                    workspace=body.get("workspace") or None,
                     clone_from=body.get("clone_from") or None,
+                    avatar=body.get("avatar") or None,
+                    description=body.get("description") or None,
+                    skills=body.get("skills"),
+                    knowledge=body.get("knowledge"),
+                    revision=revision,
                 )
             elif action == "update":
-                result = service.update_agent(
-                    body.get("id", ""),
-                    name=body.get("name"),
-                    enabled=body.get("enabled"),
-                    make_default=bool(body.get("make_default", False)),
-                )
+                updates = {
+                    "name": body.get("name"),
+                    "enabled": body.get("enabled"),
+                    "make_default": bool(body.get("make_default", False)),
+                    "avatar": body.get("avatar"),
+                    "description": body.get("description"),
+                    "model": body.get("model"),
+                    "bot_type": body.get("bot_type"),
+                    "revision": revision,
+                }
+                if "skills" in body:
+                    updates["skills"] = body.get("skills")
+                if "knowledge" in body:
+                    updates["knowledge"] = body.get("knowledge")
+                result = service.update_agent(body.get("id", ""), **updates)
             elif action == "archive":
-                result = service.archive_agent(body.get("id", ""))
+                result = service.archive_agent(body.get("id", ""), revision=revision)
+            elif action == "set_binding":
+                result = service.set_binding(
+                    body.get("agent_id", ""),
+                    body.get("channel_type", ""),
+                    body.get("conversation_id"),
+                    revision=revision,
+                )
+            elif action == "remove_binding":
+                result = service.remove_binding(
+                    body.get("channel_type", ""),
+                    body.get("conversation_id"),
+                    revision=revision,
+                )
             elif action == "replace_bindings":
-                result = service.replace_bindings(body.get("bindings") or [])
+                result = service.replace_bindings(
+                    body.get("bindings") or [], revision=revision
+                )
             else:
                 return json.dumps({
                     "status": "error", "message": f"unknown action: {action}"
@@ -5905,6 +5959,9 @@ class AgentsHandler:
             _reload_agent_runtime(service)
             return json.dumps({"status": "success", "result": result}, ensure_ascii=False)
         except Exception as e:
+            from agent.admin import StaleRosterError
+            if isinstance(e, StaleRosterError):
+                web.ctx.status = "409 Conflict"
             logger.error(f"[WebChannel] Agents POST error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
@@ -5944,6 +6001,97 @@ class AgentCoreFileHandler:
             from agent.admin import StaleAgentFileError
             if isinstance(e, StaleAgentFileError):
                 web.ctx.status = "409 Conflict"
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+# An emoji costs nothing to store or serve, so it is the default way to tell
+# Agents apart; an uploaded picture sets the field to this token instead and the
+# bytes live beside the other shared assets.
+AVATAR_IMAGE_TOKEN = "image"
+AVATAR_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
+
+
+def _avatar_path(agent_id: str) -> Optional[str]:
+    from common.state_dir import shared_root
+
+    base = shared_root() / "avatars"
+    for suffix in AVATAR_TYPES:
+        candidate = base / f"{agent_id}{suffix}"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+class AgentAvatarHandler:
+    def GET(self, agent_id: str):
+        _require_auth()
+        path = _avatar_path(agent_id)
+        if not path:
+            web.ctx.status = "404 Not Found"
+            web.header('Content-Type', 'application/json; charset=utf-8')
+            return json.dumps({"status": "error", "message": "no avatar"})
+        with open(path, "rb") as handle:
+            data = handle.read()
+        web.header('Content-Type', AVATAR_TYPES[os.path.splitext(path)[1].lower()])
+        # Content-addressed by the caller via ?v=, so it can be cached hard.
+        web.header('Cache-Control', 'private, max-age=86400')
+        return data
+
+    def POST(self, agent_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from common.state_dir import shared_root
+            from agent.registry import get_agent_registry
+
+            get_agent_registry().get(agent_id, require_enabled=False)
+            params = web.input(avatar={})
+            upload = params.get("avatar")
+            raw = getattr(upload, "value", None)
+            filename = getattr(upload, "filename", "") or ""
+            if not raw:
+                return json.dumps({"status": "error", "message": "avatar file required"})
+            if len(raw) > MAX_AVATAR_BYTES:
+                return json.dumps({"status": "error", "message": "avatar exceeds 2 MiB"})
+            suffix = os.path.splitext(filename)[1].lower()
+            if suffix not in AVATAR_TYPES:
+                return json.dumps({
+                    "status": "error",
+                    "message": f"unsupported image type: {suffix or 'unknown'}",
+                })
+
+            base = shared_root() / "avatars"
+            base.mkdir(parents=True, exist_ok=True)
+            # Drop any other extension first, so one Agent never ends up with
+            # two avatar files and a resolution order deciding which one wins.
+            for other in AVATAR_TYPES:
+                stale = base / f"{agent_id}{other}"
+                if other != suffix and stale.is_file():
+                    try:
+                        stale.unlink()
+                    except OSError:
+                        pass
+            target = base / f"{agent_id}{suffix}"
+            tmp = base / f".{agent_id}{suffix}.tmp"
+            with open(tmp, "wb") as handle:
+                handle.write(raw)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, target)
+
+            service = _agent_admin_service()
+            result = service.update_agent(agent_id, avatar=AVATAR_IMAGE_TOKEN)
+            _reload_agent_runtime(service)
+            return json.dumps({"status": "success", "result": result}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] Agent avatar upload error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5992,23 +6140,193 @@ def _annotate_sessions_with_projects(store, result: dict, agent_id: Optional[str
     result["project_order"] = project_store.get_order()
 
 
+def _agent_badge(profile) -> dict:
+    return {"id": profile.id, "name": profile.name, "avatar": profile.avatar or ""}
+
+
+def _roster_from_members(host_agent_id: str, members) -> List[dict]:
+    """Badge every reachable member of a conversation, host first."""
+    from agent.registry import get_agent_registry
+
+    if not members:
+        return []
+    registry = get_agent_registry()
+    roster: List[dict] = []
+    for agent_id in [host_agent_id, *members]:
+        if any(item["id"] == agent_id for item in roster):
+            continue
+        try:
+            roster.append(_agent_badge(registry.get(agent_id)))
+        except Exception:
+            continue
+    return roster
+
+
+def _session_roster(session_id: str, host_agent_id: str) -> List[dict]:
+    """Everyone who can be addressed in this conversation, host included.
+
+    Empty for a conversation nobody was invited into, which is every
+    conversation until the user says otherwise.
+    """
+    from agent.workspace import session_prefs
+
+    try:
+        members = session_prefs.get_prefs(session_id, host_agent_id).get("members")
+    except Exception as e:
+        logger.debug(f"[WebChannel] roster lookup failed for {session_id}: {e}")
+        return []
+    return _roster_from_members(host_agent_id, members)
+
+
+def _addressed_agent_id(text: str, roster: List[dict]) -> str:
+    """The teammate this message names, or "" when it names nobody.
+
+    Matching accepts the display name as well as the id, because the composer
+    writes the name — nobody types ``@agent-17n3e8`` on purpose. Longer labels
+    are tried first so that a name containing another name still resolves to
+    the one actually written.
+
+    Only a leading mention counts. Naming somebody mid-sentence is usually
+    talking *about* them ("ask Ops to..."), not handing them the turn.
+    """
+    stripped = (text or "").lstrip()
+    if not stripped.startswith("@"):
+        return ""
+    candidates = []
+    for item in roster:
+        for label in (item.get("name") or "", item.get("id") or ""):
+            if label:
+                candidates.append((label, item["id"]))
+    for label, agent_id in sorted(candidates, key=lambda pair: -len(pair[0])):
+        pattern = r"^@" + re.escape(label) + r"(?=[\s，,：:、]|$)"
+        if re.match(pattern, stripped, re.IGNORECASE):
+            return agent_id
+    return ""
+
+
+def _list_sessions_across_agents(page: int, page_size: int) -> dict:
+    """One page of every Agent's conversations, merged.
+
+    Sessions are stored one database per Agent, so "all conversations" is a
+    merge across files rather than a query. Each Agent is asked for as many rows
+    as the requested page could possibly draw from it, because any of them can
+    supply the row that sorts into that page.
+
+    Presenting them in one list is what keeps a second Agent from feeling like a
+    second account: the alternative, switching the whole console to look at
+    another Agent's conversations, makes the roster a tenant selector.
+    """
+    from agent.memory import get_conversation_store
+    from agent.registry import get_agent_registry
+    from agent.workspace import project_store, session_prefs
+    from common.state_dir import state_root_str
+
+    take = max(1, page) * page_size
+    merged: List[dict] = []
+    total = 0
+    space_paths = set()
+    uses_default = False
+    try:
+        members_index = session_prefs.members_index()
+    except Exception as e:
+        # Faces are decoration; losing them must not cost the user the list.
+        logger.warning(f"[WebChannel] Could not read session rosters: {e}")
+        members_index = {}
+
+    for profile in get_agent_registry().list(include_disabled=False):
+        try:
+            store = get_conversation_store(profile.workspace)
+            chunk = store.list_sessions(channel_type="web", page=1, page_size=take)
+            project_map = project_store.get_project_map(profile.id)
+            session_ids = store.list_session_ids(channel_type="web")
+        except Exception as e:
+            # One unreadable workspace must not blank out the whole list; the
+            # other Agents' conversations are still perfectly readable.
+            logger.warning(
+                f"[WebChannel] Skipping sessions for agent={profile.id}: {e}"
+            )
+            continue
+
+        total += chunk.get("total", 0)
+        badge = _agent_badge(profile)
+        for session in chunk.get("sessions") or []:
+            path = project_map.get(session["session_id"])
+            session["agent"] = badge
+            # Only a conversation with more than one Agent in it needs faces in
+            # the list; a solo one reads better as a plain row, exactly as it
+            # did before there was a roster.
+            roster = _roster_from_members(
+                profile.id, members_index.get((profile.id, session["session_id"]))
+            )
+            if len(roster) > 1:
+                session["participants"] = roster
+            session["project"] = (
+                {"path": path, "name": project_store.display_name_for(path)}
+                if path else None
+            )
+            merged.append(session)
+
+        for sid in session_ids:
+            path = project_map.get(sid)
+            if path:
+                space_paths.add(path)
+            else:
+                uses_default = True
+
+    # Same ordering the per-Agent query applies, so a merged page looks exactly
+    # like a single Agent's page does.
+    merged.sort(
+        key=lambda s: (
+            0 if s.get("pinned") else 1,
+            -int(s.get("last_active") or 0),
+        )
+    )
+    offset = (max(1, page) - 1) * page_size
+    result = {
+        "sessions": merged[offset:offset + page_size],
+        "total": total,
+        "page": max(1, page),
+        "page_size": page_size,
+        "has_more": total > offset + page_size,
+        "space_count": len(space_paths) + (1 if uses_default else 0),
+        "default_workspace": state_root_str(),
+        "project_order": project_store.get_order(),
+    }
+    result["group_mode"] = "project" if result["space_count"] > 1 else "time"
+    return result
+
+
 class SessionsHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            params = web.input(page='1', page_size='50', agent_id='', agent='')
+            params = web.input(
+                page='1', page_size='50', agent_id='', agent='', scope=''
+            )
+            page = int(params.page)
+            page_size = int(params.page_size)
+            if (params.scope or '').strip() == 'all':
+                result = _list_sessions_across_agents(page, page_size)
+                return json.dumps({"status": "success", **result}, ensure_ascii=False)
+
             agent_id = _request_agent_id(params)
             from agent.memory import get_conversation_store
+            from agent.registry import get_agent_registry
             store = get_conversation_store(
                 _get_workspace_root(agent_id=agent_id)
             )
             result = store.list_sessions(
                 channel_type="web",
-                page=int(params.page),
-                page_size=int(params.page_size),
+                page=page,
+                page_size=page_size,
             )
             _annotate_sessions_with_projects(store, result, agent_id)
+            badge = _agent_badge(
+                get_agent_registry().get(agent_id or None, require_enabled=False)
+            )
+            for session in result.get("sessions") or []:
+                session["agent"] = badge
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Sessions API error: {e}")
@@ -6222,6 +6540,39 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "global": global_permission,
             "modes": list(PERMISSION_MODES),
         },
+        "team": _session_team_state(prefs, agent_id),
+    }
+
+
+def _session_team_state(prefs: dict, agent_id: Optional[str]) -> dict:
+    """Who else is on this conversation, and who could be added.
+
+    An archived member is reported but marked unavailable rather than dropped,
+    so the roster the user set is what the roster page shows.
+    """
+    from agent.registry import get_agent_registry
+
+    registry = get_agent_registry()
+    owner_id = registry.get(agent_id or None, require_enabled=False).id
+    members = []
+    for member_id in prefs.get("members") or []:
+        try:
+            profile = registry.get(member_id, require_enabled=False)
+        except Exception:
+            members.append({"id": member_id, "name": member_id, "available": False})
+            continue
+        members.append({
+            **_agent_badge(profile),
+            "available": profile.enabled and profile.id != owner_id,
+        })
+    return {
+        "owner": _agent_badge(registry.get(owner_id, require_enabled=False)),
+        "members": members,
+        "candidates": [
+            _agent_badge(profile)
+            for profile in registry.list(include_disabled=False)
+            if profile.id != owner_id
+        ],
     }
 
 
@@ -6239,8 +6590,10 @@ class SessionSettingsHandler:
         try:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
-            params = web.input(agent='')
-            state = _session_settings_state(session_id, params.agent or None)
+            params = web.input(agent='', agent_id='')
+            state = _session_settings_state(
+                session_id, params.agent or params.agent_id or None
+            )
             return json.dumps({"status": "success", **state}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Session settings read error: {e}")
@@ -6276,11 +6629,24 @@ class SessionSettingsHandler:
                 # with no model would route the global model to the wrong vendor.
                 updates["model"] = model
                 updates["provider"] = provider if model else None
+            if "members" in body:
+                raw = body.get("members")
+                if raw is None:
+                    updates["members"] = None
+                elif isinstance(raw, list):
+                    updates["members"] = [
+                        str(item).strip() for item in raw if str(item).strip()
+                    ]
+                else:
+                    return json.dumps({
+                        "status": "error",
+                        "message": "members must be a list of agent ids",
+                    })
 
             if not updates:
                 return json.dumps({
                     "status": "error",
-                    "message": "permission, model or provider required",
+                    "message": "permission, model, provider or members required",
                 })
 
             session_prefs.set_prefs(session_id, agent_id, **updates)

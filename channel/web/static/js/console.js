@@ -14,7 +14,43 @@ const I18N = {
     zh: {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
-        menu_chat: '对话', menu_agents: 'Agents', menu_config: '配置', menu_models: '模型', menu_skills: '技能',
+        menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
+        agents_desc: '每个智能体有自己的人格与会话，技能和知识默认共享。',
+        agents_create: '创建智能体',
+        agents_name_placeholder: '名称，例如 销售助手',
+        agents_id_placeholder: 'ID（可改，创建后不可变）',
+        agents_avatar: '头像',
+        agents_tab_profile: '概况',
+        agents_tab_skills: '能力',
+        agents_tab_files: '核心文件',
+        agents_default: '默认',
+        agents_archived: '已归档',
+        agents_make_default: '设为默认',
+        agents_archive: '归档',
+        agents_enable: '启用',
+        agents_chat: '开始对话',
+        agents_clone_none: '使用默认人格模板',
+        agents_clone_from: '从 {name} 复制人格',
+        agents_name: '名称',
+        agents_description: '简介',
+        agents_description_placeholder: '擅长什么，例如 负责小红书选题与文案',
+        agents_description_hint: '会写进团队名单，同事据此决定把活交给谁。',
+        agents_model: '默认模型',
+        agents_model_follows_global: '跟随全局配置',
+        agents_model_default_hint: '默认智能体使用配置里的模型，在「基础配置」中修改。',
+        agents_skills_all: '使用全部已安装技能',
+        agents_skills_pick: '只启用勾选的技能',
+        agents_empty: '还没有智能体。创建一个，开始组团队。',
+        agents_pick_tip: '选择这条新对话由谁来答',
+        team_invite: '加入这个会话',
+        team_remove: '移出这个会话',
+        channel_bound_agent: '回复智能体',
+        channel_bound_default: '跟随默认（{name}）',
+        settings_tab_basic: '基础配置',
+        settings_tab_models: '模型配置',
+        settings_tab_team: '智能体团队',
+        memory_for_agent: '查看谁的记忆',
+        knowledge_shared_hint: '知识库默认全员共享，在侧栏「知识」查看和编辑。',
         menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
         menu_logs: '日志',
         models_title: '模型管理',
@@ -129,7 +165,7 @@ const I18N = {
         steer_active: '引导当前任务',
         slash_logs: '查看最近日志',
         slash_version: '查看版本',
-        input_placeholder: '输入消息，/ 使用指令，@ 引用文件',
+        input_placeholder: '输入消息，/ 使用指令，@ 引用智能体或文件',
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
         config_language: '语言', config_language_hint: '界面展示、命令文案、系统提示词等使用的语言（与右上角切换同步）',
@@ -331,7 +367,43 @@ const I18N = {
 
         console: '控制台',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
-        menu_chat: '對話', menu_agents: 'Agents', menu_config: '設定', menu_models: '模型', menu_skills: '技能',
+        menu_chat: '對話', menu_config: '設定', menu_skills: '技能',
+        agents_desc: '每個智慧體有自己的人格與會話，技能和知識預設共享。',
+        agents_create: '建立智慧體',
+        agents_name_placeholder: '名稱，例如 銷售助手',
+        agents_id_placeholder: 'ID（可改，建立後不可變）',
+        agents_avatar: '頭像',
+        agents_tab_profile: '概況',
+        agents_tab_skills: '能力',
+        agents_tab_files: '核心檔案',
+        agents_default: '預設',
+        agents_archived: '已封存',
+        agents_make_default: '設為預設',
+        agents_archive: '封存',
+        agents_enable: '啟用',
+        agents_chat: '開始對話',
+        agents_clone_none: '使用預設人格範本',
+        agents_clone_from: '從 {name} 複製人格',
+        agents_name: '名稱',
+        agents_description: '簡介',
+        agents_description_placeholder: '擅長什麼，例如 負責小紅書選題與文案',
+        agents_description_hint: '會寫進團隊名單，同事據此決定把活交給誰。',
+        agents_model: '預設模型',
+        agents_model_follows_global: '跟隨全域設定',
+        agents_model_default_hint: '預設智慧體使用設定裡的模型，於「基礎設定」中修改。',
+        agents_skills_all: '使用全部已安裝技能',
+        agents_skills_pick: '只啟用勾選的技能',
+        agents_empty: '還沒有智慧體。建立一個，開始組團隊。',
+        agents_pick_tip: '選擇這條新對話由誰來答',
+        team_invite: '加入這個會話',
+        team_remove: '移出這個會話',
+        channel_bound_agent: '回覆智慧體',
+        channel_bound_default: '跟隨預設（{name}）',
+        settings_tab_basic: '基礎設定',
+        settings_tab_models: '模型設定',
+        settings_tab_team: '智慧體團隊',
+        memory_for_agent: '查看誰的記憶',
+        knowledge_shared_hint: '知識庫預設全員共享，在側欄「知識」查看和編輯。',
         menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '管道', menu_tasks: '定時',
         menu_logs: '日誌',
         models_title: '模型管理',
@@ -446,7 +518,7 @@ const I18N = {
         steer_active: '引導當前任務',
         slash_logs: '檢視最近日誌',
         slash_version: '檢視版本',
-        input_placeholder: '輸入訊息，/ 使用指令，@ 引用檔案',
+        input_placeholder: '輸入訊息，/ 使用指令，@ 引用智慧體或檔案',
         config_title: '設定管理', config_desc: '管理模型和 Agent 設定',
         config_model: '模型設定', config_agent: 'Agent 設定',
         config_language: '語言', config_language_hint: '介面展示、命令文案、系統提示詞等使用的語言（與右上角切換同步）',
@@ -643,7 +715,43 @@ const I18N = {
     en: {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
-        menu_chat: 'Chat', menu_agents: 'Agents', menu_config: 'Config', menu_models: 'Models', menu_skills: 'Skills',
+        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
+        agents_desc: 'Each Agent has its own persona and conversations. Skills and knowledge are shared by default.',
+        agents_create: 'New Agent',
+        agents_name_placeholder: 'Name, e.g. Sales assistant',
+        agents_id_placeholder: 'ID (editable now, fixed after create)',
+        agents_avatar: 'Avatar',
+        agents_tab_profile: 'Profile',
+        agents_tab_skills: 'Skills',
+        agents_tab_files: 'Core files',
+        agents_default: 'Default',
+        agents_archived: 'Archived',
+        agents_make_default: 'Make default',
+        agents_archive: 'Archive',
+        agents_enable: 'Enable',
+        agents_chat: 'Start chat',
+        agents_clone_none: 'Start from the default persona templates',
+        agents_clone_from: 'Copy persona from {name}',
+        agents_name: 'Name',
+        agents_description: 'Description',
+        agents_description_placeholder: 'What it is good at, e.g. Xiaohongshu topics and copy',
+        agents_description_hint: 'Goes on the team roster, so colleagues know who to hand work to.',
+        agents_model: 'Default model',
+        agents_model_follows_global: 'Follow the configured model',
+        agents_model_default_hint: 'The default agent uses the configured model. Change it under General.',
+        agents_skills_all: 'Use every installed skill',
+        agents_skills_pick: 'Only the skills checked below',
+        agents_empty: 'No Agents yet. Create one to start a team.',
+        agents_pick_tip: 'Choose who answers this new conversation',
+        team_invite: 'Add to this chat',
+        team_remove: 'Remove from this chat',
+        channel_bound_agent: 'Reply as',
+        channel_bound_default: 'Follow default ({name})',
+        settings_tab_basic: 'General',
+        settings_tab_models: 'Models',
+        settings_tab_team: 'Agent team',
+        memory_for_agent: 'Whose memory',
+        knowledge_shared_hint: 'Knowledge is shared by every Agent. Open it from the Knowledge page.',
         menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channels', menu_tasks: 'Tasks',
         menu_logs: 'Logs',
         models_title: 'Models',
@@ -758,7 +866,7 @@ const I18N = {
         steer_active: 'Steer active task',
         slash_logs: 'Show recent logs',
         slash_version: 'Show version',
-        input_placeholder: 'Type a message, / for commands, @ to reference files',
+        input_placeholder: 'Type a message, / for commands, @ to mention an Agent or a file',
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
         config_language: 'Language', config_language_hint: 'Language for the UI, command text, system prompts and more (synced with the top-right switch)',
@@ -1141,7 +1249,8 @@ document.addEventListener('click', (e) => {
 // Refresh JS-rendered views after a language switch. Each branch uses the
 // lightweight in-memory re-render path (no extra network round-trips).
 function rerenderDynamicViews() {
-    if (currentView === 'models' && typeof renderModelsView === 'function'
+    // Models are a tab of the config view, not a view of their own.
+    if (currentView === 'config' && typeof renderModelsView === 'function'
             && modelsState && (modelsState.providers || modelsState.capabilities)) {
         renderModelsView();
     }
@@ -1413,9 +1522,7 @@ document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);
 // =====================================================================
 const VIEW_META = {
     chat:     { group: 'nav_chat',    page: 'menu_chat' },
-    agents:   { group: 'nav_manage',  page: 'menu_agents' },
     config:   { group: 'nav_manage',  page: 'menu_config' },
-    models:   { group: 'nav_manage',  page: 'menu_models' },
     skills:   { group: 'nav_manage',  page: 'menu_skills' },
     memory:   { group: 'nav_manage',  page: 'menu_memory' },
     knowledge:{ group: 'nav_manage',  page: 'menu_knowledge' },
@@ -1440,7 +1547,9 @@ function navigateTo(viewId) {
     document.getElementById('breadcrumb-page').textContent = t(meta.page);
     document.getElementById('breadcrumb-page').dataset.i18n = meta.page;
     currentView = viewId;
-    if (viewId === 'agents') loadAgentCatalog();
+    // The Agent list is a settings tab now, and the drawer it opens is fixed,
+    // so it would otherwise hang over whatever view you navigate to.
+    if (viewId !== 'config') closeAgentDetail();
     
     // Clear status messages when navigating away
     document.querySelectorAll('[id$="-status"]').forEach(el => {
@@ -1489,12 +1598,47 @@ window.addEventListener('resize', () => {
 });
 
 // =====================================================================
-// Agent workspaces
+// Agents
 // =====================================================================
+const AGENT_EMOJI = ['🤖', '👩‍💻', '🧑‍💼', '🎨', '📊', '🛠️', '📚', '🧪', '🎯', '💬'];
 let agentCatalog = [];
+let agentBindings = [];
+let rosterRevision = '';
 let defaultAgentId = localStorage.getItem('cow_default_agent') || 'default';
 let selectedAdminAgentId = '';
 let selectedCoreRevision = '';
+let selectedCreateAvatar = AGENT_EMOJI[0];
+let installedSkills = [];
+let _idFromNameLocked = false;
+
+function findAgent(agentId) {
+    return agentCatalog.find(a => a.id === agentId) || null;
+}
+
+function enabledAgents() {
+    return agentCatalog.filter(a => a.enabled);
+}
+
+function agentAvatarHTML(agent, size) {
+    const cls = `agent-avatar agent-avatar-${size || 32}`;
+    if (!agent) {
+        return `<span class="${cls}">?</span>`;
+    }
+    if (agent.avatar === 'image') {
+        return `<img class="${cls}" src="/api/agents/${encodeURIComponent(agent.id)}/avatar?v=${encodeURIComponent(rosterRevision || agent.id)}" alt="">`;
+    }
+    if (agent.avatar) {
+        return `<span class="${cls}">${escapeHtml(agent.avatar)}</span>`;
+    }
+    const letter = String(agent.name || agent.id || '?').slice(0, 1).toUpperCase();
+    return `<span class="${cls}">${escapeHtml(letter)}</span>`;
+}
+
+function slugAgentId(name) {
+    const ascii = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    if (ascii) return ascii.slice(0, 32);
+    return 'agent-' + Math.random().toString(36).slice(2, 8);
+}
 
 function loadAgentCatalog() {
     return fetch('/api/agents')
@@ -1502,34 +1646,27 @@ function loadAgentCatalog() {
         .then(data => {
             if (data.status !== 'success') throw new Error(data.message || 'Failed to load Agents');
             agentCatalog = data.agents || [];
-            const bindingsEditor = document.getElementById('agent-bindings-editor');
-            if (bindingsEditor && document.activeElement !== bindingsEditor) {
-                bindingsEditor.value = JSON.stringify(data.bindings || [], null, 2);
-            }
+            agentBindings = data.bindings || [];
+            rosterRevision = data.revision || '';
             defaultAgentId = data.default_agent_id || (agentCatalog[0] && agentCatalog[0].id) || 'default';
             localStorage.setItem('cow_default_agent', defaultAgentId);
-            const enabled = agentCatalog.filter(a => a.enabled);
+            const enabled = enabledAgents();
             if (!enabled.some(a => a.id === activeAgentId)) {
                 activeAgentId = defaultAgentId;
                 localStorage.setItem('cow_active_agent', activeAgentId);
             }
-            const selector = document.getElementById('agent-selector');
-            if (selector) {
-                selector.innerHTML = enabled.map(a =>
-                    `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)} (${escapeHtml(a.id)})</option>`
-                ).join('');
-                selector.value = activeAgentId;
+            if (!selectedAdminAgentId || !agentCatalog.some(a => a.id === selectedAdminAgentId)) {
+                selectedAdminAgentId = '';
             }
-            renderAgentsList();
+            renderAgentsGrid();
+            if (selectedAdminAgentId) renderAgentDetail();
+            renderComposerIdentity();
+            renderMemoryAgentSelect();
             const clone = document.getElementById('agent-create-clone');
             if (clone) {
-                clone.innerHTML = '<option value="">Create from current templates</option>' +
-                    enabled.map(a => `<option value="${escapeHtml(a.id)}">Clone ${escapeHtml(a.name)}</option>`).join('');
+                clone.innerHTML = `<option value="">${escapeHtml(t('agents_clone_none'))}</option>` +
+                    enabled.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(t('agents_clone_from').replace('{name}', a.name))}</option>`).join('');
             }
-            if (!selectedAdminAgentId || !agentCatalog.some(a => a.id === selectedAdminAgentId)) {
-                selectedAdminAgentId = activeAgentId;
-            }
-            if (currentView === 'agents') loadAgentCoreFile();
             return data;
         })
         .catch(err => {
@@ -1538,121 +1675,340 @@ function loadAgentCatalog() {
         });
 }
 
-function selectActiveAgent(agentId) {
-    if (!agentId || agentId === activeAgentId) return;
-    activeAgentId = agentId;
-    localStorage.setItem('cow_active_agent', activeAgentId);
-    const selector = document.getElementById('agent-selector');
-    if (selector) selector.value = activeAgentId;
-    sessionId = loadOrCreateSessionId();
-    historyPage = 0;
-    historyHasMore = false;
-    historyLoading = false;
-    messagesDiv.innerHTML = '';
-    resetSendBtnSendMode();
-    loadHistory(1);
-    loadSessionList();
-    startPolling();
-    selectedAdminAgentId = agentId;
-    if (typeof tasksLoaded !== 'undefined') tasksLoaded = false;
-    renderAgentsList();
-    if (currentView === 'agents') loadAgentCoreFile();
-}
-
-function renderAgentsList() {
-    const list = document.getElementById('agents-list');
-    if (!list) return;
-    list.innerHTML = agentCatalog.map(agent => {
+function renderAgentsGrid() {
+    const grid = document.getElementById('agents-grid');
+    if (!grid) return;
+    if (!agentCatalog.length) {
+        grid.innerHTML = `<div class="col-span-full text-sm text-slate-400 py-16 text-center">${escapeHtml(t('agents_empty'))}</div>`;
+        return;
+    }
+    grid.innerHTML = agentCatalog.map(agent => {
         const selected = agent.id === selectedAdminAgentId;
-        const disabled = !agent.enabled;
-        return `<div class="p-4 cursor-pointer ${selected ? 'bg-primary-50 dark:bg-primary-900/10' : ''}" onclick="selectAdminAgent('${agent.id}')">
-            <div class="flex items-center gap-2">
-                <span class="font-medium text-sm text-slate-800 dark:text-slate-100">${escapeHtml(agent.name)}</span>
-                ${agent.id === defaultAgentId ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-primary-100 text-primary-700">default</span>' : ''}
-                ${disabled ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-500">archived</span>' : ''}
+        return `<div class="agent-card${selected ? ' selected' : ''}${agent.enabled ? '' : ' archived'}" onclick="openAgentDetail('${escapeHtml(agent.id)}')">
+            <div class="agent-card-top">
+                ${agentAvatarHTML(agent, 40)}
+                <div class="min-w-0">
+                    <div class="agent-card-name truncate">${escapeHtml(agent.name)}</div>
+                    <div class="agent-card-id truncate">${escapeHtml(agent.id)}</div>
+                </div>
             </div>
-            <div class="text-xs text-slate-400 mt-1 font-mono truncate" title="${escapeHtml(agent.workspace)}">${escapeHtml(agent.id)} · ${escapeHtml(agent.workspace)}</div>
-            <div class="flex flex-wrap gap-2 mt-3" onclick="event.stopPropagation()">
-                ${agent.enabled ? `<button onclick="selectActiveAgent('${agent.id}')" class="text-xs text-primary-600">Use</button>` : `<button onclick="updateAgentWorkspace('${agent.id}', {enabled:true})" class="text-xs text-primary-600">Enable</button>`}
-                ${agent.enabled && agent.id !== defaultAgentId ? `<button onclick="updateAgentWorkspace('${agent.id}', {make_default:true})" class="text-xs text-slate-500">Make default</button>` : ''}
-                ${agent.id !== defaultAgentId && agent.enabled ? `<button onclick="archiveAgentWorkspace('${agent.id}')" class="text-xs text-red-500">Archive</button>` : ''}
+            <div class="agent-card-meta">
+                ${agent.id === defaultAgentId ? `<span class="agent-chip agent-chip-on">${escapeHtml(t('agents_default'))}</span>` : ''}
+                ${agent.enabled ? '' : `<span class="agent-chip">${escapeHtml(t('agents_archived'))}</span>`}
+                ${agent.kind === 'remote' ? `<span class="agent-chip">remote</span>` : ''}
             </div>
         </div>`;
     }).join('');
 }
 
-function selectAdminAgent(agentId) {
+function openAgentDetail(agentId) {
     selectedAdminAgentId = agentId;
-    renderAgentsList();
+    document.getElementById('agent-detail')?.classList.remove('hidden');
+    renderAgentsGrid();
+    renderAgentDetail();
     loadAgentCoreFile();
+    // The model picker is drawn from the same catalog the composer uses, which
+    // depends on which providers have keys. Re-render once it has arrived.
+    if (!_sessCfg) refreshSessionSettings().then(() => {
+        if (selectedAdminAgentId === agentId) renderAgentDetail();
+    });
+}
+
+function closeAgentDetail() {
+    selectedAdminAgentId = '';
+    document.getElementById('agent-detail')?.classList.add('hidden');
+    renderAgentsGrid();
+}
+
+function selectAgentDetailTab(tab) {
+    document.querySelectorAll('.agent-detail-tab').forEach(el => {
+        el.classList.toggle('active', el.dataset.tab === tab);
+    });
+    ['profile', 'skills', 'files'].forEach(name => {
+        document.getElementById(`agent-detail-${name}`)?.classList.toggle('hidden', name !== tab);
+    });
+    if (tab === 'skills') renderAgentSkillsPane();
+    if (tab === 'files') loadAgentCoreFile();
+}
+
+function renderAgentDetail() {
+    const agent = findAgent(selectedAdminAgentId);
+    const identity = document.getElementById('agent-detail-identity');
+    const profile = document.getElementById('agent-detail-profile');
+    if (!agent || !identity || !profile) return;
+    identity.innerHTML = `
+        ${agentAvatarHTML(agent, 56)}
+        <div class="min-w-0">
+            <div class="text-lg font-semibold text-slate-800 dark:text-slate-100 truncate">${escapeHtml(agent.name)}</div>
+            <div class="text-xs text-slate-400 font-mono truncate">${escapeHtml(agent.id)}</div>
+        </div>`;
+    const isDefault = agent.id === defaultAgentId;
+    profile.innerHTML = `
+        <label class="block text-xs text-slate-500 mb-1">${escapeHtml(t('agents_name'))}</label>
+        <input id="agent-edit-name" value="${escapeHtml(agent.name)}"
+               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm mb-4">
+        <label class="block text-xs text-slate-500 mb-1">${escapeHtml(t('agents_description'))}</label>
+        <input id="agent-edit-description" value="${escapeHtml(agent.description || '')}"
+               placeholder="${escapeHtml(t('agents_description_placeholder'))}"
+               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm">
+        <p class="text-[11px] text-slate-400 mt-1 mb-4">${escapeHtml(t('agents_description_hint'))}</p>
+        <label class="block text-xs text-slate-500 mb-1">${escapeHtml(t('agents_model'))}</label>
+        ${isDefault
+            ? `<div class="w-full px-3 py-2 rounded-lg border border-dashed border-slate-200 dark:border-white/10 text-sm text-slate-400 mb-1">${escapeHtml(t('agents_model_follows_global'))}</div>
+               <p class="text-[11px] text-slate-400 mb-4">${escapeHtml(t('agents_model_default_hint'))}</p>`
+            : `<select id="agent-edit-model"
+                       class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#222] text-sm mb-4">
+                   ${agentModelOptions(agent.model, agent.bot_type)}
+               </select>`}
+        <div class="text-xs text-slate-500 mb-2">${escapeHtml(t('agents_avatar'))}</div>
+        <div id="agent-edit-avatars" class="agent-emoji-row mb-2"></div>
+        <label class="inline-flex items-center gap-2 text-xs text-slate-500 mb-5 cursor-pointer">
+            <input id="agent-edit-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="text-xs">
+        </label>
+        <div class="flex flex-wrap gap-2">
+            <button type="button" onclick="saveAgentProfile()" class="px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm">${escapeHtml(t('save'))}</button>
+            ${agent.enabled ? `<button type="button" onclick="startChatWithAgent('${escapeHtml(agent.id)}')" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 text-sm">${escapeHtml(t('agents_chat'))}</button>` : ''}
+            ${agent.enabled && agent.id !== defaultAgentId ? `<button type="button" onclick="updateAgentWorkspace('${escapeHtml(agent.id)}', {make_default:true})" class="px-3 py-1.5 text-sm text-slate-500">${escapeHtml(t('agents_make_default'))}</button>` : ''}
+            ${agent.id !== defaultAgentId && agent.enabled ? `<button type="button" onclick="archiveAgentWorkspace('${escapeHtml(agent.id)}')" class="px-3 py-1.5 text-sm text-red-500">${escapeHtml(t('agents_archive'))}</button>` : ''}
+            ${!agent.enabled ? `<button type="button" onclick="updateAgentWorkspace('${escapeHtml(agent.id)}', {enabled:true})" class="px-3 py-1.5 text-sm text-primary-600">${escapeHtml(t('agents_enable'))}</button>` : ''}
+        </div>
+        <div id="agent-profile-status" class="text-xs text-slate-500 mt-3"></div>`;
+    renderEmojiRow('agent-edit-avatars', agent.avatar && agent.avatar !== 'image' ? agent.avatar : '', (emoji) => {
+        updateAgentWorkspace(agent.id, { avatar: emoji });
+    });
+    const file = document.getElementById('agent-edit-avatar-file');
+    if (file) file.addEventListener('change', () => uploadAgentAvatar(agent.id, file.files && file.files[0]));
+}
+
+function renderEmojiRow(containerId, selected, onPick) {
+    const row = document.getElementById(containerId);
+    if (!row) return;
+    row.innerHTML = AGENT_EMOJI.map(emoji =>
+        `<button type="button" class="agent-emoji-btn${emoji === selected ? ' selected' : ''}">${emoji}</button>`
+    ).join('');
+    row.querySelectorAll('.agent-emoji-btn').forEach(btn => {
+        btn.addEventListener('click', () => onPick(btn.textContent));
+    });
+}
+
+function renderAgentSkillsPane() {
+    const pane = document.getElementById('agent-detail-skills');
+    const agent = findAgent(selectedAdminAgentId);
+    if (!pane || !agent) return;
+    const render = () => {
+        const selected = agent.skills;
+        const all = selected == null;
+        pane.innerHTML = `
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-3">
+                <input type="checkbox" id="agent-skills-all" ${all ? 'checked' : ''}>
+                <span>${escapeHtml(t('agents_skills_all'))}</span>
+            </label>
+            <p class="text-xs text-slate-400 mb-3">${escapeHtml(t('agents_skills_pick'))}</p>
+            ${(installedSkills || []).map(skill => {
+                const name = skill.name || skill.id;
+                const checked = all || (selected || []).includes(name);
+                return `<label class="agent-skill-row">
+                    <input type="checkbox" class="agent-skill-item" value="${escapeHtml(name)}" ${checked ? 'checked' : ''} ${all ? 'disabled' : ''}>
+                    <div>
+                        <div class="text-sm text-slate-700 dark:text-slate-200">${escapeHtml(skill.display_name || name)}</div>
+                        <div class="text-xs text-slate-400">${escapeHtml(skill.description || '')}</div>
+                    </div>
+                </label>`;
+            }).join('')}`;
+        document.getElementById('agent-skills-all')?.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                updateAgentWorkspace(agent.id, { skills: null });
+            } else {
+                updateAgentWorkspace(agent.id, { skills: installedSkills.map(s => s.name || s.id) });
+            }
+        });
+        pane.querySelectorAll('.agent-skill-item').forEach(box => {
+            box.addEventListener('change', () => {
+                const picked = Array.from(pane.querySelectorAll('.agent-skill-item:checked')).map(el => el.value);
+                updateAgentWorkspace(agent.id, { skills: picked });
+            });
+        });
+    };
+    if (installedSkills.length) {
+        render();
+        return;
+    }
+    fetch('/api/skills').then(r => r.json()).then(data => {
+        installedSkills = data.skills || [];
+        render();
+    }).catch(() => {
+        pane.innerHTML = `<p class="text-sm text-slate-400">${escapeHtml(t('agents_skills_all'))}</p>`;
+    });
 }
 
 function openAgentCreateForm() {
-    document.getElementById('agent-create-form').classList.remove('hidden');
+    const form = document.getElementById('agent-create-form');
+    if (!form) return;
+    form.classList.remove('hidden');
+    selectedCreateAvatar = AGENT_EMOJI[0];
+    _idFromNameLocked = false;
+    const name = document.getElementById('agent-create-name');
+    const id = document.getElementById('agent-create-id');
+    const description = document.getElementById('agent-create-description');
+    [name, id, description].forEach(el => { if (el) el.value = ''; });
+    document.getElementById('agent-create-status').textContent = '';
+    const paintCreateAvatars = () => renderEmojiRow('agent-create-avatars', selectedCreateAvatar, (emoji) => {
+        selectedCreateAvatar = emoji;
+        paintCreateAvatars();
+    });
+    paintCreateAvatars();
+    if (name && id && !name.dataset.bound) {
+        name.dataset.bound = '1';
+        name.addEventListener('input', () => {
+            if (!_idFromNameLocked) id.value = slugAgentId(name.value);
+        });
+        id.addEventListener('input', () => { _idFromNameLocked = true; });
+    }
 }
 
 function closeAgentCreateForm() {
-    document.getElementById('agent-create-form').classList.add('hidden');
-    document.getElementById('agent-create-status').textContent = '';
+    document.getElementById('agent-create-form')?.classList.add('hidden');
 }
 
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('composer-agent-menu');
+    const btn = document.getElementById('composer-agent-btn');
+    if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target) && btn && !btn.contains(e.target)) {
+        menu.classList.add('hidden');
+    }
+    const modal = document.getElementById('agent-create-form');
+    if (modal && !modal.classList.contains('hidden') && e.target === modal) {
+        closeAgentCreateForm();
+    }
+});
+
 function createAgentWorkspace() {
-    const payload = {
-        action: 'create',
-        id: document.getElementById('agent-create-id').value.trim(),
-        name: document.getElementById('agent-create-name').value.trim(),
-        workspace: document.getElementById('agent-create-workspace').value.trim(),
-        clone_from: document.getElementById('agent-create-clone').value || null,
-    };
+    const name = document.getElementById('agent-create-name').value.trim();
+    const id = document.getElementById('agent-create-id').value.trim() || slugAgentId(name);
     const status = document.getElementById('agent-create-status');
+    if (!name || !id) {
+        status.textContent = t('agents_name_placeholder');
+        return;
+    }
     fetch('/api/agents', {
-        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'create',
+            id,
+            name,
+            description: document.getElementById('agent-create-description')?.value.trim() || '',
+            avatar: selectedCreateAvatar,
+            clone_from: document.getElementById('agent-create-clone').value || null,
+            revision: rosterRevision,
+        }),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') throw new Error(data.message || 'Create failed');
         closeAgentCreateForm();
-        selectedAdminAgentId = payload.id;
-        return loadAgentCatalog();
+        return loadAgentCatalog().then(() => openAgentDetail(id));
     }).catch(err => { status.textContent = err.message; });
+}
+
+function saveAgentProfile() {
+    const agent = findAgent(selectedAdminAgentId);
+    if (!agent) return;
+    const payload = {
+        name: document.getElementById('agent-edit-name')?.value.trim(),
+        description: document.getElementById('agent-edit-description')?.value.trim() || '',
+    };
+    // Absent for the default Agent, which follows the configured model.
+    const picker = document.getElementById('agent-edit-model');
+    if (picker) {
+        const [provider, model] = (picker.value || '').split('|');
+        payload.model = model || '';
+        payload.bot_type = provider || '';
+    }
+    updateAgentWorkspace(agent.id, payload);
+}
+
+/* The models the composer already offers, so an Agent's own default is picked
+   from the same list as a conversation's. The value carries the provider as
+   well: a model asked of the wrong vendor is just an error. An empty value
+   means "follow the configured model", which is what every Agent does until
+   told otherwise. */
+function agentModelOptions(selectedModel, selectedProvider) {
+    const options = [
+        `<option value="">${escapeHtml(t('agents_model_follows_global'))}</option>`,
+    ];
+    const providers = (_sessCfg && _sessCfg.model && _sessCfg.model.providers) || [];
+    providers.forEach(p => {
+        const models = (p.models || []).map(m => {
+            const picked = m === selectedModel && p.id === selectedProvider;
+            return `<option value="${escapeHtml(p.id)}|${escapeHtml(m)}"${picked ? ' selected' : ''}>`
+                + `${escapeHtml(m)}</option>`;
+        }).join('');
+        if (models) {
+            options.push(`<optgroup label="${escapeHtml(localizedLabel(p.label))}">${models}</optgroup>`);
+        }
+    });
+    return options.join('');
+}
+
+function uploadAgentAvatar(agentId, file) {
+    if (!file) return;
+    const form = new FormData();
+    form.append('avatar', file);
+    fetch(`/api/agents/${encodeURIComponent(agentId)}/avatar`, { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') throw new Error(data.message || 'Upload failed');
+            return loadAgentCatalog();
+        })
+        .catch(err => {
+            const status = document.getElementById('agent-profile-status');
+            if (status) status.textContent = err.message;
+        });
 }
 
 function updateAgentWorkspace(agentId, updates) {
     return fetch('/api/agents', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'update', id: agentId, ...updates})
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id: agentId, revision: rosterRevision, ...updates }),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') throw new Error(data.message || 'Update failed');
         return loadAgentCatalog();
     }).catch(err => {
-        document.getElementById('agent-editor-status').textContent = err.message;
+        const status = document.getElementById('agent-profile-status') || document.getElementById('agent-editor-status');
+        if (status) status.textContent = err.message;
     });
 }
 
 function archiveAgentWorkspace(agentId) {
-    if (!window.confirm(`Archive Agent "${agentId}"? Its workspace will be preserved.`)) return;
+    if (!window.confirm(t('agents_archive') + ` "${agentId}"?`)) return;
     return fetch('/api/agents', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'archive', id: agentId})
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'archive', id: agentId, revision: rosterRevision }),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') throw new Error(data.message || 'Archive failed');
-        if (activeAgentId === agentId) selectActiveAgent(defaultAgentId);
+        if (activeAgentId === agentId) startChatWithAgent(defaultAgentId);
+        closeAgentDetail();
         return loadAgentCatalog();
     }).catch(err => {
-        document.getElementById('agent-editor-status').textContent = err.message;
+        const status = document.getElementById('agent-profile-status');
+        if (status) status.textContent = err.message;
     });
 }
 
 function loadAgentCoreFile() {
     if (!selectedAdminAgentId) return;
-    const filename = document.getElementById('agent-core-file').value;
+    const filename = document.getElementById('agent-core-file')?.value;
     const status = document.getElementById('agent-editor-status');
-    status.textContent = 'Loading…';
+    if (!filename || !status) return;
+    status.textContent = '…';
     fetch(`/api/agents/${encodeURIComponent(selectedAdminAgentId)}/files/${encodeURIComponent(filename)}`)
         .then(r => r.json()).then(data => {
             if (data.status !== 'success') throw new Error(data.message || 'Load failed');
             selectedCoreRevision = data.revision;
             document.getElementById('agent-core-editor').value = data.content || '';
             document.getElementById('agent-editor-label').textContent = `${selectedAdminAgentId} / ${filename}`;
-            status.textContent = data.exists ? `Revision ${data.revision.slice(0, 12)}` : 'New file';
+            status.textContent = data.exists ? data.revision.slice(0, 12) : '';
         }).catch(err => { status.textContent = err.message; });
 }
 
@@ -1661,34 +2017,324 @@ function saveAgentCoreFile() {
     const filename = document.getElementById('agent-core-file').value;
     const status = document.getElementById('agent-editor-status');
     fetch(`/api/agents/${encodeURIComponent(selectedAdminAgentId)}/files/${encodeURIComponent(filename)}`, {
-        method: 'PUT', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({content: document.getElementById('agent-core-editor').value, revision: selectedCoreRevision})
-    }).then(async r => ({ok: r.ok, data: await r.json()})).then(({ok, data}) => {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: document.getElementById('agent-core-editor').value, revision: selectedCoreRevision }),
+    }).then(async r => ({ ok: r.ok, data: await r.json() })).then(({ ok, data }) => {
         if (!ok || data.status !== 'success') throw new Error(data.message || 'Save failed');
         selectedCoreRevision = data.revision;
-        status.textContent = `Saved · revision ${data.revision.slice(0, 12)}`;
+        status.textContent = data.revision.slice(0, 12);
     }).catch(err => { status.textContent = err.message; });
 }
 
-function saveAgentBindings() {
-    const editor = document.getElementById('agent-bindings-editor');
-    const status = document.getElementById('agent-bindings-status');
-    let bindings;
-    try {
-        bindings = JSON.parse(editor.value || '[]');
-        if (!Array.isArray(bindings)) throw new Error('Bindings must be a JSON list');
-    } catch (err) {
-        status.textContent = err.message;
+function startChatWithAgent(agentId) {
+    if (!agentId) return;
+    activeAgentId = agentId;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    newChat(true);
+    navigateTo('chat');
+    renderComposerIdentity();
+}
+
+function conversationHasMessages() {
+    return !!document.querySelector('#chat-messages .user-message-group, #chat-messages .bot-message-group');
+}
+
+/** A roster of one behaves exactly like the console did before Agents existed:
+ *  no face on the composer, no faces in the session list, no @ mentions. */
+function multiAgentMode() {
+    return enabledAgents().length > 1;
+}
+
+/** True once this conversation holds more than its owner. Until then it is an
+ *  ordinary chat and is drawn like one. */
+function sharedConversation() {
+    return multiAgentMode() && currentTeamIds().length > 0;
+}
+
+// Who is answering each in-flight request, as reported when it was accepted.
+// Lets a streaming bubble carry the right name before anything is persisted.
+const _liveSpeakers = {};
+
+function rememberLiveSpeaker(data) {
+    if (data && data.request_id && data.speaker) {
+        _liveSpeakers[data.request_id] = data.speaker;
+    }
+}
+
+/** The Agent to draw on a reply, or null to keep the product's own face. */
+function botSpeakerAgent(msg, requestId) {
+    if (!sharedConversation()) return null;
+    const id = (msg && msg.extras && msg.extras.agent_id)
+        || (requestId && _liveSpeakers[requestId])
+        || activeAgentId;
+    return findAgent(id) || null;
+}
+
+/** Turn a written-out mention into a chip, so a name reads as a name instead
+ *  of as an id someone pasted. Runs on the rendered bubble rather than on the
+ *  markdown source, which keeps code spans untouched. */
+function highlightMentions(root) {
+    const roster = sessionRoster();
+    if (!root || roster.length < 2) return;
+    const byLabel = new Map();
+    roster.forEach(agent => {
+        [agent.name, agent.id].forEach(label => {
+            if (label) byLabel.set(String(label).toLowerCase(), agent);
+        });
+    });
+    const alternation = Array.from(byLabel.keys())
+        .sort((a, b) => b.length - a.length)
+        .map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+    const re = new RegExp('@(' + alternation + ')(?=[\\s，,：:、]|$)', 'gi');
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: node => node.parentElement
+            && node.parentElement.closest('code, pre, .mention-tag')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+    });
+    const targets = [];
+    let node;
+    while ((node = walker.nextNode())) {
+        re.lastIndex = 0;
+        if (re.test(node.nodeValue)) targets.push(node);
+    }
+    targets.forEach(text => {
+        const value = text.nodeValue;
+        const frag = document.createDocumentFragment();
+        let cursor = 0;
+        let match;
+        re.lastIndex = 0;
+        while ((match = re.exec(value))) {
+            if (match.index > cursor) {
+                frag.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+            }
+            const agent = byLabel.get(match[1].toLowerCase());
+            const tag = document.createElement('span');
+            tag.className = 'mention-tag';
+            tag.textContent = '@' + (agent ? (agent.name || agent.id) : match[1]);
+            frag.appendChild(tag);
+            cursor = match.index + match[0].length;
+        }
+        if (cursor < value.length) {
+            frag.appendChild(document.createTextNode(value.slice(cursor)));
+        }
+        text.parentNode.replaceChild(frag, text);
+    });
+}
+
+function renderComposerIdentity() {
+    const wrap = document.getElementById('composer-identity');
+    const btn = document.getElementById('composer-agent-btn');
+    if (!wrap || !btn) return;
+    if (!multiAgentMode()) {
+        wrap.classList.add('hidden');
+        document.getElementById('composer-agent-menu')?.classList.add('hidden');
         return;
     }
-    fetch('/api/agents', {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'replace_bindings', bindings})
+    wrap.classList.remove('hidden');
+    const agent = findAgent(activeAgentId) || { id: activeAgentId || defaultAgentId, name: activeAgentId || 'Agent' };
+    const others = currentTeamIds().length;
+    btn.innerHTML = agentAvatarHTML(agent, 32)
+        + (others ? `<span class="composer-agent-count">${others + 1}</span>` : '');
+    const face = btn.querySelector('.agent-avatar');
+    if (face) face.id = 'composer-agent-avatar';
+    // The owner can only be swapped before the first turn, but joining is
+    // allowed at any point, so the button itself never goes dead.
+    btn.classList.toggle('locked', conversationHasMessages());
+    btn.dataset.tooltip = agent.name || agent.id;
+}
+
+function toggleComposerAgentMenu(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('composer-agent-menu');
+    if (!menu) return;
+    if (!menu.classList.contains('hidden')) {
+        menu.classList.add('hidden');
+        return;
+    }
+    _closeComposerMenus(menu);
+    const taken = new Set(currentTeamIds());
+    const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
+    const sections = [];
+
+    // Switching owner rewrites the whole conversation's identity, so it is
+    // offered only while there is nothing to rewrite.
+    if (!conversationHasMessages()) {
+        sections.push(
+            `<div class="composer-menu-title">${escapeHtml(t('agents_pick_tip'))}</div>`
+            + enabledAgents().map(agent => `
+                <button type="button" class="composer-menu-item${agent.id === activeAgentId ? ' current' : ''}"
+                        onclick="pickComposerAgent('${escapeHtml(agent.id)}')">
+                    ${agentAvatarHTML(agent, 24)}
+                    <span>${escapeHtml(agent.name)}</span>
+                    ${agent.id === activeAgentId ? '<i class="fas fa-check ml-auto text-[11px]"></i>' : ''}
+                </button>`).join('')
+        );
+    }
+
+    const candidates = enabledAgents().filter(a => a.id !== activeAgentId && !taken.has(a.id));
+    const joined = members.filter(m => m.id !== activeAgentId).map(m => `
+        <button type="button" class="composer-menu-item joined"
+                onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
+            ${agentAvatarHTML(m, 24)}
+            <span>${escapeHtml(m.name || m.id)}</span>
+            <i class="fas fa-xmark ml-auto text-[11px]"></i>
+        </button>`).join('');
+    const invitable = candidates.map(agent => `
+        <button type="button" class="composer-menu-item"
+                onclick="inviteTeamMember('${escapeHtml(agent.id)}')">
+            ${agentAvatarHTML(agent, 24)}
+            <span>${escapeHtml(agent.name)}</span>
+            <i class="fas fa-plus ml-auto text-[11px] text-slate-400"></i>
+        </button>`).join('');
+    if (joined || invitable) {
+        sections.push(
+            `<div class="composer-menu-title">${escapeHtml(t('team_invite'))}</div>${joined}${invitable}`
+        );
+    }
+
+    menu.innerHTML = sections.join('<div class="composer-menu-sep"></div>');
+    menu.classList.remove('hidden');
+}
+
+function pickComposerAgent(agentId) {
+    document.getElementById('composer-agent-menu')?.classList.add('hidden');
+    if (!agentId || agentId === activeAgentId) return;
+    activeAgentId = agentId;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    sessionId = generateSessionId();
+    localStorage.setItem(activeSessionStorageKey(), sessionId);
+    refreshWorkspaceSelector();
+    refreshSessionSettings();
+    renderComposerIdentity();
+}
+
+function inviteTeamMember(agentId) {
+    document.getElementById('composer-agent-menu')?.classList.add('hidden');
+    addTeamMember(agentId);
+}
+
+/** Everyone addressable in this conversation, owner first. */
+function sessionRoster() {
+    const owner = findAgent(activeAgentId);
+    const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
+    const roster = owner ? [owner] : [];
+    members.forEach(m => {
+        if (!roster.some(a => a.id === m.id)) roster.push(findAgent(m.id) || m);
+    });
+    return roster;
+}
+
+/** The teammate a message hands the turn to, or '' for nobody.
+ *  Mirrors the server's rule: a leading mention only. */
+function addressedAgentId(text) {
+    const stripped = String(text || '').replace(/^\s+/, '');
+    if (!stripped.startsWith('@')) return '';
+    const labels = [];
+    sessionRoster().forEach(agent => {
+        [agent.name, agent.id].forEach(label => {
+            if (label) labels.push([String(label), agent.id]);
+        });
+    });
+    labels.sort((a, b) => b[0].length - a[0].length);
+    for (const [label, id] of labels) {
+        const re = new RegExp('^@' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=[\\s，,：:、]|$)', 'i');
+        if (re.test(stripped) && id !== activeAgentId) return id;
+    }
+    return '';
+}
+
+function mentionedAgentIds(text) {
+    const id = addressedAgentId(text);
+    return id ? [id] : [];
+}
+
+function currentTeamIds() {
+    return ((_sessCfg && _sessCfg.team && _sessCfg.team.members) || []).map(m => m.id);
+}
+
+function setTeamMembers(ids) {
+    const unique = Array.from(new Set(ids.filter(id => id && id !== activeAgentId)));
+    return fetch(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members: unique.length ? unique : null }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            _sessCfg = { model: data.model, permission: data.permission, team: data.team };
+            renderComposerIdentity();
+            // Inviting or removing someone changes whether one model can speak
+            // for this conversation.
+            _renderModelChip();
+        }
+    });
+}
+
+function addTeamMember(agentId) {
+    if (!agentId || agentId === activeAgentId) return Promise.resolve();
+    const ids = currentTeamIds();
+    if (ids.includes(agentId)) return Promise.resolve();
+    return setTeamMembers([...ids, agentId]);
+}
+
+function removeTeamMember(agentId) {
+    setTeamMembers(currentTeamIds().filter(id => id !== agentId));
+}
+
+async function syncTeamFromText(text) {
+    const extra = mentionedAgentIds(text);
+    if (!extra.length) return;
+    await setTeamMembers([...currentTeamIds(), ...extra]);
+}
+
+function bindChannelAgent(channelType, agentId) {
+    const defaultId = defaultAgentId;
+    const action = (!agentId || agentId === defaultId) ? 'remove_binding' : 'set_binding';
+    return fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action,
+            channel_type: channelType,
+            agent_id: agentId || defaultId,
+            revision: rosterRevision,
+        }),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') throw new Error(data.message || 'Save failed');
-        status.textContent = 'Bindings saved';
         return loadAgentCatalog();
-    }).catch(err => { status.textContent = err.message; });
+    }).catch(err => _wsToast(err.message));
+}
+
+function channelBoundAgentId(channelType) {
+    const row = agentBindings.find(b =>
+        (b.channel_type || '').toLowerCase() === channelType && !b.conversation_id
+    );
+    return row ? row.agent_id : '';
+}
+
+let memoryAgentId = '';
+
+function viewingMemoryAgentId() {
+    return memoryAgentId || activeAgentId || defaultAgentId;
+}
+
+function renderMemoryAgentSelect() {
+    const sel = document.getElementById('memory-agent-select');
+    if (!sel) return;
+    const current = viewingMemoryAgentId();
+    const list = agentCatalog.length ? agentCatalog : enabledAgents();
+    sel.innerHTML = list.map(a =>
+        `<option value="${escapeHtml(a.id)}" ${a.id === current ? 'selected' : ''}>${escapeHtml(a.name)}</option>`
+    ).join('');
+}
+
+function selectMemoryAgent(agentId) {
+    memoryAgentId = agentId;
+    closeMemoryViewer();
+    loadMemoryView(1);
 }
 
 loadAgentCatalog();
@@ -2020,8 +2666,10 @@ window.fetch = function(input, init) {
     init = init ? { ...init } : {};
     let url = typeof input === 'string' ? input : input.url;
     if (activeAgentId && typeof url === 'string' && url.startsWith('/')) {
-        const joiner = url.includes('?') ? '&' : '?';
-        url = `${url}${joiner}agent_id=${encodeURIComponent(activeAgentId)}`;
+        if (!/[?&]agent_id=/.test(url)) {
+            const joiner = url.includes('?') ? '&' : '?';
+            url = `${url}${joiner}agent_id=${encodeURIComponent(activeAgentId)}`;
+        }
         if (typeof input !== 'string') input = new Request(url, input);
         else input = url;
 
@@ -2030,7 +2678,7 @@ window.fetch = function(input, init) {
             if (contentType.includes('application/json')) {
                 try {
                     const body = JSON.parse(init.body);
-                    if (body && typeof body === 'object' && !Array.isArray(body)) {
+                    if (body && typeof body === 'object' && !Array.isArray(body) && !body.agent_id) {
                         body.agent_id = activeAgentId;
                         init.body = JSON.stringify(body);
                     }
@@ -3182,6 +3830,8 @@ function _closeComposerMenus(keep) {
             menu.classList.add('hidden');
             if (btn) btn.classList.remove('open');
         });
+    const agentMenu = document.getElementById('composer-agent-menu');
+    if (agentMenu && agentMenu !== keep) agentMenu.classList.add('hidden');
 }
 
 // Fetch this session's effective model + permission and repaint both chips.
@@ -3190,13 +3840,14 @@ async function refreshSessionSettings() {
         const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/settings`);
         const data = await res.json();
         if (data.status !== 'success') return;
-        _sessCfg = { model: data.model, permission: data.permission };
+        _sessCfg = { model: data.model, permission: data.permission, team: data.team };
     } catch (e) {
         // Keep whatever the chips already show rather than blanking them.
         return;
     }
     _renderPermissionChip();
     _renderModelChip();
+    renderComposerIdentity();
 }
 
 function _renderPermissionChip() {
@@ -3226,6 +3877,16 @@ function _renderPermissionChip() {
 function _renderModelChip() {
     const btn = _modelBtn();
     if (!btn || !_sessCfg) return;
+    // Once a conversation has more than one Agent there is no single model to
+    // show: each answers on its own. Pinning one here would silently apply to
+    // whoever happens to own the conversation.
+    const shared = sharedConversation();
+    btn.classList.toggle('hidden', shared);
+    if (shared) {
+        _modelMenu()?.classList.add('hidden');
+        btn.classList.remove('open');
+        return;
+    }
     const state = _sessCfg.model || {};
     const model = state.model || '';
 
@@ -3823,6 +4484,7 @@ function sendVoiceMessage(text, audioUrl) {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
+                rememberLiveSpeaker(data);
                 if (data.inline_reply) {
                     // Synchronous fast-path reply (e.g. /cancel); skip SSE.
                     loadingEl.remove();
@@ -4009,6 +4671,8 @@ async function regenerateResponse(botMsgEl) {
     // Resend the message
     const timestamp = new Date();
     const body = { session_id: sessionId, message: userContent, stream: true, timestamp: timestamp.toISOString(), lang: currentLang };
+    const regenAddressed = addressedAgentId(userContent);
+    if (regenAddressed) body.speaker_agent_id = regenAddressed;
 
     const MAX_RETRIES = 2;
     const RETRY_DELAY_MS = 1000;
@@ -4022,6 +4686,7 @@ async function regenerateResponse(botMsgEl) {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
+                rememberLiveSpeaker(data);
                 if (data.inline_reply) {
                     loadingEl.remove();
                     addBotMessage(data.inline_reply, new Date());
@@ -4077,6 +4742,8 @@ function sendMessage() {
     if (ws) ws.remove();
 
     const titleInfo = (isFirstMessage && text) ? { sid: sessionId, userMsg: text } : null;
+    syncTeamFromText(text);
+    renderComposerIdentity();
 
     const timestamp = new Date();
     const attachments = [...pendingAttachments];
@@ -4092,6 +4759,10 @@ function sendMessage() {
     if (typeof resetTurnArtifacts === 'function') resetTurnArtifacts();
 
     const body = { session_id: sessionId, message: text, stream: true, timestamp: timestamp.toISOString(), lang: currentLang };
+    // Naming somebody hands them the turn. Sent explicitly because the composer
+    // already knows who it wrote, and the server re-checks it either way.
+    const addressed = addressedAgentId(text);
+    if (addressed) body.speaker_agent_id = addressed;
     if (attachments.length > 0) {
         body.attachments = attachments.map(a => ({
             file_path: a.file_path,
@@ -4113,6 +4784,7 @@ function sendMessage() {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
+                rememberLiveSpeaker(data);
                 if (data.inline_reply) {
                     // Channel handled synchronously (e.g. /cancel fast-path);
                     // render as a bot bubble and skip SSE entirely.
@@ -4925,6 +5597,7 @@ function createUserMessageEl(content, timestamp, attachments) {
     `;
     // Store raw content for editing
     el.dataset.rawContent = content || '';
+    highlightMentions(el.querySelector('.msg-content'));
     return el;
 }
 
@@ -5143,9 +5816,21 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
            </div>`
         : '';
 
+    // In a shared conversation the reply needs an author, since consecutive
+    // bubbles can come from different Agents. A solo chat keeps the product's
+    // own face and says nothing, as it always has.
+    const speaker = botSpeakerAgent(msg, requestId);
+    const faceHtml = speaker
+        ? `<span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>`
+        : `<img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">`;
+    const speakerName = speaker
+        ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
+        : '';
+
     el.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+        ${faceHtml}
         <div class="min-w-0 flex-1 max-w-[85%]">
+            ${speakerName}
             <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                 ${evolutionBadge}
                 ${stepsHtml ? `<div class="agent-steps">${stepsHtml}</div>` : ''}
@@ -5490,7 +6175,10 @@ function loadHistory(page) {
             }
         })
         .catch(() => {})
-        .finally(() => { historyLoading = false; });
+        .finally(() => {
+            historyLoading = false;
+            renderComposerIdentity();
+        });
 }
 
 function addLoadingIndicator() {
@@ -5591,6 +6279,7 @@ function newChat(optimistic = true) {
         </div>
     `;
     messagesDiv.appendChild(ws);
+    renderComposerIdentity();
     ws.querySelectorAll('.example-card').forEach(card => {
         card.addEventListener('click', () => {
             const sendText = card.dataset.send;
@@ -5813,7 +6502,7 @@ function _fetchSessionPage(page, clear, onDone) {
     const container = document.getElementById('session-list');
     if (!container) { _sessionLoading = false; return; }
 
-    fetch(`/api/sessions?page=${page}&page_size=${_SESSION_PAGE_SIZE}`)
+    fetch(`/api/sessions?page=${page}&page_size=${_SESSION_PAGE_SIZE}&scope=all`)
         .then(r => r.json())
         .then(data => {
             _sessionLoading = false;
@@ -5827,10 +6516,12 @@ function _fetchSessionPage(page, clear, onDone) {
             _sessionGroupMode = data.group_mode === 'project' ? 'project' : 'time';
             if (Array.isArray(data.project_order)) _projectOrder = data.project_order;
 
-            const seen = new Set(_sessionItems.map(s => s.session_id));
+            const sessionKey = s => `${(s.agent && s.agent.id) || ''}::${s.session_id}`;
+            const seen = new Set(_sessionItems.map(sessionKey));
             sessions.forEach(s => {
-                if (seen.has(s.session_id)) return;
-                seen.add(s.session_id);
+                const key = sessionKey(s);
+                if (seen.has(key)) return;
+                seen.add(key);
                 _sessionItems.push(s);
             });
 
@@ -6042,28 +6733,38 @@ function deleteProject(path, name) {
 
 function _sessionItemEl(s, indent) {
     const item = document.createElement('div');
-    const isActive = s.session_id === sessionId;
+    const ownerId = (s.agent && s.agent.id) || '';
+    const isActive = s.session_id === sessionId && (!ownerId || ownerId === activeAgentId);
     item.className = 'session-item' + (isActive ? ' active' : '') + (s.pinned ? ' pinned' : '')
         + (indent ? ' session-item-indent' : '');
     item.dataset.sessionId = s.session_id;
+    if (ownerId) item.dataset.agentId = ownerId;
 
     const title = s.title || t('untitled_session');
     const sid = _wsAttr(s.session_id);
+    const owner = ownerId ? _wsAttr(ownerId) : '';
+    // Faces mark a conversation that has several Agents in it, the way a group
+    // chat is distinguishable from a direct one. A conversation with a single
+    // Agent stays a plain row, whatever the roster looks like elsewhere.
+    const crowd = (s.participants || []).length > 1 ? s.participants.slice(0, 3) : null;
+    const face = crowd
+        ? `<span class="session-faces">${crowd.map(a => agentAvatarHTML(a, 20)).join('')}</span>`
+        : `<i class="fas ${s.pinned ? 'fa-thumbtack' : 'fa-message'} session-icon"></i>`;
     item.innerHTML = `
-        <i class="fas ${s.pinned ? 'fa-thumbtack' : 'fa-message'} session-icon"></i>
+        ${face}
         <span class="session-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-        <button class="session-pin" onclick="event.stopPropagation(); toggleSessionPin('${sid}')"
+        <button class="session-pin" onclick="event.stopPropagation(); toggleSessionPin('${sid}', '${owner}')"
                 title="${escapeHtml(t(s.pinned ? 'unpin_session' : 'pin_session'))}">
             <i class="fas fa-thumbtack"></i>
         </button>
         <button class="session-rename" onclick="event.stopPropagation(); renameSession('${sid}')" title="${escapeHtml(t('rename_session'))}">
             <i class="fas fa-pen"></i>
         </button>
-        <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${sid}')" title="Delete">
+        <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${sid}', '${owner}')" title="Delete">
             <i class="fas fa-trash-can"></i>
         </button>
     `;
-    item.addEventListener('click', () => switchSession(s.session_id));
+    item.addEventListener('click', () => switchSession(s.session_id, ownerId || undefined));
     return item;
 }
 
@@ -6080,8 +6781,8 @@ function _sortSessionItems() {
     });
 }
 
-function toggleSessionPin(sid) {
-    const entry = _sessionItems.find(s => s.session_id === sid);
+function toggleSessionPin(sid, agentId) {
+    const entry = _sessionItems.find(s => s.session_id === sid && (!agentId || (s.agent && s.agent.id) === agentId));
     if (!entry) return;
     const pinned = !entry.pinned;
 
@@ -6094,10 +6795,11 @@ function toggleSessionPin(sid) {
     _sortSessionItems();
     _renderSessionList();
 
-    fetch(`/api/sessions/${encodeURIComponent(sid)}`, {
+    const owner = agentId || (entry.agent && entry.agent.id) || activeAgentId;
+    fetch(`/api/sessions/${encodeURIComponent(sid)}?agent_id=${encodeURIComponent(owner || '')}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pinned }),
+        body: JSON.stringify({ pinned, agent_id: owner }),
     })
         .then(r => r.json())
         .then(data => {
@@ -6187,9 +6889,14 @@ function _reattachStream(sid) {
     return true;
 }
 
-function switchSession(newSessionId) {
+function switchSession(newSessionId, agentId) {
+    if (agentId && agentId !== activeAgentId) {
+        activeAgentId = agentId;
+        localStorage.setItem('cow_active_agent', activeAgentId);
+    }
     if (newSessionId === sessionId) {
         if (currentView !== 'chat') navigateTo('chat');
+        renderComposerIdentity();
         return;
     }
 
@@ -6231,6 +6938,7 @@ function switchSession(newSessionId) {
 
     if (_isMobileView()) closeSessionPanel();
     if (currentView !== 'chat') navigateTo('chat');
+    renderComposerIdentity();
 }
 
 // In-place rename a session title: replace the title <span> with an <input>,
@@ -6312,30 +7020,24 @@ function renameSession(sid) {
     input.addEventListener('blur', commit);
 }
 
-function deleteSession(sid) {
+function deleteSession(sid, agentId) {
     showConfirmModal(t('delete_session_title'), t('delete_session_confirm'), () => {
-        // Before deleting, find the next real session to fall back to when the
-        // current one is removed (the sibling item in the list, which is sorted
-        // newest-first). Falls back to the welcome screen if none remain.
-        const nextSid = sid === sessionId ? _findNextSessionId(sid) : null;
+        const owner = agentId || activeAgentId;
+        const deletingCurrent = sid === sessionId && (!owner || owner === activeAgentId);
+        const next = deletingCurrent ? _findNextSession(sid, owner) : null;
 
-        fetch(`/api/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' })
+        fetch(`/api/sessions/${encodeURIComponent(sid)}?agent_id=${encodeURIComponent(owner || '')}`, { method: 'DELETE' })
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') return;
-                if (sid !== sessionId) {
+                if (!deletingCurrent) {
                     loadSessionList();
                     return;
                 }
-                if (nextSid) {
-                    // Switch to an existing session; refresh the list afterwards
-                    // so the deleted item disappears.
-                    switchSession(nextSid);
+                if (next) {
+                    switchSession(next.sessionId, next.agentId);
                     loadSessionList();
                 } else {
-                    // No other sessions: reset to a fresh empty session without
-                    // inserting an optimistic placeholder (it has no backend
-                    // record and would be an empty, undeletable item).
                     newChat(false);
                 }
             })
@@ -6346,15 +7048,15 @@ function deleteSession(sid) {
 // Pick the session to show after deleting `sid` (the current session): prefer
 // the next item below it in the list, otherwise the previous one. Returns null
 // if no other session exists.
-function _findNextSessionId(sid) {
+function _findNextSession(sid, agentId) {
     const items = Array.from(document.querySelectorAll('.session-item[data-session-id]'));
-    const idx = items.findIndex(el => el.dataset.sessionId === sid);
+    const same = el => el.dataset.sessionId === sid && (!agentId || el.dataset.agentId === agentId);
+    const idx = items.findIndex(same);
+    const pick = el => el ? { sessionId: el.dataset.sessionId, agentId: el.dataset.agentId || '' } : null;
     if (idx === -1) {
-        const other = items.find(el => el.dataset.sessionId !== sid);
-        return other ? other.dataset.sessionId : null;
+        return pick(items.find(el => !same(el)));
     }
-    const next = items[idx + 1] || items[idx - 1];
-    return next ? next.dataset.sessionId : null;
+    return pick(items[idx + 1] || items[idx - 1]);
 }
 
 function showConfirmModal(title, message, onConfirm) {
@@ -7171,6 +7873,16 @@ function loadConfigView() {
     }).catch(() => {});
 }
 
+function switchConfigTab(tab) {
+    ['basic', 'models', 'team'].forEach(name => {
+        document.getElementById(`config-tab-${name}`)?.classList.toggle('active', name === tab);
+        document.getElementById(`config-panel-${name}`)?.classList.toggle('hidden', name !== tab);
+    });
+    if (tab !== 'team') closeAgentDetail();
+    if (tab === 'models') loadModelsView();
+    if (tab === 'team') loadAgentCatalog();
+}
+
 // =====================================================================
 // Skills View
 // =====================================================================
@@ -7347,7 +8059,8 @@ function switchMemoryTab(tab) {
 function loadMemoryView(page) {
     page = page || 1;
     memoryPage = page;
-    fetch(`/api/memory?page=${page}&page_size=${memoryPageSize}&category=${memoryCategory}`).then(r => r.json()).then(data => {
+    const agent = viewingMemoryAgentId();
+    fetch(`/api/memory?page=${page}&page_size=${memoryPageSize}&category=${memoryCategory}&agent_id=${encodeURIComponent(agent || '')}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const emptyEl = document.getElementById('memory-empty');
         const listEl = document.getElementById('memory-list');
@@ -7413,7 +8126,8 @@ function loadMemoryView(page) {
 
 function openMemoryFile(filename, category) {
     category = category || 'memory';
-    fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}`).then(r => r.json()).then(data => {
+    const agent = viewingMemoryAgentId();
+    fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}&agent_id=${encodeURIComponent(agent || '')}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         document.getElementById('memory-panel-list').classList.add('hidden');
         const panel = document.getElementById('memory-panel-viewer');
@@ -7522,7 +8236,7 @@ function loadModelsView(opts) {
     const preserveScroll = !!(opts && opts.preserveScroll);
     // The Models pane has its own scrollable container; capture its position
     // (not window.scrollY) so we can put the user back exactly where they were.
-    const scroller = document.querySelector('#view-models .overflow-y-auto');
+    const scroller = document.querySelector('#view-config .overflow-y-auto');
     const savedTop = preserveScroll && scroller ? scroller.scrollTop : null;
 
     loading.classList.remove('hidden');
@@ -9138,13 +9852,14 @@ function loadChannelsView() {
     container.innerHTML = `<div class="flex items-center gap-2 py-8 justify-center text-slate-400 dark:text-slate-500 text-sm">
         <i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span></div>`;
 
-    fetch('/api/channels').then(r => r.json()).then(data => {
+    const roster = agentCatalog.length ? Promise.resolve() : loadAgentCatalog();
+    roster.then(() => fetch('/api/channels').then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         channelsData = data.channels || [];
         renderActiveChannels();
     }).catch(() => {
         container.innerHTML = '<p class="text-sm text-red-400 py-8 text-center">Failed to load channels</p>';
-    });
+    }));
 }
 
 function renderActiveChannels() {
@@ -9215,6 +9930,13 @@ function renderActiveChannels() {
                            cursor-pointer transition-colors flex-shrink-0">
                     ${t('channels_disconnect')}
                 </button>
+            </div>
+            <div class="channel-agent-bind">
+                <span class="text-xs text-slate-500 whitespace-nowrap">${escapeHtml(t('channel_bound_agent'))}</span>
+                <select onchange="bindChannelAgent('${ch.name}', this.value)">
+                    <option value="">${escapeHtml(t('channel_bound_default').replace('{name}', (findAgent(defaultAgentId) || {}).name || defaultAgentId))}</option>
+                    ${enabledAgents().map(a => `<option value="${escapeHtml(a.id)}" ${channelBoundAgentId(ch.name) === a.id ? 'selected' : ''}>${escapeHtml(a.name)}</option>`).join('')}
+                </select>
             </div>
             ${weixinWaiting ? `<div id="weixin-active-qr" class="flex flex-col items-center py-2">
                 <button onclick="showWeixinActiveQr()"
@@ -10416,11 +11138,12 @@ navigateTo = function(viewId) {
 
     // Lazy-load view data
     if (viewId === 'config') loadConfigView();
-    else if (viewId === 'models') loadModelsView();
     else if (viewId === 'skills') loadSkillsView();
     else if (viewId === 'memory') {
         document.getElementById('memory-panel-viewer').classList.add('hidden');
         document.getElementById('memory-panel-list').classList.remove('hidden');
+        if (!memoryAgentId) memoryAgentId = activeAgentId || defaultAgentId;
+        renderMemoryAgentSelect();
         switchMemoryTab('files');
     }
     else if (viewId === 'knowledge') loadKnowledgeView();
