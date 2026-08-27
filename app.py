@@ -413,6 +413,26 @@ def _warmup_scheduler():
         logger.warning(f"[App] Scheduler warmup failed: {e}")
 
 
+def _migrate_team_roster():
+    """Move a roster still stored in config.json into the team file.
+
+    Here rather than on the next edit from the console: the gateway is the one
+    place this runs single-threaded and before anything has read the registry,
+    and until it has moved the roster is still open to being clobbered by any
+    of the callers that rewrite config.json wholesale.
+    """
+    try:
+        import os
+
+        from agent import team
+        from config import conf, get_data_root
+
+        team.migrate(conf(), os.path.join(get_data_root(), "config.json"))
+    except Exception as e:
+        # Never a reason not to start: read() still falls back to config.json.
+        logger.warning(f"[App] Could not move the roster into its own file: {e}")
+
+
 def _warn_if_legacy_workspace_data_exists():
     """
     Warn if the hardcoded ~/cow default holds data that agent_workspace
@@ -544,6 +564,7 @@ def run():
             logger.debug(f"[App] using certifi CA bundle: {bundle}")
         # load config
         load_config()
+        _migrate_team_roster()
         _warn_if_legacy_workspace_data_exists()
         # ctrl + c
         sigterm_handler_wrap(signal.SIGINT)

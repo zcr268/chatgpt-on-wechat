@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from agent import team
+from agent.registry import AgentRegistry
 from cli.commands.backup import create_backup_archive, restore_backup_archive
 
 
@@ -185,10 +187,7 @@ def test_multi_agent_backup_restore_preserves_all_isolated_workspaces(tmp_path):
     restored_config = json.loads(
         (target_data / "config.json").read_text(encoding="utf-8")
     )
-    destinations = {
-        item["id"]: Path(item["workspace"])
-        for item in restored_config["agents"]
-    }
+    destinations = {item["id"]: Path(item["workspace"]) for item in result["agents"]}
     # Same layout AgentRegistry.from_config derives: the default Agent owns the
     # instance root, the rest live under agents/<id>.
     assert destinations == {
@@ -196,7 +195,14 @@ def test_multi_agent_backup_restore_preserves_all_isolated_workspaces(tmp_path):
         "research": (target_root / "agents" / "research").resolve(),
     }
     assert restored_config["agent_workspace"] == str(destinations["primary"])
-    assert restored_config["agent_bindings"][0]["agent_id"] == "research"
+    # The roster is restored beside the workspaces, not back into config.json,
+    # and it names no paths at all: this layout is the one the registry derives,
+    # so the restored tree can be moved again without editing anything.
+    assert "agents" not in restored_config
+    restored_roster = team.read({"agent_workspace": str(destinations["primary"])})
+    assert [item["id"] for item in restored_roster["agents"]] == ["primary", "research"]
+    assert not any("workspace" in item for item in restored_roster["agents"])
+    assert restored_roster["agent_bindings"][0]["agent_id"] == "research"
     assert (destinations["primary"] / "MEMORY.md").read_text() == "primary"
     assert (destinations["research"] / "MEMORY.md").read_text() == "research"
     assert (destinations["primary"] / "memory/long-term/index.db").read_bytes() == b"primary"
@@ -242,10 +248,14 @@ def test_multi_agent_restore_reuses_matching_local_destinations(tmp_path):
 
     assert (local_primary / "AGENT.md").read_text() == "new primary"
     assert (local_research / "AGENT.md").read_text() == "new research"
-    restored = json.loads((target_data / "config.json").read_text())
-    assert {item["id"]: item["workspace"] for item in restored["agents"]} == {
-        "primary": str(local_primary.resolve()),
-        "research": str(local_research.resolve()),
+    # What matters is where the registry then looks, not how the roster spells
+    # it: the default Agent's root is implied and Research sits outside the
+    # derived layout, so only one of the two is written down.
+    settings = team.resolve({"agent_workspace": str(local_primary)})
+    registry = AgentRegistry.from_config(settings)
+    assert {profile.id: Path(profile.workspace) for profile in registry.list()} == {
+        "primary": local_primary.resolve(),
+        "research": local_research.resolve(),
     }
 
 
