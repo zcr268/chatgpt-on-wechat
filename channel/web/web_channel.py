@@ -2504,8 +2504,8 @@ class ConfigHandler:
         const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
         const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
-        const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
-        const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
+        const.GLM_5_3_FLASH, const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
+        const.QWEN38_FLASH, const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
         const.KIMI_K3, const.KIMI_K2_7_CODE, const.KIMI_K2_7_CODE_HIGHSPEED, const.KIMI_K2_6, const.KIMI_K2_5, const.KIMI_K2,
         const.ERNIE_5_1, const.ERNIE_5, const.ERNIE_X1_1, const.ERNIE_45_TURBO_128K, const.ERNIE_45_TURBO_32K,
@@ -2570,7 +2570,7 @@ class ConfigHandler:
             "api_base_key": "zhipu_ai_api_base",
             "api_base_default": "https://open.bigmodel.cn/api/paas/v4",
             "api_base_placeholder": _PLACEHOLDER_ZHIPU,
-            "models": [const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
+            "models": [const.GLM_5_3_FLASH, const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7],
         }),
         ("dashscope", {
             "label": {"zh": "通义千问", "en": "Qwen"},
@@ -2578,7 +2578,7 @@ class ConfigHandler:
             "api_base_key": None,
             "api_base_default": None,
             "api_base_placeholder": "",
-            "models": [const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
+            "models": [const.QWEN38_FLASH, const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS],
         }),
         ("moonshot", {
             "label": "Kimi",
@@ -3212,7 +3212,7 @@ class ModelsHandler:
         ],
         "doubao":    [const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_PRO],
         "moonshot":  [const.KIMI_K2_6],
-        "dashscope": [const.QWEN37_PLUS, const.QWEN36_PLUS],
+        "dashscope": [const.QWEN38_FLASH, const.QWEN37_PLUS, const.QWEN36_PLUS],
         # claude-sonnet-5 stays first here (unlike the chat lists): the first
         # entry is the auto-picked vision model, and image understanding does
         # not justify the Opus price.
@@ -3236,6 +3236,7 @@ class ModelsHandler:
         "linkai":    [
             const.GPT_41_MINI,
             const.GPT_54_MINI,
+            const.QWEN38_FLASH,
             const.QWEN37_PLUS,
             const.DOUBAO_SEED_2_1_PRO,
             const.KIMI_K2_6,
