@@ -1113,7 +1113,7 @@ class AgentStreamExecutor:
             from agent.tools import ToolManager
             from agent.tools.mcp.tool_retrieval import (
                 build_retrieval_query,
-                select_mcp_tools,
+                select_mcp_tools_with_metadata,
             )
 
             tm = ToolManager()
@@ -1121,20 +1121,34 @@ class AgentStreamExecutor:
             query = build_retrieval_query(self.messages)
             query_vector = tm.embed_query(query)
 
-            selected = select_mcp_tools(
+            decision = select_mcp_tools_with_metadata(
                 query_vector,
                 tool_vectors,
                 top_k,
                 getattr(self, "_retrieved_mcp_names", set()),
             )
-            if selected is None:
+            if decision is None or decision.fallback_reason is not None:
                 # No provider / empty index / error → full injection.
+                self._emit_tool_retrieval_event(
+                    mcp_tools,
+                    builtin_tools,
+                    top_k,
+                    decision=decision,
+                    mode="fallback",
+                )
                 return all_tools
 
             # Persist the accumulated selection for subsequent turns.
-            self._retrieved_mcp_names = selected
+            self._retrieved_mcp_names = decision.selected
 
-            selected_mcp = [t for t in mcp_tools if t.name in selected]
+            selected_mcp = [t for t in mcp_tools if t.name in decision.selected]
+            self._emit_tool_retrieval_event(
+                mcp_tools,
+                builtin_tools,
+                top_k,
+                decision=decision,
+                mode="retrieved",
+            )
             logger.info(
                 f"[ToolRetrieval] Injecting {len(builtin_tools)} built-in + "
                 f"{len(selected_mcp)}/{len(mcp_tools)} MCP tool(s) (top_k={top_k})"
@@ -1142,7 +1156,64 @@ class AgentStreamExecutor:
             return builtin_tools + selected_mcp
         except Exception as e:
             logger.debug(f"[ToolRetrieval] full injection (retrieval skipped): {e}")
+            self._emit_tool_retrieval_event(
+                mcp_tools if "mcp_tools" in locals() else [],
+                builtin_tools if "builtin_tools" in locals() else [],
+                top_k if "top_k" in locals() else 0,
+                mode="fallback",
+                fallback_reason="retrieval_error",
+            )
             return all_tools
+
+    def _emit_tool_retrieval_event(
+        self,
+        mcp_tools: List[BaseTool],
+        builtin_tools: List[BaseTool],
+        top_k: int,
+        decision=None,
+        mode: str = "fallback",
+        fallback_reason: Optional[str] = None,
+    ) -> None:
+        """Expose sanitized MCP retrieval metadata to streaming consumers."""
+        if not callable(getattr(self, "_emit_event", None)):
+            return
+
+        try:
+            fallback_reason = fallback_reason or (
+                decision.fallback_reason
+                if decision is not None
+                else "selection_unavailable"
+            )
+            selected = decision.selected if decision is not None else set()
+            ranked = decision.ranked if decision is not None else []
+            candidate_count = decision.candidate_count if decision is not None else 0
+            rank_limit = max(top_k, 0)
+            injected_names = (
+                sorted(tool.name for tool in mcp_tools)
+                if mode == "fallback" else sorted(selected)
+            )
+            self._emit_event("tool_retrieval", {
+                "enabled": True,
+                "mode": mode,
+                "total_mcp_tools": len(mcp_tools),
+                "selected_mcp_tools": (
+                    len([tool for tool in mcp_tools if tool.name in selected])
+                    if mode == "retrieved" else len(mcp_tools)
+                ),
+                "builtin_tools": len(builtin_tools),
+                "top_k": top_k,
+                "candidate_count": candidate_count,
+                "selected_tools": injected_names,
+                "ranked_tools": [
+                    {"name": name, "score": round(float(score), 6)}
+                    for name, score in ranked[:rank_limit]
+                ],
+                "fallback_reason": fallback_reason,
+            })
+        except Exception as e:
+            # Observability must never turn a safe retrieval fallback into an
+            # agent failure, even when a custom event consumer is malformed.
+            logger.debug(f"[ToolRetrieval] event emission skipped: {e}")
 
     def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=3,
                          _overflow_stage: int = 0) -> Tuple[str, List[Dict], Optional[str]]:

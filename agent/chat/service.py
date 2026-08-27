@@ -119,6 +119,13 @@ class ChatService:
                     # a new segment; collect tool results until turn_end.
                     state.pending_tool_results = []
 
+            elif event_type == "tool_retrieval":
+                # Forward sanitized retrieval metadata for progress displays.
+                send_chunk_fn({
+                    "chunk_type": "tool_retrieval",
+                    "data": data,
+                })
+
             elif event_type == "file_to_send":
                 url = data.get("url") or ""
                 if url:

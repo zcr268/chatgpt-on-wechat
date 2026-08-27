@@ -10,8 +10,10 @@ the conversation context.
 
 Invariants (per maintainer review of the feature proposal):
   * Built-in tools are never handled here — the caller injects them in full.
-  * Any failure / missing input returns None so the caller falls back to
-    full injection; tools must never be silently dropped.
+  * The legacy selector returns None on any failure / missing input so the
+    caller falls back to full injection; tools must never be silently dropped.
+    The metadata selector represents the same fallback as a decision with a
+    ``fallback_reason``.
   * Selection is union-accumulated across turns by the caller (only-grows),
     so a tool that already produced a tool_use in the message history can
     never disappear from the schema mid-run (which would make Claude/MiniMax
@@ -118,31 +120,23 @@ def select_mcp_tools(
         "fall back to full injection" (no query vector, empty/invalid index,
         or any unexpected error). This function never raises.
     """
-    accumulated: Set[str] = set(already_selected) if already_selected else set()
-
-    if not query_vector or not tool_vectors or top_k <= 0:
+    decision = select_mcp_tools_with_metadata(
+        query_vector,
+        tool_vectors,
+        top_k,
+        already_selected,
+    )
+    if decision is None or decision.fallback_reason is not None:
         return None
+    return decision.selected
 
+
+def _is_finite_vector(vector: Sequence[float]) -> bool:
+    """Return whether every vector value is a finite number."""
     try:
-        expected_dim = len(query_vector)
-        # Only rank candidates whose vector dimensionality matches the query.
-        # A dimension mismatch means the index was built with a different
-        # embedding model; ranking across dims is meaningless.
-        candidates = {
-            name: vec
-            for name, vec in tool_vectors.items()
-            if vec and len(vec) == expected_dim
-        }
-        if not candidates:
-            return None
-
-        ranked = _rank_by_similarity(query_vector, candidates)
-        for name, _score in ranked[:top_k]:
-            accumulated.add(name)
-        return accumulated
-    except Exception:
-        # Selection must never break the agent — fall back to full injection.
-        return None
+        return all(math.isfinite(float(value)) for value in vector)
+    except (TypeError, ValueError):
+        return False
 
 
 def select_mcp_tools_with_metadata(
@@ -151,8 +145,97 @@ def select_mcp_tools_with_metadata(
     top_k: int,
     already_selected: Optional[Set[str]] = None,
 ) -> Optional[McpRetrievalDecision]:
-    """Return MCP retrieval selection plus metadata for observability."""
-    raise NotImplementedError
+    """Return MCP retrieval selection plus metadata for observability.
+
+    A decision with ``fallback_reason`` set describes a safe full-injection
+    fallback. The legacy ``select_mcp_tools`` wrapper converts that decision
+    back to ``None`` so existing callers keep their current behavior.
+    """
+    accumulated: Set[str] = set(already_selected) if already_selected else set()
+
+    try:
+        if query_vector is None:
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="missing_query_vector",
+            )
+        if len(query_vector) == 0:
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="missing_query_vector",
+            )
+        if not _is_finite_vector(query_vector):
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="invalid_query_vector",
+            )
+        if not tool_vectors:
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="empty_tool_index",
+            )
+        if top_k <= 0:
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="invalid_top_k",
+            )
+
+        expected_dim = len(query_vector)
+        # Only rank candidates whose vector dimensionality matches the query.
+        # A dimension mismatch means the index was built with a different
+        # embedding model; ranking across dims is meaningless.
+        candidates = {}
+        for name, vec in tool_vectors.items():
+            try:
+                if (
+                    vec is not None
+                    and len(vec) > 0
+                    and len(vec) == expected_dim
+                    and _is_finite_vector(vec)
+                ):
+                    candidates[name] = vec
+            except (TypeError, ValueError):
+                continue
+        if not candidates:
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="no_compatible_candidates",
+            )
+
+        ranked = _rank_by_similarity(query_vector, candidates)
+        if not all(math.isfinite(float(score)) for _name, score in ranked):
+            return McpRetrievalDecision(
+                selected=accumulated,
+                ranked=[],
+                candidate_count=0,
+                fallback_reason="non_finite_score",
+            )
+        accumulated.update(name for name, _score in ranked[:top_k])
+        return McpRetrievalDecision(
+            selected=accumulated,
+            ranked=ranked,
+            candidate_count=len(candidates),
+        )
+    except Exception:
+        # Selection must never break the agent — fall back to full injection.
+        return McpRetrievalDecision(
+            selected=accumulated,
+            ranked=[],
+            candidate_count=0,
+            fallback_reason="selection_error",
+        )
 
 
 def _rank_by_similarity(
