@@ -251,8 +251,14 @@ class AgentDelegateTool(BaseTool):
 
         action = params.get("action", "delegate")
         if action == "list":
+            # With the description: choosing who to hand work to is the whole
+            # point of asking, and a list of names does not support that choice.
             available = [
-                {"id": profile.id, "name": profile.name}
+                {
+                    "id": profile.id,
+                    "name": profile.name,
+                    "description": profile.description or "",
+                }
                 for profile in self.agent_bridge.agent_registry.list(
                     include_disabled=False
                 )

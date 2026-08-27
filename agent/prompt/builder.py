@@ -178,6 +178,7 @@ def build_agent_system_prompt(
     # 7. Runtime info (meta info, goes last)
     if runtime_info:
         sections.extend(_build_runtime_section(runtime_info, language))
+        sections.extend(_build_team_section(runtime_info, language))
 
     # 8. Response language (always appended, independent of the skeleton language)
     sections.extend(_build_response_language_section(language))
@@ -896,6 +897,82 @@ def _build_context_files_section(context_files: List[ContextFile], language: str
         lines.append("")
     
     return lines
+
+
+def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str]:
+    """Name the other Agents sharing this conversation, if any. Empty for one.
+
+    Addressing someone by name is routing, not delegation: the named Agent is
+    already the one reading this prompt, so handover is left for work nobody
+    was asked for by name.
+
+    States the Agent's own name, which nothing else in the prompt does. Without
+    it a mention reads as a third party and the Agent declines to answer on
+    that stranger's behalf.
+    """
+    teammates = runtime_info.get("teammates")
+    getter = runtime_info.get("_get_teammates")
+    if callable(getter):
+        try:
+            teammates = getter()
+        except Exception as e:
+            logger.warning(f"[PromptBuilder] Failed to resolve teammates: {e}")
+    if not teammates:
+        return []
+
+    # One line each, with what they are for: a bare list of names is enough to
+    # address someone but not to decide whether the work is theirs.
+    roster = []
+    for item in teammates:
+        if not item.get("id"):
+            continue
+        line = f"{item.get('name') or item['id']}(@{item['id']})"
+        if item.get("description"):
+            line += f"：{item['description']}" if language != "en" else f" — {item['description']}"
+        roster.append(line)
+    if not roster:
+        return []
+
+    own_id = runtime_info.get("agent_id") or ""
+    own_name = runtime_info.get("agent_name") or own_id
+    whoami = f"{own_name}(@{own_id})" if own_id else own_name
+
+    if language == "en":
+        return [
+            "## 👥 Team conversation",
+            "",
+            f"You are {whoami}. Also in this conversation:",
+            "",
+            *[f"- {line}" for line in roster],
+            "",
+            "Everyone here reads the same history. A reply that starts with "
+            "someone's name in brackets was written by them; an unmarked one "
+            "is your own. Do not take a teammate's work, or their promises, "
+            "for yours.",
+            "",
+            "This turn is yours to answer. Answer as yourself. When the user "
+            "wants a teammate's own words, let them address that teammate.",
+            "",
+            "Use agent_delegate for work that belongs to a teammate, and say "
+            "who you handed it to and what you asked for.",
+            "",
+        ]
+    return [
+        "## 👥 团队会话",
+        "",
+        f"你是 {whoami}。同在这个会话里的还有：",
+        "",
+        *[f"- {line}" for line in roster],
+        "",
+        "大家读到的是同一份记录。以方括号加名字开头的回复出自那位同事，"
+        "没有标注的才是你自己说的。不要把同事做过的事、许下的承诺当成你的。",
+        "",
+        "这一轮由你来回答，以你自己的身份回答即可。用户想听某位同事亲口说，"
+        "让他去点那位同事。",
+        "",
+        "该由某位同事做的事，用 agent_delegate 交出去，并说明交给了谁、交办了什么。",
+        "",
+    ]
 
 
 def _build_runtime_section(runtime_info: Dict[str, Any], language: str) -> List[str]:
