@@ -17,8 +17,9 @@ Invariants (per maintainer review of the feature proposal):
     never disappear from the schema mid-run (which would make Claude/MiniMax
     raise a message-format error).
 """
+from dataclasses import dataclass
 import math
-from typing import Dict, List, Optional, Sequence, Set
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 try:
     import numpy as np
@@ -31,6 +32,19 @@ except ImportError:
 # query is not enough; a short recent window captures the drift without
 # bloating the query with stale context.
 DEFAULT_QUERY_MESSAGES = 5
+
+
+@dataclass(frozen=True)
+class McpRetrievalDecision:
+    """Metadata for one MCP tool retrieval decision.
+
+    ``selected`` is the accumulated tool set to inject. ``ranked`` contains the
+    current turn's similarity ranking, without query text or raw vectors.
+    """
+    selected: Set[str]
+    ranked: List[Tuple[str, float]]
+    candidate_count: int
+    fallback_reason: Optional[str] = None
 
 
 def build_retrieval_query(messages: list, max_messages: int = DEFAULT_QUERY_MESSAGES) -> str:
@@ -129,6 +143,16 @@ def select_mcp_tools(
     except Exception:
         # Selection must never break the agent — fall back to full injection.
         return None
+
+
+def select_mcp_tools_with_metadata(
+    query_vector: Optional[Sequence[float]],
+    tool_vectors: Dict[str, Sequence[float]],
+    top_k: int,
+    already_selected: Optional[Set[str]] = None,
+) -> Optional[McpRetrievalDecision]:
+    """Return MCP retrieval selection plus metadata for observability."""
+    raise NotImplementedError
 
 
 def _rank_by_similarity(
