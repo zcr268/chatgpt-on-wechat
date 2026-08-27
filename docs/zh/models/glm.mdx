@@ -26,7 +26,7 @@ description: 智谱 AI GLM 模型配置（文本 / 图像理解 / 语音识别 /
 
 ## 图像理解
 
-智谱 chat 系列模型（`glm-5.2`、`glm-5.1`、`glm-5-turbo` 等）不支持视觉，视觉调用统一路由到 `glm-5v-turbo`。配置 `zhipu_ai_api_key` 后 Agent 的 Vision 工具会自动使用该模型，无需在配置文件中显式指定。
+`glm-5.3-flash` 本身即多模态，作为主模型时 Agent 的 Vision 工具会直接使用它识别图像。纯文本 chat 模型（`glm-5.2`、`glm-5.1`、`glm-5-turbo` 等）不支持视觉，此时视觉调用会自动回落到专用的 `glm-5v-turbo` 模型。配置 `zhipu_ai_api_key` 后无需额外设置。
 
 ## 语音识别
 

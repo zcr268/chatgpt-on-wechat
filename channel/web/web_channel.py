@@ -3219,11 +3219,11 @@ class ModelsHandler:
         "claudeAPI": [const.CLAUDE_SONNET_5, const.CLAUDE_OPUS_5, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
         "gemini":    [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         "qianfan":   [const.ERNIE_45_TURBO_VL],
-        # Zhipu's bot hard-codes the call to glm-5v-turbo regardless of what
-        # name is passed in (see models/zhipuai/zhipuai_bot.py::call_vision),
-        # so listing the chat models here would silently route to the same
-        # endpoint. Surface only the model the runtime can truly dispatch to.
-        "zhipu":     [const.GLM_5V_TURBO],
+        # glm-5.3-flash is natively multimodal and dispatched as-is; the
+        # text-only chat models (glm-5.2, glm-5-turbo, etc.) fall back to the
+        # dedicated glm-5v-turbo vision model (see
+        # models/zhipuai/zhipuai_bot.py::call_vision).
+        "zhipu":     [const.GLM_5_3_FLASH, const.GLM_5V_TURBO],
         # MiniMax's vision endpoint is similarly hard-coded to MiniMax-Text-01
         # (see models/minimax/minimax_bot.py::call_vision); the M2.x chat
         # family is text-only.

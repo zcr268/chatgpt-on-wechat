@@ -26,7 +26,7 @@ Zhipu AI supports text chat, image understanding, speech-to-text (ASR), and embe
 
 ## Image Understanding
 
-Zhipu's chat models (`glm-5.2`, `glm-5.1`, `glm-5-turbo`, etc.) do not support vision; vision calls are uniformly routed to `glm-5v-turbo`. Once `zhipu_ai_api_key` is configured, the Agent's Vision tool automatically uses this model, with no need to specify it explicitly in the configuration file.
+`glm-5.3-flash` is natively multimodal, so when it is the main model the Agent's Vision tool uses it directly. Text-only chat models (`glm-5.2`, `glm-5.1`, `glm-5-turbo`, etc.) do not support vision; for those, vision calls automatically fall back to the dedicated `glm-5v-turbo` model. Once `zhipu_ai_api_key` is configured, no extra setup is needed.
 
 ## Speech-to-Text (ASR)
 
