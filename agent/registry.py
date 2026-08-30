@@ -192,7 +192,7 @@ class AgentRegistry:
 
         raw_agents = settings.get("agents")
         if raw_agents is None or raw_agents == []:
-            profile = AgentProfile(id="default", name="Default", workspace=instance_root)
+            profile = AgentProfile(id="default", name="CowAgent", workspace=instance_root)
             return cls([profile], "default")
 
         if not isinstance(raw_agents, list):

@@ -228,12 +228,32 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <button class="session-panel-new" onclick="newChat()">
-                <i class="fas fa-plus"></i>
-                <span data-i18n="new_chat">新对话</span>
-            </button>
+            <div class="session-panel-new-wrap">
+                <button class="session-panel-new" onclick="onNewChatButton(event)">
+                    <i class="fas fa-plus"></i>
+                    <span data-i18n="new_chat">新对话</span>
+                    <i id="new-chat-caret" class="fas fa-chevron-down new-chat-caret hidden"></i>
+                </button>
+                <div id="new-chat-menu" class="new-chat-menu hidden"></div>
+            </div>
             <div id="session-list" class="session-list"></div>
         </aside>
+
+        <!-- Multi-agent new-chat modal: pick who joins, then start -->
+        <div id="team-chat-modal" class="agent-modal hidden">
+            <div class="agent-modal-card">
+                <h3 class="agent-modal-title" data-i18n="new_team_chat">多智能体对话</h3>
+                <div class="agent-modal-body">
+                    <p class="agent-field-hint mb-3" data-i18n="new_team_chat_hint">勾选参与本次对话的智能体，第一个为会话归属者。</p>
+                    <div id="team-chat-list" class="team-chat-list"></div>
+                </div>
+                <div class="agent-modal-foot">
+                    <span id="team-chat-status" class="agent-field-hint text-red-500 mr-auto"></span>
+                    <button onclick="closeTeamChatModal()" class="agent-btn agent-btn-text" data-i18n="cancel">取消</button>
+                    <button onclick="startTeamChat()" class="agent-btn agent-btn-primary" data-i18n="new_team_chat_start">开始对话</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Mobile overlay for session panel (click to close) -->
         <div id="session-panel-overlay" class="session-panel-overlay hidden" onclick="closeSessionPanel()"></div>
@@ -623,31 +643,31 @@
                                 </div>
                             </div>
 
-                            <!-- Tabs: 基础配置 / 模型配置 -->
-                            <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 mb-6 w-max">
-                                <button id="config-tab-basic" onclick="switchConfigTab('basic')"
-                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
-                                    <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
-                                </button>
-                                <button id="config-tab-models" onclick="switchConfigTab('models')"
-                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                    <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
-                                </button>
-                                <button id="config-tab-team" onclick="switchConfigTab('team')"
-                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                    <i class="fas fa-people-group mr-1.5"></i><span data-i18n="settings_tab_team">智能体团队</span>
+                            <!-- Tabs: 基础配置 / 模型配置 / 智能体团队 -->
+                            <div class="flex items-center justify-between gap-3 mb-6">
+                                <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 w-max">
+                                    <button id="config-tab-basic" onclick="switchConfigTab('basic')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
+                                        <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
+                                    </button>
+                                    <button id="config-tab-models" onclick="switchConfigTab('models')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                        <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
+                                    </button>
+                                    <button id="config-tab-team" onclick="switchConfigTab('team')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                        <i class="fas fa-people-group mr-1.5"></i><span data-i18n="settings_tab_team">智能体团队</span>
+                                    </button>
+                                </div>
+                                <button id="agents-create-btn" onclick="openAgentCreateForm()"
+                                        class="hidden px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium whitespace-nowrap">
+                                    <i class="fas fa-plus mr-1.5"></i><span data-i18n="agents_create">创建智能体</span>
                                 </button>
                             </div>
 
 
                             <!-- Panel: 智能体团队 -->
                             <div id="config-panel-team" class="hidden">
-                                <div class="flex flex-wrap items-center justify-between gap-3 mb-5">
-                                    <p class="text-sm text-slate-500 dark:text-slate-400" data-i18n="agents_desc">每个智能体有自己的人格与会话，技能和知识默认共享。</p>
-                                    <button onclick="openAgentCreateForm()" class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium">
-                                        <i class="fas fa-plus mr-1.5"></i><span data-i18n="agents_create">创建智能体</span>
-                                    </button>
-                                </div>
                                 <div id="agents-grid" class="agents-grid"></div>
                         <aside id="agent-detail" class="agent-detail hidden">
                             <div class="agent-detail-header">
@@ -681,21 +701,39 @@
                         </aside>
                     <div id="agent-create-form" class="agent-modal hidden">
                         <div class="agent-modal-card">
-                            <h3 class="text-base font-semibold text-slate-800 dark:text-slate-100 mb-4" data-i18n="agents_create">创建智能体</h3>
-                            <div class="space-y-3">
-                                <input id="agent-create-name" data-i18n-placeholder="agents_name_placeholder" placeholder="名称，例如 销售助手" class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm">
-                                <input id="agent-create-id" data-i18n-placeholder="agents_id_placeholder" placeholder="ID（可改，创建后不可变）" class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm font-mono">
-                                <input id="agent-create-description" data-i18n-placeholder="agents_description_placeholder" placeholder="擅长什么，例如 负责小红书选题与文案" class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm">
-                                <div>
-                                    <div class="text-xs text-slate-500 mb-2" data-i18n="agents_avatar">头像</div>
-                                    <div id="agent-create-avatars" class="agent-emoji-row"></div>
+                            <h3 class="agent-modal-title" data-i18n="agents_create">创建智能体</h3>
+                            <div class="agent-modal-body">
+                                <div class="agent-field">
+                                    <label class="agent-field-label" data-i18n="agents_avatar">头像</label>
+                                    <div id="agent-create-avatar" class="agent-avatar-picker"></div>
                                 </div>
-                                <select id="agent-create-clone" class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#222] text-sm"></select>
+                                <div class="agent-field">
+                                    <label class="agent-field-label" data-i18n="agents_name">名称</label>
+                                    <input id="agent-create-name" data-i18n-placeholder="agents_name_placeholder" placeholder="智能体名称" class="agent-input">
+                                </div>
+                                <div class="agent-field">
+                                    <label class="agent-field-label">ID</label>
+                                    <input id="agent-create-id" data-i18n-placeholder="agents_id_placeholder" placeholder="留空则自动生成" class="agent-input font-mono">
+                                </div>
+                                <div class="agent-field">
+                                    <label class="agent-field-label" data-i18n="agents_description">职责</label>
+                                    <textarea id="agent-create-description" rows="3" data-i18n-placeholder="agents_description_placeholder" placeholder="该智能体负责哪些工作、在什么场景被使用" class="agent-input agent-textarea"></textarea>
+                                </div>
+                                <div class="agent-field">
+                                    <label class="agent-field-label" data-i18n="agents_clone_label">人格模板</label>
+                                    <div id="agent-create-clone" class="cfg-dropdown" tabindex="0">
+                                        <div class="cfg-dropdown-selected">
+                                            <span class="cfg-dropdown-text">--</span>
+                                            <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                        </div>
+                                        <div class="cfg-dropdown-menu"></div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="flex items-center justify-end gap-3 mt-5">
-                                <span id="agent-create-status" class="text-xs text-red-500 mr-auto"></span>
-                                <button onclick="closeAgentCreateForm()" class="px-3 py-2 text-sm text-slate-500" data-i18n="cancel">取消</button>
-                                <button onclick="createAgentWorkspace()" class="px-4 py-2 rounded-lg bg-primary-500 text-white text-sm" data-i18n="agents_create">创建智能体</button>
+                            <div class="agent-modal-foot">
+                                <span id="agent-create-status" class="agent-field-hint text-red-500 mr-auto"></span>
+                                <button onclick="closeAgentCreateForm()" class="agent-btn agent-btn-text" data-i18n="cancel">取消</button>
+                                <button onclick="createAgentWorkspace()" class="agent-btn agent-btn-primary" data-i18n="agents_create">创建智能体</button>
                             </div>
                         </div>
                     </div>

@@ -621,6 +621,26 @@ class CloudClient(LinkAIClient):
         logger.info(f"[CloudClient] on_chat: session={session_id}, channel={channel_type}, "
                     f"user_id={user_id}, query={query[:80]}")
 
+        # Cancel / steer fast-path. These are NOT new agent turns — they act on
+        # the run already in flight for this session. The web channel intercepts
+        # them in its HTTP handler; the cloud/socket path (this method) is what a
+        # platform like linkai-admin drives, so it must honour them here too.
+        # Both reach the same in-process registries the running turn is polling.
+        stripped = (query or "").strip()
+        steer_flag = bool(payload.get("steer"))
+        if stripped == "/cancel":
+            handled = self._handle_cancel(session_id, send_chunk_fn)
+            if handled:
+                return
+        elif steer_flag or stripped.startswith("/steer"):
+            instruction = (
+                stripped[len("/steer"):].strip()
+                if stripped.startswith("/steer")
+                else stripped
+            )
+            self._handle_steer(session_id, instruction, send_chunk_fn)
+            return
+
         with _acting_user(user_id):
             # Intercept cow/slash commands before the agent runs
             try:
@@ -641,6 +661,52 @@ class CloudClient(LinkAIClient):
 
             svc.run(query=query, session_id=session_id, channel_type=channel_type,
                     send_chunk_fn=send_chunk_fn)
+
+    def _agent_bridge(self):
+        try:
+            from bridge.bridge import Bridge
+            return Bridge().get_agent_bridge()
+        except Exception as e:
+            logger.warning(f"[CloudClient] agent_bridge unavailable: {e}")
+            return None
+
+    def _handle_cancel(self, session_id: str, send_chunk_fn) -> bool:
+        """Abort the in-flight run for this session. Returns True if it was our
+        command to handle (always True once matched), regardless of whether a
+        run was actually running."""
+        bridge = self._agent_bridge()
+        cancelled = 0
+        if bridge is not None:
+            try:
+                from agent.protocol import get_cancel_registry
+                key = bridge.scoped_session_key(session_id)
+                cancelled = get_cancel_registry().cancel_session(key)
+            except Exception as e:
+                logger.warning(f"[CloudClient] cancel failed: {e}")
+        logger.info(f"[CloudClient] /cancel: session={session_id}, cancelled={cancelled}")
+        msg = "已中止当前执行。" if cancelled > 0 else "当前没有正在执行的任务。"
+        send_chunk_fn({"chunk_type": "content", "delta": msg, "segment_id": 0})
+        return True
+
+    def _handle_steer(self, session_id: str, instruction: str, send_chunk_fn) -> None:
+        """Inject a mid-run instruction into this session's active run."""
+        if not instruction:
+            send_chunk_fn({"chunk_type": "content",
+                           "delta": "用法：/steer <要补充的指令>", "segment_id": 0})
+            return
+        bridge = self._agent_bridge()
+        status_val = None
+        if bridge is not None:
+            try:
+                result = bridge.steer_session(session_id, instruction)
+                status_val = getattr(getattr(result, "status", None), "value", None) or str(result)
+            except Exception as e:
+                logger.warning(f"[CloudClient] steer failed: {e}")
+        logger.info(f"[CloudClient] /steer: session={session_id}, status={status_val}")
+        msg = ("已把补充要求插入当前执行，员工会在下一步纳入。"
+               if status_val in ("accepted", "ACCEPTED", "queued")
+               else "当前没有正在执行的任务可插话，请直接发送新的要求。")
+        send_chunk_fn({"chunk_type": "content", "delta": msg, "segment_id": 0})
 
     # ------------------------------------------------------------------
     # history callback

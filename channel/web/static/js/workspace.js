@@ -91,14 +91,19 @@ function wsFormatSize(bytes) {
 
 async function wsApi(path) {
     // Scope workspace reads to the current session so the file panel / @ picker /
-    // preview follow the session's opened project directory. `sessionId` is the
-    // global from console.js loaded on the same page.
+    // preview follow the session's opened project directory. `sessionId` and
+    // `activeAgentId` are globals from console.js on the same page.
     try {
-        const sid = (typeof sessionId !== 'undefined') ? sessionId : '';
-        if (sid && path.startsWith('/api/workspace/')) {
-            path += (path.includes('?') ? '&' : '?') + 'session=' + encodeURIComponent(sid);
+        if (path.startsWith('/api/workspace/')) {
+            const sid = (typeof sessionId !== 'undefined') ? sessionId : '';
+            if (sid) path += (path.includes('?') ? '&' : '?') + 'session=' + encodeURIComponent(sid);
+            // Without an opened project the root falls back to the Agent's own
+            // workspace, so the file panel must say which Agent is active — else
+            // it always shows the default Agent's directory.
+            const aid = (typeof activeAgentId !== 'undefined') ? activeAgentId : '';
+            if (aid) path += (path.includes('?') ? '&' : '?') + 'agent=' + encodeURIComponent(aid);
         }
-    } catch (e) { /* sessionId not available yet */ }
+    } catch (e) { /* globals not available yet */ }
     const res = await fetch(path);
     const data = await res.json();
     if (data.status !== 'success') throw new Error(data.message || 'Request failed');
@@ -614,6 +619,14 @@ function refreshWorkspaceTree() {
     loadWorkspaceDir(wsCurrentDir);
 }
 
+/** Switching the active Agent moves the file panel's root to that Agent's own
+ *  workspace (when no project is open). Drop back to the root and reload, but
+ *  only if the panel is already open — never pop it open on a switch. */
+function resetWorkspaceToAgentRoot() {
+    wsCurrentDir = '';
+    if (wsPanelOpen) refreshWorkspaceTree();
+}
+
 async function loadWorkspaceDir(relPath) {
     const list = document.getElementById('ws-file-list');
     if (!list) return;
@@ -853,12 +866,14 @@ function renderMentionMenu() {
 }
 
 function matchingAgentMentions(query) {
-    // With a single Agent there is nobody to address, so @ stays what it was:
-    // a file picker.
-    if (typeof multiAgentMode !== 'function' || !multiAgentMode()) return [];
+    // @ addresses a teammate, which only exists once a conversation has more than
+    // its owner. A solo chat keeps @ as the file picker it always was.
+    if (typeof sharedConversation !== 'function' || !sharedConversation()) return [];
     const q = String(query || '').toLowerCase();
-    return enabledAgents()
-        .filter(agent => agent.id !== (typeof activeAgentId !== 'undefined' ? activeAgentId : ''))
+    // Everyone in this conversation is addressable, the owner included: naming
+    // the owner explicitly hands this turn back to them.
+    const roster = typeof sessionRoster === 'function' ? sessionRoster() : [];
+    return roster
         .filter(agent => !q || agent.id.toLowerCase().includes(q) || String(agent.name).toLowerCase().includes(q))
         .slice(0, 6)
         .map(agent => ({ kind: 'agent', id: agent.id, name: agent.name, avatar: agent.avatar || '' }));

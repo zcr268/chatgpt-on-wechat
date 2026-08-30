@@ -102,7 +102,9 @@ class AgentInitializer:
         memory_manager, memory_tools = self._setup_memory_system(workspace_root, session_id)
         
         # Load tools
-        tools = self._load_tools(workspace_root, memory_manager, memory_tools, session_id)
+        tools = self._load_tools(
+            workspace_root, memory_manager, memory_tools, session_id, host_profile.id
+        )
         
         # Initialize scheduler if needed
         self._initialize_scheduler(
@@ -494,7 +496,7 @@ class AgentInitializer:
             target=_run, daemon=True, name="memory-sync"
         ).start()
     
-    def _load_tools(self, workspace_root: str, memory_manager, memory_tools: List, session_id: Optional[str] = None):
+    def _load_tools(self, workspace_root: str, memory_manager, memory_tools: List, session_id: Optional[str] = None, host_agent_id: Optional[str] = None):
         """Load all tools"""
         from config import conf
 
@@ -533,10 +535,17 @@ class AgentInitializer:
                     enabled_agents = self.agent_bridge.agent_registry.list(
                         include_disabled=False
                     )
-                    if not enabled or len(enabled_agents) < 2:
+                    # Delegation only makes sense once a conversation actually has
+                    # teammates in it. A solo chat - even on an instance with many
+                    # Agents defined - should not carry the tool, so a lone Agent
+                    # never tries to hand work to someone who was not invited.
+                    shared = self._is_shared_conversation(
+                        session_id or "", host_agent_id or ""
+                    )
+                    if not enabled or len(enabled_agents) < 2 or not shared:
                         logger.debug(
                             "[AgentInitializer] agent_delegate skipped - "
-                            "requires at least two enabled Agents"
+                            "needs a shared conversation with 2+ Agents"
                         )
                         continue
 
