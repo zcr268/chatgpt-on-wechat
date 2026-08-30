@@ -2521,6 +2521,7 @@ class ChatHandler:
             html = f.read()
         cache_bust = str(int(time.time()))
         html = html.replace('assets/js/console.js', f'assets/js/console.js?v={cache_bust}')
+        html = html.replace('assets/js/workspace.js', f'assets/js/workspace.js?v={cache_bust}')
         html = html.replace('assets/css/console.css', f'assets/css/console.css?v={cache_bust}')
         # Inject the backend-resolved default language for first-load fallback.
         html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
@@ -5512,6 +5513,11 @@ def _request_agent_id(source) -> str:
         value = getattr(source, "agent", None)
     if value is None and isinstance(source, dict):
         value = source.get("agent_id") or source.get("agent")
+    # web.py merges query string and form body, so a field present in both
+    # arrives as a list. Collapse it to a single id rather than letting an
+    # unhashable list reach registry lookups.
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
     return value or None
 
 
@@ -5960,10 +5966,12 @@ class AgentsHandler:
             return json.dumps({"status": "success", "result": result}, ensure_ascii=False)
         except Exception as e:
             from agent.admin import StaleRosterError
+            code = None
             if isinstance(e, StaleRosterError):
                 web.ctx.status = "409 Conflict"
+                code = "stale_roster"
             logger.error(f"[WebChannel] Agents POST error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
+            return json.dumps({"status": "error", "message": str(e), "code": code})
 
 
 class AgentCoreFileHandler:
@@ -6088,8 +6096,16 @@ class AgentAvatarHandler:
 
             service = _agent_admin_service()
             result = service.update_agent(agent_id, avatar=AVATAR_IMAGE_TOKEN)
-            _reload_agent_runtime(service)
-            return json.dumps({"status": "success", "result": result}, ensure_ascii=False)
+            # An avatar is a file plus a metadata flag; it changes nothing about
+            # routing, sessions or schedulers. Skipping the full runtime reload
+            # keeps the upload instant instead of tearing everything down.
+            # Hand back the fresh revision so the console can patch its roster in
+            # place without a full reload and without going stale on the next edit.
+            revision = service.snapshot().get("revision")
+            return json.dumps(
+                {"status": "success", "result": result, "revision": revision},
+                ensure_ascii=False,
+            )
         except Exception as e:
             logger.error(f"[WebChannel] Agent avatar upload error: {e}")
             return json.dumps({"status": "error", "message": str(e)})

@@ -15,34 +15,37 @@ const I18N = {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
         menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
-        agents_desc: '每个智能体有自己的人格与会话，技能和知识默认共享。',
         agents_create: '创建智能体',
-        agents_name_placeholder: '名称，例如 销售助手',
-        agents_id_placeholder: 'ID（可改，创建后不可变）',
+        agents_name_placeholder: '智能体名称',
+        agents_name_required: '请填写名称',
+        agents_stale: '列表已更新，请刷新后重试',
+        agents_id_placeholder: '留空则自动生成',
         agents_avatar: '头像',
         agents_tab_profile: '概况',
         agents_tab_skills: '能力',
         agents_tab_files: '核心文件',
         agents_default: '默认',
         agents_archived: '已归档',
-        agents_make_default: '设为默认',
-        agents_archive: '归档',
-        agents_enable: '启用',
         agents_chat: '开始对话',
-        agents_clone_none: '使用默认人格模板',
-        agents_clone_from: '从 {name} 复制人格',
+        agents_clone_label: '人格模板',
+        agents_avatar_upload: '上传图片',
+        agents_clone_none: '默认人格',
+        agents_clone_from: '复制 {name} 的人格',
         agents_name: '名称',
-        agents_description: '简介',
-        agents_description_placeholder: '擅长什么，例如 负责小红书选题与文案',
-        agents_description_hint: '会写进团队名单，同事据此决定把活交给谁。',
+        agents_saved: '已保存',
+        agents_save_failed: '保存失败',
+        agents_no_desc: '暂无职责',
+        agents_description: '职责',
+        agents_description_placeholder: '该智能体负责哪些工作、在什么场景被使用',
+        agents_description_hint: '用于多智能体协作时判断由谁来处理任务。',
         agents_model: '默认模型',
         agents_model_follows_global: '跟随全局配置',
-        agents_model_default_hint: '默认智能体使用配置里的模型，在「基础配置」中修改。',
+        agents_model_default_hint: '默认使用主模型，在「模型配置」中修改。',
         agents_skills_all: '使用全部已安装技能',
         agents_skills_pick: '只启用勾选的技能',
         agents_empty: '还没有智能体。创建一个，开始组团队。',
-        agents_pick_tip: '选择这条新对话由谁来答',
-        team_invite: '加入这个会话',
+        agents_pick_tip: '切换当前智能体',
+        team_invite: '添加到当前会话',
         team_remove: '移出这个会话',
         channel_bound_agent: '回复智能体',
         channel_bound_default: '跟随默认（{name}）',
@@ -278,6 +281,11 @@ const I18N = {
         logs_title: '日志', logs_desc: '实时日志输出 (run.log)',
         logs_live: '实时', logs_coming_msg: '日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。',
         new_chat: '新对话',
+        new_team_chat: '多智能体对话',
+        new_team_chat_hint: '勾选参与本次对话的智能体，第一个为会话归属者。',
+        new_team_chat_owner: '归属',
+        new_team_chat_start: '开始对话',
+        new_team_chat_min: '至少选择两个智能体',
         session_history: '历史会话',
         ws_toggle: '工作空间', ws_tab_preview: '预览', ws_tab_files: '文件',
         ws_default_workspace: '默认空间', ws_sel_title: '选择工作空间',
@@ -368,34 +376,37 @@ const I18N = {
         console: '控制台',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
         menu_chat: '對話', menu_config: '設定', menu_skills: '技能',
-        agents_desc: '每個智慧體有自己的人格與會話，技能和知識預設共享。',
         agents_create: '建立智慧體',
-        agents_name_placeholder: '名稱，例如 銷售助手',
-        agents_id_placeholder: 'ID（可改，建立後不可變）',
+        agents_name_placeholder: '智慧體名稱',
+        agents_name_required: '請填寫名稱',
+        agents_stale: '列表已更新，請重新整理後再試',
+        agents_id_placeholder: '留空則自動產生',
         agents_avatar: '頭像',
         agents_tab_profile: '概況',
         agents_tab_skills: '能力',
         agents_tab_files: '核心檔案',
         agents_default: '預設',
         agents_archived: '已封存',
-        agents_make_default: '設為預設',
-        agents_archive: '封存',
-        agents_enable: '啟用',
         agents_chat: '開始對話',
-        agents_clone_none: '使用預設人格範本',
-        agents_clone_from: '從 {name} 複製人格',
+        agents_clone_label: '人格範本',
+        agents_avatar_upload: '上傳圖片',
+        agents_clone_none: '預設人格',
+        agents_clone_from: '複製 {name} 的人格',
         agents_name: '名稱',
-        agents_description: '簡介',
-        agents_description_placeholder: '擅長什麼，例如 負責小紅書選題與文案',
-        agents_description_hint: '會寫進團隊名單，同事據此決定把活交給誰。',
+        agents_saved: '已儲存',
+        agents_save_failed: '儲存失敗',
+        agents_no_desc: '暫無職責',
+        agents_description: '職責',
+        agents_description_placeholder: '該智慧體負責哪些工作、在什麼場景被使用',
+        agents_description_hint: '用於多智慧體協作時判斷由誰來處理任務。',
         agents_model: '預設模型',
         agents_model_follows_global: '跟隨全域設定',
-        agents_model_default_hint: '預設智慧體使用設定裡的模型，於「基礎設定」中修改。',
+        agents_model_default_hint: '預設使用主模型，於「模型設定」中修改。',
         agents_skills_all: '使用全部已安裝技能',
         agents_skills_pick: '只啟用勾選的技能',
         agents_empty: '還沒有智慧體。建立一個，開始組團隊。',
-        agents_pick_tip: '選擇這條新對話由誰來答',
-        team_invite: '加入這個會話',
+        agents_pick_tip: '切換當前智能體',
+        team_invite: '新增到目前會話',
         team_remove: '移出這個會話',
         channel_bound_agent: '回覆智慧體',
         channel_bound_default: '跟隨預設（{name}）',
@@ -631,6 +642,11 @@ const I18N = {
         logs_title: '日誌', logs_desc: '實時日誌輸出 (run.log)',
         logs_live: '實時', logs_coming_msg: '日誌流即將在此提供。將連線 run.log 實現類似 tail -f 的實時輸出。',
         new_chat: '新對話',
+        new_team_chat: '多智慧體對話',
+        new_team_chat_hint: '勾選參與本次對話的智慧體，第一個為會話歸屬者。',
+        new_team_chat_owner: '歸屬',
+        new_team_chat_start: '開始對話',
+        new_team_chat_min: '至少選擇兩個智慧體',
         session_history: '歷史會話',
         ws_toggle: '工作空間', ws_tab_preview: '預覽', ws_tab_files: '檔案',
         ws_default_workspace: '預設空間', ws_sel_title: '選擇工作空間',
@@ -716,34 +732,37 @@ const I18N = {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
         menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
-        agents_desc: 'Each Agent has its own persona and conversations. Skills and knowledge are shared by default.',
         agents_create: 'New Agent',
-        agents_name_placeholder: 'Name, e.g. Sales assistant',
-        agents_id_placeholder: 'ID (editable now, fixed after create)',
+        agents_name_placeholder: 'Agent name',
+        agents_name_required: 'Please enter a name',
+        agents_stale: 'The list changed; please refresh and try again',
+        agents_id_placeholder: 'Auto-generated if left blank',
         agents_avatar: 'Avatar',
         agents_tab_profile: 'Profile',
         agents_tab_skills: 'Skills',
         agents_tab_files: 'Core files',
         agents_default: 'Default',
         agents_archived: 'Archived',
-        agents_make_default: 'Make default',
-        agents_archive: 'Archive',
-        agents_enable: 'Enable',
         agents_chat: 'Start chat',
-        agents_clone_none: 'Start from the default persona templates',
-        agents_clone_from: 'Copy persona from {name}',
+        agents_clone_label: 'Persona template',
+        agents_avatar_upload: 'Upload image',
+        agents_clone_none: 'Default persona',
+        agents_clone_from: 'Copy {name}\'s persona',
         agents_name: 'Name',
-        agents_description: 'Description',
-        agents_description_placeholder: 'What it is good at, e.g. Xiaohongshu topics and copy',
-        agents_description_hint: 'Goes on the team roster, so colleagues know who to hand work to.',
+        agents_saved: 'Saved',
+        agents_save_failed: 'Save failed',
+        agents_no_desc: 'No responsibilities yet',
+        agents_description: 'Responsibilities',
+        agents_description_placeholder: 'What this Agent handles and when it should be used',
+        agents_description_hint: 'Used to decide who handles a task when Agents collaborate.',
         agents_model: 'Default model',
         agents_model_follows_global: 'Follow the configured model',
-        agents_model_default_hint: 'The default agent uses the configured model. Change it under General.',
+        agents_model_default_hint: 'Uses the primary model. Change it under Model config.',
         agents_skills_all: 'Use every installed skill',
         agents_skills_pick: 'Only the skills checked below',
         agents_empty: 'No Agents yet. Create one to start a team.',
-        agents_pick_tip: 'Choose who answers this new conversation',
-        team_invite: 'Add to this chat',
+        agents_pick_tip: 'Switch current Agent',
+        team_invite: 'Add to current chat',
         team_remove: 'Remove from this chat',
         channel_bound_agent: 'Reply as',
         channel_bound_default: 'Follow default ({name})',
@@ -979,6 +998,11 @@ const I18N = {
         logs_title: 'Logs', logs_desc: 'Real-time log output (run.log)',
         logs_live: 'Live', logs_coming_msg: 'Log streaming will be available here. Connects to run.log for real-time output similar to tail -f.',
         new_chat: 'New Chat',
+        new_team_chat: 'Group chat',
+        new_team_chat_hint: 'Pick the Agents for this conversation; the first one owns it.',
+        new_team_chat_owner: 'Owner',
+        new_team_chat_start: 'Start chat',
+        new_team_chat_min: 'Pick at least two Agents',
         session_history: 'History',
         ws_toggle: 'Workspace', ws_tab_preview: 'Preview', ws_tab_files: 'Files',
         ws_default_workspace: 'Default', ws_sel_title: 'Select workspace',
@@ -1600,14 +1624,12 @@ window.addEventListener('resize', () => {
 // =====================================================================
 // Agents
 // =====================================================================
-const AGENT_EMOJI = ['🤖', '👩‍💻', '🧑‍💼', '🎨', '📊', '🛠️', '📚', '🧪', '🎯', '💬'];
 let agentCatalog = [];
 let agentBindings = [];
 let rosterRevision = '';
 let defaultAgentId = localStorage.getItem('cow_default_agent') || 'default';
 let selectedAdminAgentId = '';
 let selectedCoreRevision = '';
-let selectedCreateAvatar = AGENT_EMOJI[0];
 let installedSkills = [];
 let _idFromNameLocked = false;
 
@@ -1619,19 +1641,39 @@ function enabledAgents() {
     return agentCatalog.filter(a => a.enabled);
 }
 
+/* An uploaded avatar reuses the same URL every time, so the browser would keep
+   serving the stale bytes. The roster revision only moves when the roster's
+   *content* changes, and re-uploading over an existing image leaves the field as
+   the same "image" token — so we stamp each successful upload with a fresh token
+   here and prefer it, which forces the one re-fetch that shows the new picture. */
+const avatarVersions = {};
+
+/* Every Agent wears the product's own face until its owner uploads an image.
+   No emoji, no initials: the default is the CowAgent logo, so a fresh Agent and
+   a solo chat show the exact same avatar the chat bubble has always shown. */
 function agentAvatarHTML(agent, size) {
     const cls = `agent-avatar agent-avatar-${size || 32}`;
-    if (!agent) {
-        return `<span class="${cls}">?</span>`;
+    if (agent && agent.avatar === 'image') {
+        const v = avatarVersions[agent.id] || rosterRevision || agent.id;
+        return `<img class="${cls}" src="/api/agents/${encodeURIComponent(agent.id)}/avatar?v=${encodeURIComponent(v)}" alt="">`;
     }
-    if (agent.avatar === 'image') {
-        return `<img class="${cls}" src="/api/agents/${encodeURIComponent(agent.id)}/avatar?v=${encodeURIComponent(rosterRevision || agent.id)}" alt="">`;
-    }
-    if (agent.avatar) {
-        return `<span class="${cls}">${escapeHtml(agent.avatar)}</span>`;
-    }
-    const letter = String(agent.name || agent.id || '?').slice(0, 1).toUpperCase();
-    return `<span class="${cls}">${escapeHtml(letter)}</span>`;
+    return `<img class="${cls}" src="assets/logo.jpg" alt="">`;
+}
+
+/* Repaint the faces on bubbles already on screen. Bubbles are rendered once and
+   left alone, so an avatar changed in Settings would otherwise keep showing the
+   old picture in the open conversation until reload. Each bot bubble remembers
+   its speaker; the loading indicator follows the active Agent. */
+function refreshBubbleAvatars() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    container.querySelectorAll('.bot-face').forEach(face => {
+        const group = face.closest('.bot-message-group');
+        // A bubble knows its speaker; the loading indicator (no group) tracks the
+        // active Agent, the only one that can be mid-reply in a solo chat.
+        const id = (group && group.dataset.speakerAgent) || activeAgentId;
+        face.innerHTML = agentAvatarHTML(findAgent(id), 32);
+    });
 }
 
 function slugAgentId(name) {
@@ -1662,11 +1704,12 @@ function loadAgentCatalog() {
             if (selectedAdminAgentId) renderAgentDetail();
             renderComposerIdentity();
             renderMemoryAgentSelect();
-            const clone = document.getElementById('agent-create-clone');
-            if (clone) {
-                clone.innerHTML = `<option value="">${escapeHtml(t('agents_clone_none'))}</option>` +
-                    enabled.map(a => `<option value="${escapeHtml(a.id)}">${escapeHtml(t('agents_clone_from').replace('{name}', a.name))}</option>`).join('');
-            }
+            // The new-chat button only sprouts a menu (and its caret) once there
+            // is more than one Agent to choose between.
+            document.getElementById('new-chat-caret')?.classList.toggle('hidden', !multiAgentMode());
+            // A name or avatar may have changed; keep faces already on screen in
+            // sync with the roster instead of only new bubbles.
+            refreshBubbleAvatars();
             return data;
         })
         .catch(err => {
@@ -1684,6 +1727,7 @@ function renderAgentsGrid() {
     }
     grid.innerHTML = agentCatalog.map(agent => {
         const selected = agent.id === selectedAdminAgentId;
+        const desc = (agent.description || '').trim();
         return `<div class="agent-card${selected ? ' selected' : ''}${agent.enabled ? '' : ' archived'}" onclick="openAgentDetail('${escapeHtml(agent.id)}')">
             <div class="agent-card-top">
                 ${agentAvatarHTML(agent, 40)}
@@ -1692,10 +1736,10 @@ function renderAgentsGrid() {
                     <div class="agent-card-id truncate">${escapeHtml(agent.id)}</div>
                 </div>
             </div>
+            <div class="agent-card-desc">${desc ? escapeHtml(desc) : `<span class="agent-card-desc-empty">${escapeHtml(t('agents_no_desc'))}</span>`}</div>
             <div class="agent-card-meta">
                 ${agent.id === defaultAgentId ? `<span class="agent-chip agent-chip-on">${escapeHtml(t('agents_default'))}</span>` : ''}
                 ${agent.enabled ? '' : `<span class="agent-chip">${escapeHtml(t('agents_archived'))}</span>`}
-                ${agent.kind === 'remote' ? `<span class="agent-chip">remote</span>` : ''}
             </div>
         </div>`;
     }).join('');
@@ -1744,51 +1788,88 @@ function renderAgentDetail() {
         </div>`;
     const isDefault = agent.id === defaultAgentId;
     profile.innerHTML = `
-        <label class="block text-xs text-slate-500 mb-1">${escapeHtml(t('agents_name'))}</label>
-        <input id="agent-edit-name" value="${escapeHtml(agent.name)}"
-               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm mb-4">
-        <label class="block text-xs text-slate-500 mb-1">${escapeHtml(t('agents_description'))}</label>
-        <input id="agent-edit-description" value="${escapeHtml(agent.description || '')}"
-               placeholder="${escapeHtml(t('agents_description_placeholder'))}"
-               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 text-sm">
-        <p class="text-[11px] text-slate-400 mt-1 mb-4">${escapeHtml(t('agents_description_hint'))}</p>
-        <label class="block text-xs text-slate-500 mb-1">${escapeHtml(t('agents_model'))}</label>
-        ${isDefault
-            ? `<div class="w-full px-3 py-2 rounded-lg border border-dashed border-slate-200 dark:border-white/10 text-sm text-slate-400 mb-1">${escapeHtml(t('agents_model_follows_global'))}</div>
-               <p class="text-[11px] text-slate-400 mb-4">${escapeHtml(t('agents_model_default_hint'))}</p>`
-            : `<select id="agent-edit-model"
-                       class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#222] text-sm mb-4">
-                   ${agentModelOptions(agent.model, agent.bot_type)}
-               </select>`}
-        <div class="text-xs text-slate-500 mb-2">${escapeHtml(t('agents_avatar'))}</div>
-        <div id="agent-edit-avatars" class="agent-emoji-row mb-2"></div>
-        <label class="inline-flex items-center gap-2 text-xs text-slate-500 mb-5 cursor-pointer">
-            <input id="agent-edit-avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="text-xs">
-        </label>
-        <div class="flex flex-wrap gap-2">
-            <button type="button" onclick="saveAgentProfile()" class="px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm">${escapeHtml(t('save'))}</button>
-            ${agent.enabled ? `<button type="button" onclick="startChatWithAgent('${escapeHtml(agent.id)}')" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 text-sm">${escapeHtml(t('agents_chat'))}</button>` : ''}
-            ${agent.enabled && agent.id !== defaultAgentId ? `<button type="button" onclick="updateAgentWorkspace('${escapeHtml(agent.id)}', {make_default:true})" class="px-3 py-1.5 text-sm text-slate-500">${escapeHtml(t('agents_make_default'))}</button>` : ''}
-            ${agent.id !== defaultAgentId && agent.enabled ? `<button type="button" onclick="archiveAgentWorkspace('${escapeHtml(agent.id)}')" class="px-3 py-1.5 text-sm text-red-500">${escapeHtml(t('agents_archive'))}</button>` : ''}
-            ${!agent.enabled ? `<button type="button" onclick="updateAgentWorkspace('${escapeHtml(agent.id)}', {enabled:true})" class="px-3 py-1.5 text-sm text-primary-600">${escapeHtml(t('agents_enable'))}</button>` : ''}
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_avatar'))}</label>
+            <div id="agent-edit-avatar" class="agent-avatar-picker"></div>
         </div>
-        <div id="agent-profile-status" class="text-xs text-slate-500 mt-3"></div>`;
-    renderEmojiRow('agent-edit-avatars', agent.avatar && agent.avatar !== 'image' ? agent.avatar : '', (emoji) => {
-        updateAgentWorkspace(agent.id, { avatar: emoji });
-    });
-    const file = document.getElementById('agent-edit-avatar-file');
-    if (file) file.addEventListener('change', () => uploadAgentAvatar(agent.id, file.files && file.files[0]));
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_name'))}</label>
+            <input id="agent-edit-name" value="${escapeHtml(agent.name)}" class="agent-input">
+        </div>
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_description'))}</label>
+            <textarea id="agent-edit-description" rows="4"
+                   placeholder="${escapeHtml(t('agents_description_placeholder'))}"
+                   class="agent-input agent-textarea">${escapeHtml(agent.description || '')}</textarea>
+            <p class="agent-field-hint">${escapeHtml(t('agents_description_hint'))}</p>
+        </div>
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_model'))}</label>
+            ${isDefault
+                ? `<div class="agent-input-locked">${escapeHtml(t('agents_model_follows_global'))}</div>
+                   <p class="agent-field-hint">${escapeHtml(t('agents_model_default_hint'))}</p>`
+                : `<div id="agent-edit-model" class="cfg-dropdown" tabindex="0">
+                       <div class="cfg-dropdown-selected">
+                           <span class="cfg-dropdown-text">--</span>
+                           <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                       </div>
+                       <div class="cfg-dropdown-menu"></div>
+                   </div>`}
+        </div>
+        <div class="agent-detail-actions">
+            <button type="button" onclick="saveAgentProfile()" class="agent-btn agent-btn-primary">${escapeHtml(t('save'))}</button>
+            <button type="button" onclick="startChatWithAgent('${escapeHtml(agent.id)}')" class="agent-btn agent-btn-ghost">${escapeHtml(t('agents_chat'))}</button>
+        </div>
+        <div id="agent-profile-status" class="agent-field-hint mt-3"></div>`;
+
+    renderAvatarPicker('agent-edit-avatar', agent, (file) => uploadAgentAvatar(agent.id, file));
+
+    if (!isDefault) {
+        const dd = document.getElementById('agent-edit-model');
+        const opts = agentModelDropdownOptions();
+        const current = agent.model ? `${agent.bot_type || ''}|${agent.model}` : '';
+        initDropdown(dd, opts, current, () => {}, { placeholder: t('agents_model_follows_global') });
+    }
+    // A save may re-render this pane several times; re-apply an in-flight
+    // "saved" confirmation so it survives instead of being wiped.
+    paintAgentSavedFlash();
 }
 
-function renderEmojiRow(containerId, selected, onPick) {
-    const row = document.getElementById(containerId);
-    if (!row) return;
-    row.innerHTML = AGENT_EMOJI.map(emoji =>
-        `<button type="button" class="agent-emoji-btn${emoji === selected ? ' selected' : ''}">${emoji}</button>`
-    ).join('');
-    row.querySelectorAll('.agent-emoji-btn').forEach(btn => {
-        btn.addEventListener('click', () => onPick(btn.textContent));
+/* A live preview beside an upload button, in the page's own styling rather than
+   a raw file input. The default is the product logo; uploading swaps it for the
+   chosen image. `onUpload` may be null when the Agent does not exist yet (the
+   create modal), leaving just the logo preview. */
+function renderAvatarPicker(containerId, agent, onUpload) {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    box.innerHTML = `
+        <div class="agent-avatar-picker-preview">${agentAvatarHTML(agent, 56)}</div>
+        <div class="agent-avatar-picker-body">
+            ${onUpload ? `<button type="button" class="agent-avatar-upload">
+                <i class="fas fa-arrow-up-from-bracket"></i><span>${escapeHtml(t('agents_avatar_upload'))}</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            </button>` : ''}
+        </div>`;
+    const upload = box.querySelector('.agent-avatar-upload');
+    if (upload && onUpload) {
+        const input = upload.querySelector('input');
+        upload.addEventListener('click', () => input.click());
+        input.addEventListener('change', () => onUpload(input.files && input.files[0]));
+    }
+}
+
+/* Flattened for the styled dropdown: one row per model, its provider carried in
+   the value (a model asked of the wrong vendor is an error), its brand shown as
+   a dim hint. The first row clears the choice back to the configured model. */
+function agentModelDropdownOptions() {
+    const opts = [{ value: '', label: t('agents_model_follows_global') }];
+    const providers = (_sessCfg && _sessCfg.model && _sessCfg.model.providers) || [];
+    providers.forEach(p => {
+        (p.models || []).forEach(m => {
+            opts.push({ value: `${p.id}|${m}`, label: m, hint: localizedLabel(p.label) });
+        });
     });
+    return opts;
 }
 
 function renderAgentSkillsPane() {
@@ -1845,18 +1926,28 @@ function openAgentCreateForm() {
     const form = document.getElementById('agent-create-form');
     if (!form) return;
     form.classList.remove('hidden');
-    selectedCreateAvatar = AGENT_EMOJI[0];
     _idFromNameLocked = false;
     const name = document.getElementById('agent-create-name');
     const id = document.getElementById('agent-create-id');
     const description = document.getElementById('agent-create-description');
     [name, id, description].forEach(el => { if (el) el.value = ''; });
     document.getElementById('agent-create-status').textContent = '';
-    const paintCreateAvatars = () => renderEmojiRow('agent-create-avatars', selectedCreateAvatar, (emoji) => {
-        selectedCreateAvatar = emoji;
-        paintCreateAvatars();
-    });
-    paintCreateAvatars();
+
+    // The Agent does not exist yet, so it wears the product logo; an uploaded
+    // image is offered in the detail panel once it has a home to be stored in.
+    renderAvatarPicker('agent-create-avatar', null, null);
+
+    const clone = document.getElementById('agent-create-clone');
+    if (clone) {
+        const opts = [{ value: '', label: t('agents_clone_none') }].concat(
+            enabledAgents().map(a => ({
+                value: a.id,
+                label: t('agents_clone_from').replace('{name}', a.name),
+            }))
+        );
+        initDropdown(clone, opts, '', () => {});
+    }
+
     if (name && id && !name.dataset.bound) {
         name.dataset.bound = '1';
         name.addEventListener('input', () => {
@@ -1880,6 +1971,15 @@ document.addEventListener('click', (e) => {
     if (modal && !modal.classList.contains('hidden') && e.target === modal) {
         closeAgentCreateForm();
     }
+    const newMenu = document.getElementById('new-chat-menu');
+    const newWrap = document.querySelector('.session-panel-new-wrap');
+    if (newMenu && !newMenu.classList.contains('hidden') && newWrap && !newWrap.contains(e.target)) {
+        newMenu.classList.add('hidden');
+    }
+    const teamModal = document.getElementById('team-chat-modal');
+    if (teamModal && !teamModal.classList.contains('hidden') && e.target === teamModal) {
+        closeTeamChatModal();
+    }
 });
 
 function createAgentWorkspace() {
@@ -1887,7 +1987,7 @@ function createAgentWorkspace() {
     const id = document.getElementById('agent-create-id').value.trim() || slugAgentId(name);
     const status = document.getElementById('agent-create-status');
     if (!name || !id) {
-        status.textContent = t('agents_name_placeholder');
+        status.textContent = t('agents_name_required');
         return;
     }
     fetch('/api/agents', {
@@ -1898,12 +1998,13 @@ function createAgentWorkspace() {
             id,
             name,
             description: document.getElementById('agent-create-description')?.value.trim() || '',
-            avatar: selectedCreateAvatar,
-            clone_from: document.getElementById('agent-create-clone').value || null,
+            clone_from: getDropdownValue(document.getElementById('agent-create-clone')) || null,
             revision: rosterRevision,
         }),
     }).then(r => r.json()).then(data => {
-        if (data.status !== 'success') throw new Error(data.message || 'Create failed');
+        if (data.status !== 'success') {
+            throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Create failed'));
+        }
         closeAgentCreateForm();
         return loadAgentCatalog().then(() => openAgentDetail(id));
     }).catch(err => { status.textContent = err.message; });
@@ -1919,80 +2020,109 @@ function saveAgentProfile() {
     // Absent for the default Agent, which follows the configured model.
     const picker = document.getElementById('agent-edit-model');
     if (picker) {
-        const [provider, model] = (picker.value || '').split('|');
+        const [provider, model] = (getDropdownValue(picker) || '').split('|');
         payload.model = model || '';
         payload.bot_type = provider || '';
     }
-    updateAgentWorkspace(agent.id, payload);
-}
-
-/* The models the composer already offers, so an Agent's own default is picked
-   from the same list as a conversation's. The value carries the provider as
-   well: a model asked of the wrong vendor is just an error. An empty value
-   means "follow the configured model", which is what every Agent does until
-   told otherwise. */
-function agentModelOptions(selectedModel, selectedProvider) {
-    const options = [
-        `<option value="">${escapeHtml(t('agents_model_follows_global'))}</option>`,
-    ];
-    const providers = (_sessCfg && _sessCfg.model && _sessCfg.model.providers) || [];
-    providers.forEach(p => {
-        const models = (p.models || []).map(m => {
-            const picked = m === selectedModel && p.id === selectedProvider;
-            return `<option value="${escapeHtml(p.id)}|${escapeHtml(m)}"${picked ? ' selected' : ''}>`
-                + `${escapeHtml(m)}</option>`;
-        }).join('');
-        if (models) {
-            options.push(`<optgroup label="${escapeHtml(localizedLabel(p.label))}">${models}</optgroup>`);
+    // The write itself is quick; the follow-up catalog reload is what's slow
+    // (the default Agent carries a large skill list). Confirm optimistically so
+    // the feedback is instant, and only override it if the save actually fails.
+    flashAgentProfileStatus();
+    updateAgentWorkspace(agent.id, payload).then(ok => {
+        if (!ok) {
+            _agentSavedFlashUntil = 0;
+            const status = document.getElementById('agent-profile-status');
+            if (status) {
+                status.textContent = t('agents_save_failed');
+                status.classList.remove('agent-status-ok');
+            }
         }
     });
-    return options.join('');
+}
+
+/* A brief inline confirmation on the detail pane's status line. A save reloads
+   the catalog and can re-render this pane more than once (the model catalog
+   arrives async), so the confirmation is kept as a deadline that every render
+   re-applies, rather than a one-shot write a later render would wipe. */
+let _agentSavedFlashUntil = 0;
+
+function paintAgentSavedFlash() {
+    const status = document.getElementById('agent-profile-status');
+    if (!status) return;
+    if (Date.now() < _agentSavedFlashUntil) {
+        status.textContent = t('agents_saved');
+        status.classList.add('agent-status-ok');
+    }
+}
+
+function flashAgentProfileStatus() {
+    _agentSavedFlashUntil = Date.now() + 2200;
+    paintAgentSavedFlash();
+    clearTimeout(flashAgentProfileStatus._t);
+    flashAgentProfileStatus._t = setTimeout(() => {
+        _agentSavedFlashUntil = 0;
+        const status = document.getElementById('agent-profile-status');
+        if (!status) return;
+        status.textContent = '';
+        status.classList.remove('agent-status-ok');
+    }, 2200);
 }
 
 function uploadAgentAvatar(agentId, file) {
     if (!file) return;
+    const picker = document.getElementById('agent-edit-avatar');
+    if (picker) picker.classList.add('is-uploading');
+    const status = document.getElementById('agent-profile-status');
+    if (status) { status.classList.remove('agent-status-ok'); status.textContent = ''; }
     const form = new FormData();
     form.append('avatar', file);
-    fetch(`/api/agents/${encodeURIComponent(agentId)}/avatar`, { method: 'POST', body: form })
+    return fetch(`/api/agents/${encodeURIComponent(agentId)}/avatar`, { method: 'POST', body: form })
         .then(r => r.json())
         .then(data => {
             if (data.status !== 'success') throw new Error(data.message || 'Upload failed');
-            return loadAgentCatalog();
+            // The image already persisted server-side. Patch the local catalog in
+            // place and repaint just the affected surfaces, rather than reloading
+            // the whole roster (slow when the default Agent carries many skills).
+            avatarVersions[agentId] = String(Date.now());
+            if (data.revision) rosterRevision = data.revision;
+            const agent = findAgent(agentId);
+            if (agent) agent.avatar = 'image';
+            renderAgentsGrid();
+            if (selectedAdminAgentId === agentId) renderAgentDetail();
+            renderComposerIdentity();
+            refreshBubbleAvatars();
+            flashAgentProfileStatus();
         })
         .catch(err => {
-            const status = document.getElementById('agent-profile-status');
-            if (status) status.textContent = err.message;
+            const s = document.getElementById('agent-profile-status');
+            if (s) { s.classList.remove('agent-status-ok'); s.textContent = err.message; }
+        })
+        .then(() => {
+            const p = document.getElementById('agent-edit-avatar');
+            if (p) p.classList.remove('is-uploading');
         });
 }
 
-function updateAgentWorkspace(agentId, updates) {
+function updateAgentWorkspace(agentId, updates, _retried) {
     return fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'update', id: agentId, revision: rosterRevision, ...updates }),
     }).then(r => r.json()).then(data => {
-        if (data.status !== 'success') throw new Error(data.message || 'Update failed');
-        return loadAgentCatalog();
+        if (data.status !== 'success') {
+            // Two quick edits race: the second still carried the revision from
+            // before the first landed. Re-sync and retry once, silently, so a
+            // fast click just works instead of showing a lock error.
+            if (data.code === 'stale_roster' && !_retried) {
+                return loadAgentCatalog().then(() => updateAgentWorkspace(agentId, updates, true));
+            }
+            throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Update failed'));
+        }
+        return loadAgentCatalog().then(() => true);
     }).catch(err => {
         const status = document.getElementById('agent-profile-status') || document.getElementById('agent-editor-status');
         if (status) status.textContent = err.message;
-    });
-}
-
-function archiveAgentWorkspace(agentId) {
-    if (!window.confirm(t('agents_archive') + ` "${agentId}"?`)) return;
-    return fetch('/api/agents', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'archive', id: agentId, revision: rosterRevision }),
-    }).then(r => r.json()).then(data => {
-        if (data.status !== 'success') throw new Error(data.message || 'Archive failed');
-        if (activeAgentId === agentId) startChatWithAgent(defaultAgentId);
-        closeAgentDetail();
-        return loadAgentCatalog();
-    }).catch(err => {
-        const status = document.getElementById('agent-profile-status');
-        if (status) status.textContent = err.message;
+        return false;
     });
 }
 
@@ -2062,12 +2192,29 @@ function rememberLiveSpeaker(data) {
     }
 }
 
+/** Repaint a still-visible loading indicator with the resolved speaker's face,
+ *  once /message has said who took the turn. No-op if streaming already
+ *  replaced the dots with a bubble. */
+function setLoadingSpeaker(loadingEl, requestId) {
+    if (!loadingEl || !loadingEl.isConnected) return;
+    const face = loadingEl.querySelector('.bot-face');
+    if (face) face.innerHTML = agentAvatarHTML(liveSpeakerAgent(requestId), 32);
+}
+
 /** The Agent to draw on a reply, or null to keep the product's own face. */
 function botSpeakerAgent(msg, requestId) {
     if (!sharedConversation()) return null;
     const id = (msg && msg.extras && msg.extras.agent_id)
         || (requestId && _liveSpeakers[requestId])
         || activeAgentId;
+    return findAgent(id) || null;
+}
+
+/** The Agent answering a live request, for the streaming bubble and the loading
+ *  dots. Unlike botSpeakerAgent this also resolves in a solo chat, so a single
+ *  Agent's own uploaded avatar shows while it streams instead of the logo. */
+function liveSpeakerAgent(requestId) {
+    const id = (requestId && _liveSpeakers[requestId]) || activeAgentId;
     return findAgent(id) || null;
 }
 
@@ -2114,7 +2261,13 @@ function highlightMentions(root) {
             const agent = byLabel.get(match[1].toLowerCase());
             const tag = document.createElement('span');
             tag.className = 'mention-tag';
-            tag.textContent = '@' + (agent ? (agent.name || agent.id) : match[1]);
+            if (agent) {
+                // A chip that looks like the teammate it names: their face, then
+                // their name. Falls back to plain text for an unknown label.
+                tag.innerHTML = `<span class="mention-tag-face">${agentAvatarHTML(agent, 16)}</span><span class="mention-tag-name">${escapeHtml(agent.name || agent.id)}</span>`;
+            } else {
+                tag.textContent = '@' + match[1];
+            }
             frag.appendChild(tag);
             cursor = match.index + match[0].length;
         }
@@ -2160,13 +2313,16 @@ function toggleComposerAgentMenu(event) {
     const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
     const sections = [];
 
-    // Switching owner rewrites the whole conversation's identity, so it is
-    // offered only while there is nothing to rewrite.
-    if (!conversationHasMessages()) {
+    // Once a conversation has teammates it is a group, and the only sensible
+    // actions are adding and removing members - "switch the current Agent" would
+    // silently abandon the group for a fresh solo chat. So the switch list only
+    // appears in an ordinary (not-yet-shared) chat, where it opens a clean
+    // conversation owned by the chosen Agent.
+    if (!sharedConversation()) {
         sections.push(
             `<div class="composer-menu-title">${escapeHtml(t('agents_pick_tip'))}</div>`
             + enabledAgents().map(agent => `
-                <button type="button" class="composer-menu-item${agent.id === activeAgentId ? ' current' : ''}"
+                <button type="button" class="composer-menu-item agent-row${agent.id === activeAgentId ? ' current' : ''}"
                         onclick="pickComposerAgent('${escapeHtml(agent.id)}')">
                     ${agentAvatarHTML(agent, 24)}
                     <span>${escapeHtml(agent.name)}</span>
@@ -2177,14 +2333,14 @@ function toggleComposerAgentMenu(event) {
 
     const candidates = enabledAgents().filter(a => a.id !== activeAgentId && !taken.has(a.id));
     const joined = members.filter(m => m.id !== activeAgentId).map(m => `
-        <button type="button" class="composer-menu-item joined"
+        <button type="button" class="composer-menu-item agent-row joined"
                 onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
             ${agentAvatarHTML(m, 24)}
             <span>${escapeHtml(m.name || m.id)}</span>
             <i class="fas fa-xmark ml-auto text-[11px]"></i>
         </button>`).join('');
     const invitable = candidates.map(agent => `
-        <button type="button" class="composer-menu-item"
+        <button type="button" class="composer-menu-item agent-row"
                 onclick="inviteTeamMember('${escapeHtml(agent.id)}')">
             ${agentAvatarHTML(agent, 24)}
             <span>${escapeHtml(agent.name)}</span>
@@ -2205,10 +2361,10 @@ function pickComposerAgent(agentId) {
     if (!agentId || agentId === activeAgentId) return;
     activeAgentId = agentId;
     localStorage.setItem('cow_active_agent', activeAgentId);
-    sessionId = generateSessionId();
-    localStorage.setItem(activeSessionStorageKey(), sessionId);
-    refreshWorkspaceSelector();
-    refreshSessionSettings();
+    // Switching starts a clean conversation owned by the chosen Agent rather
+    // than rewriting the current one, so it works at any point in a chat.
+    newChat(true);
+    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
     renderComposerIdentity();
 }
 
@@ -2242,7 +2398,9 @@ function addressedAgentId(text) {
     labels.sort((a, b) => b[0].length - a[0].length);
     for (const [label, id] of labels) {
         const re = new RegExp('^@' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=[\\s，,：:、]|$)', 'i');
-        if (re.test(stripped) && id !== activeAgentId) return id;
+        // The owner is addressable too; the server treats "@owner" as the owner
+        // simply taking the turn, so no special-casing here.
+        if (re.test(stripped)) return id;
     }
     return '';
 }
@@ -2673,6 +2831,12 @@ window.fetch = function(input, init) {
         if (typeof input !== 'string') input = new Request(url, input);
         else input = url;
 
+        // JSON bodies read agent_id from the payload, so inject it there too.
+        // Multipart (FormData) uploads must NOT get a body copy: the query
+        // string above already carries it, and web.py merges query + body,
+        // collapsing the duplicate into a list (agent_id=['x','x']). That list
+        // then reaches handlers expecting a plain string and raises
+        // "unhashable type: 'list'", silently killing every file upload.
         if (typeof init.body === 'string') {
             const contentType = new Headers(init.headers || {}).get('Content-Type') || '';
             if (contentType.includes('application/json')) {
@@ -2684,8 +2848,6 @@ window.fetch = function(input, init) {
                     }
                 } catch (_) {}
             }
-        } else if (init.body instanceof FormData && !init.body.has('agent_id')) {
-            init.body.append('agent_id', activeAgentId);
         }
     }
     return _nativeFetch(input, init);
@@ -4485,6 +4647,7 @@ function sendVoiceMessage(text, audioUrl) {
         .then(data => {
             if (data.status === 'success') {
                 rememberLiveSpeaker(data);
+                setLoadingSpeaker(loadingEl, data.request_id);
                 if (data.inline_reply) {
                     // Synchronous fast-path reply (e.g. /cancel); skip SSE.
                     loadingEl.remove();
@@ -4687,6 +4850,7 @@ async function regenerateResponse(botMsgEl) {
         .then(data => {
             if (data.status === 'success') {
                 rememberLiveSpeaker(data);
+                setLoadingSpeaker(loadingEl, data.request_id);
                 if (data.inline_reply) {
                     loadingEl.remove();
                     addBotMessage(data.inline_reply, new Date());
@@ -4785,6 +4949,7 @@ function sendMessage() {
         .then(data => {
             if (data.status === 'success') {
                 rememberLiveSpeaker(data);
+                setLoadingSpeaker(loadingEl, data.request_id);
                 if (data.inline_reply) {
                     // Channel handled synchronously (e.g. /cancel fast-path);
                     // render as a bot bubble and skip SSE entirely.
@@ -4885,8 +5050,13 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
         botEl.dataset.requestId = requestId;
         // Regenerate button starts hidden; it's revealed in the "done"
         // event handler once seq metadata arrives from the backend.
+        // The streaming face is whoever is answering this request: the addressed
+        // teammate if one was named, else the conversation's own Agent. Wrapped
+        // in .bot-face so a later avatar change repaints it like any bubble.
+        const speaker = liveSpeakerAgent(requestId);
+        if (speaker && speaker.id) botEl.dataset.speakerAgent = speaker.id;
         botEl.innerHTML = `
-            <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+            <span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>
             <div class="min-w-0 flex-1 max-w-[85%]">
                 <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                     <div class="agent-steps"></div>
@@ -5816,14 +5986,16 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
            </div>`
         : '';
 
-    // In a shared conversation the reply needs an author, since consecutive
-    // bubbles can come from different Agents. A solo chat keeps the product's
-    // own face and says nothing, as it always has.
-    const speaker = botSpeakerAgent(msg, requestId);
-    const faceHtml = speaker
-        ? `<span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>`
-        : `<img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">`;
-    const speakerName = speaker
+    // The reply's face is whichever Agent spoke: its uploaded image, or the
+    // product logo by default. A shared conversation also labels the bubble,
+    // since consecutive bubbles can come from different Agents; a solo chat
+    // stays unlabelled but still reflects that Agent's own avatar.
+    const speaker = botSpeakerAgent(msg, requestId) || findAgent(activeAgentId);
+    // Remember who spoke, so a later avatar change can repaint this exact face
+    // without re-rendering the whole bubble.
+    if (speaker && speaker.id) el.dataset.speakerAgent = speaker.id;
+    const faceHtml = `<span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>`;
+    const speakerName = (sharedConversation() && speaker)
         ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
         : '';
 
@@ -6183,9 +6355,11 @@ function loadHistory(page) {
 
 function addLoadingIndicator() {
     const el = document.createElement('div');
-    el.className = 'flex gap-3 px-4 sm:px-6 py-3';
+    el.className = 'flex gap-3 px-4 sm:px-6 py-3 loading-indicator';
+    // Starts on the conversation's own Agent; setLoadingSpeaker swaps the face
+    // once the server says who actually took the turn (an addressed teammate).
     el.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+        <span class="bot-face">${agentAvatarHTML(findAgent(activeAgentId), 32)}</span>
         <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3">
             <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full bg-primary-400 animate-pulse-dot" style="animation-delay: 0s"></span>
@@ -6197,6 +6371,97 @@ function addLoadingIndicator() {
     messagesDiv.appendChild(el);
     scrollChatToBottom();
     return el;
+}
+
+/* The session-panel "新对话" button. With a single Agent there is nobody to
+   choose between, so it just starts a chat. With several, it opens a menu: pick
+   an Agent for a solo chat, or open the team picker for a group chat. */
+function onNewChatButton(event) {
+    if (!multiAgentMode()) { newChat(true); return; }
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('new-chat-menu');
+    if (!menu) { newChat(true); return; }
+    if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+    const rows = enabledAgents().map(agent => `
+        <button type="button" class="new-chat-item" onclick="startSoloChat('${escapeHtml(agent.id)}')">
+            ${agentAvatarHTML(agent, 22)}
+            <span>${escapeHtml(agent.name)}</span>
+        </button>`).join('');
+    menu.innerHTML = `
+        <div class="new-chat-section">${rows}</div>
+        <div class="new-chat-sep"></div>
+        <button type="button" class="new-chat-item new-chat-team" onclick="openTeamChatModal()">
+            <span class="new-chat-team-ico"><i class="fas fa-user-group"></i></span>
+            <span>${escapeHtml(t('new_team_chat'))}</span>
+        </button>`;
+    menu.classList.remove('hidden');
+}
+
+function startSoloChat(agentId) {
+    document.getElementById('new-chat-menu')?.classList.add('hidden');
+    if (!agentId) { newChat(true); return; }
+    activeAgentId = agentId;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    newChat(true);
+    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
+    renderComposerIdentity();
+}
+
+// The first checked Agent owns the conversation; the rest are invited as guests.
+let _teamChatPicks = [];
+
+function openTeamChatModal() {
+    document.getElementById('new-chat-menu')?.classList.add('hidden');
+    _teamChatPicks = [activeAgentId || defaultAgentId];
+    const status = document.getElementById('team-chat-status');
+    if (status) status.textContent = '';
+    renderTeamChatList();
+    document.getElementById('team-chat-modal')?.classList.remove('hidden');
+}
+
+function closeTeamChatModal() {
+    document.getElementById('team-chat-modal')?.classList.add('hidden');
+}
+
+function toggleTeamChatPick(agentId) {
+    const i = _teamChatPicks.indexOf(agentId);
+    if (i === -1) _teamChatPicks.push(agentId);
+    else _teamChatPicks.splice(i, 1);
+    renderTeamChatList();
+}
+
+function renderTeamChatList() {
+    const list = document.getElementById('team-chat-list');
+    if (!list) return;
+    list.innerHTML = enabledAgents().map(agent => {
+        const rank = _teamChatPicks.indexOf(agent.id);
+        const on = rank !== -1;
+        const owner = rank === 0;
+        return `<button type="button" class="team-chat-row${on ? ' on' : ''}" onclick="toggleTeamChatPick('${escapeHtml(agent.id)}')">
+            ${agentAvatarHTML(agent, 28)}
+            <span class="team-chat-name">${escapeHtml(agent.name)}</span>
+            ${owner ? `<span class="team-chat-owner">${escapeHtml(t('new_team_chat_owner'))}</span>` : ''}
+            <span class="team-chat-check"><i class="fas ${on ? 'fa-circle-check' : 'fa-circle'}"></i></span>
+        </button>`;
+    }).join('');
+}
+
+function startTeamChat() {
+    const picks = _teamChatPicks.filter(id => enabledAgents().some(a => a.id === id));
+    if (picks.length < 2) {
+        const status = document.getElementById('team-chat-status');
+        if (status) status.textContent = t('new_team_chat_min');
+        return;
+    }
+    closeTeamChatModal();
+    const [owner, ...guests] = picks;
+    activeAgentId = owner;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    newChat(true);
+    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
+    // The fresh session exists client-side; invite the guests onto it so the
+    // very first message already goes to a group.
+    setTeamMembers(guests).then(() => renderComposerIdentity());
 }
 
 function newChat(optimistic = true) {
@@ -7878,6 +8143,8 @@ function switchConfigTab(tab) {
         document.getElementById(`config-tab-${name}`)?.classList.toggle('active', name === tab);
         document.getElementById(`config-panel-${name}`)?.classList.toggle('hidden', name !== tab);
     });
+    // The create button lives on the tab row, so it only belongs to this tab.
+    document.getElementById('agents-create-btn')?.classList.toggle('hidden', tab !== 'team');
     if (tab !== 'team') closeAgentDetail();
     if (tab === 'models') loadModelsView();
     if (tab === 'team') loadAgentCatalog();
