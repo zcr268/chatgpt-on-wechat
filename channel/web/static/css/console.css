@@ -154,6 +154,59 @@
     color: #e5e5e5;
     background: rgba(255, 255, 255, 0.04);
 }
+.session-panel-new-wrap { position: relative; flex-shrink: 0; }
+.session-panel-new-wrap .session-panel-new { width: calc(100% - 24px); }
+.new-chat-caret { margin-left: auto; font-size: 10px; opacity: .7; }
+.new-chat-menu {
+    position: absolute; left: 12px; right: 12px; top: calc(100% - 2px);
+    z-index: 70; padding: 6px;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    box-shadow: 0 16px 40px -12px rgba(0,0,0,.28);
+}
+.dark .new-chat-menu { background: #1A1A1A; border-color: rgba(255,255,255,.1); }
+.new-chat-menu.hidden { display: none; }
+.new-chat-section { display: flex; flex-direction: column; }
+.new-chat-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 9px; border-radius: 8px;
+    font-size: 13px; color: #334155; cursor: pointer; background: none; border: none;
+    text-align: left; width: 100%;
+}
+.new-chat-item:hover { background: #EDFDF3; color: #228547; }
+.dark .new-chat-item { color: #cbd5e1; }
+.dark .new-chat-item:hover { background: rgba(74,190,110,.14); color: #6EE7A0; }
+.new-chat-item .agent-avatar { flex-shrink: 0; }
+.new-chat-sep { height: 1px; background: #f1f5f9; margin: 5px 4px; }
+.dark .new-chat-sep { background: rgba(255,255,255,.07); }
+.new-chat-team-ico {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #EDFDF3; color: #17803d; font-size: 11px; flex-shrink: 0;
+}
+.dark .new-chat-team-ico { background: rgba(74,190,110,.16); color: #6EE7A0; }
+
+/* Team-chat picker rows in the modal */
+.team-chat-list { display: flex; flex-direction: column; gap: 6px; }
+.team-chat-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 11px; border-radius: 10px;
+    border: 1px solid #e2e8f0; background: #f8fafc;
+    cursor: pointer; text-align: left; width: 100%;
+    transition: border-color .15s, background .15s;
+}
+.team-chat-row .agent-avatar { flex-shrink: 0; }
+.team-chat-row:hover { border-color: #cbd5e1; }
+.team-chat-row.on { border-color: #4ABE6E; background: #EDFDF3; }
+.dark .team-chat-row { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.04); }
+.dark .team-chat-row.on { border-color: #4ABE6E; background: rgba(74,190,110,.12); }
+.team-chat-name { font-size: 14px; color: #1e293b; }
+.dark .team-chat-name { color: #f1f5f9; }
+.team-chat-owner {
+    font-size: 10px; padding: 1px 7px; border-radius: 999px;
+    background: #4ABE6E; color: #fff; font-weight: 500;
+}
+.team-chat-check { margin-left: auto; color: #cbd5e1; font-size: 16px; }
+.team-chat-row.on .team-chat-check { color: #4ABE6E; }
 
 /* Session List */
 .session-list {
@@ -1436,6 +1489,14 @@
 }
 .composer-menu.hidden { display: none; }
 .composer-menu-wide { width: 340px; left: auto; right: 0; }
+/* The permission / model popups live at the card level, whose top edge is the
+   textarea - not the chip that opened them. Anchor them just above the toolbar
+   row instead, so they hug their trigger rather than floating over the input.
+   (The agent menu is nested in .composer-identity, so it keeps bottom:100%.) */
+#permission-selector-menu,
+#model-selector-menu {
+    bottom: calc(2rem + 14px);
+}
 .dark .composer-menu {
     background: #1A1A1A;
     border-color: rgba(255, 255, 255, 0.1);
@@ -1469,6 +1530,10 @@
 }
 .composer-menu-item:hover { background: #EDFDF3; color: #228547; }
 .composer-menu-item.active { background: #EDFDF3; }
+/* Single-line Agent rows (avatar + name + trailing icon) center vertically;
+   only the multi-line permission rows need top alignment. */
+.composer-menu-item.agent-row { align-items: center; }
+.composer-menu-item.agent-row > i:last-child { margin-top: 0; }
 .composer-menu-item > i:first-child {
     width: 15px;
     text-align: center;
@@ -2878,7 +2943,24 @@
 .agent-card-name { font-weight: 600; font-size: 15px; color: #1e293b; }
 .dark .agent-card-name { color: #f1f5f9; }
 .agent-card-id { font-size: 12px; color: #94a3b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.agent-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+/* Two lines then ellipsis: a long description can't push the card taller than
+   its neighbours or spill outside the rounded border. */
+.agent-card-desc {
+    margin-top: 12px;
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: #64748b;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    word-break: break-word;
+    min-height: 38px;
+}
+.dark .agent-card-desc { color: #94a3b8; }
+.agent-card-desc-empty { color: #cbd5e1; }
+.dark .agent-card-desc-empty { color: #475569; }
+.agent-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .agent-chip {
     font-size: 10px;
     padding: 2px 7px;
@@ -2903,8 +2985,11 @@
     color: #17803d;
 }
 .agent-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.agent-avatar-16 { width: 16px; height: 16px; font-size: 8px; }
 .agent-avatar-20 { width: 20px; height: 20px; font-size: 10px; }
+.agent-avatar-22 { width: 22px; height: 22px; font-size: 11px; }
 .agent-avatar-24 { width: 24px; height: 24px; font-size: 12px; }
+.agent-avatar-28 { width: 28px; height: 28px; font-size: 13px; }
 .agent-avatar-32 { width: 32px; height: 32px; font-size: 15px; }
 .agent-avatar-40 { width: 40px; height: 40px; font-size: 18px; }
 .agent-avatar-56 { width: 56px; height: 56px; font-size: 24px; }
@@ -2955,26 +3040,123 @@
 }
 .dark .agent-skill-row { border-color: rgba(255,255,255,.05); }
 .agent-modal {
-    position: absolute; inset: 0; background: rgba(15, 23, 42, .35);
-    display: flex; align-items: center; justify-content: center; z-index: 40;
+    position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+    display: flex; align-items: center; justify-content: center; z-index: 60;
+    backdrop-filter: blur(2px);
 }
 .agent-modal.hidden { display: none; }
 .agent-modal-card {
-    width: min(440px, calc(100% - 32px));
-    background: #fff; border-radius: 16px; padding: 22px;
-    box-shadow: 0 20px 50px -20px rgba(0,0,0,.35);
+    width: min(460px, calc(100% - 32px));
+    max-height: calc(100vh - 48px);
+    display: flex; flex-direction: column;
+    background: #fff; border-radius: 18px;
+    box-shadow: 0 24px 60px -20px rgba(0,0,0,.4);
 }
-.dark .agent-modal-card { background: #1A1A1A; }
-.agent-emoji-row { display: flex; flex-wrap: wrap; gap: 6px; }
-.agent-emoji-btn {
-    width: 36px; height: 36px; border-radius: 10px; font-size: 18px;
-    background: #f8fafc; border: 1px solid transparent;
+.dark .agent-modal-card { background: #1A1A1A; border: 1px solid rgba(255,255,255,.08); }
+.agent-modal-title {
+    font-size: 16px; font-weight: 600; color: #1e293b;
+    padding: 22px 24px 4px;
 }
-.agent-emoji-btn.selected, .agent-emoji-btn:hover { border-color: #4ABE6E; background: #EDFDF3; }
-.dark .agent-emoji-btn { background: rgba(255,255,255,.04); }
+.dark .agent-modal-title { color: #f1f5f9; }
+/* overflow stays visible so an opened dropdown's menu can spill past the last
+   field instead of being clipped into a scroll area (which would show a
+   scrollbar and trap the options). The card itself scrolls if a form ever
+   outgrows the viewport. */
+.agent-modal-body { padding: 12px 24px; overflow: visible; }
+.agent-modal-foot {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 24px 20px; border-top: 1px solid #f1f5f9;
+}
+.dark .agent-modal-foot { border-color: rgba(255,255,255,.06); }
+
+/* Shared form vocabulary for the create modal and the detail drawer, so a
+   field looks the same wherever it appears: a label above the control, never
+   a placeholder standing in for one. */
+.agent-field { margin-bottom: 18px; }
+.agent-field-label {
+    display: block; font-size: 12px; font-weight: 500;
+    color: #64748b; margin-bottom: 7px;
+}
+.dark .agent-field-label { color: #94a3b8; }
+.agent-field-hint { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+.agent-status-ok { color: #17803d !important; }
+.dark .agent-status-ok { color: #86efac !important; }
+.agent-input {
+    width: 100%; height: 40px; padding: 0 12px;
+    border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc;
+    font-size: 14px; color: #1e293b;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.agent-input::placeholder { color: #cbd5e1; }
+.agent-input:focus {
+    outline: none; border-color: #4ABE6E;
+    box-shadow: 0 0 0 3px rgba(74, 190, 110, .12); background: #fff;
+}
+/* Responsibilities is a paragraph, not a line: let it breathe and wrap. */
+.agent-textarea {
+    height: auto; min-height: 84px; padding: 10px 12px;
+    line-height: 1.55; resize: vertical; font-family: inherit;
+}
+.dark .agent-input {
+    border-color: #475569; background: rgba(255,255,255,.05); color: #f1f5f9;
+}
+.dark .agent-input:focus { background: rgba(255,255,255,.07); }
+.agent-input-locked {
+    width: 100%; min-height: 40px; padding: 9px 12px;
+    border-radius: 10px; border: 1px dashed #e2e8f0;
+    font-size: 13px; color: #94a3b8; background: #f8fafc;
+}
+.dark .agent-input-locked { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.03); }
+
+/* Avatar picker: a live preview beside an emoji grid and an upload button,
+   all in the page palette. */
+.agent-avatar-picker { display: flex; align-items: flex-start; gap: 14px; }
+.agent-avatar-picker-preview { flex-shrink: 0; }
+.agent-avatar-picker-body { flex: 1; min-width: 0; padding-top: 4px; }
+.agent-avatar-upload {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+    padding: 6px 12px; border-radius: 9px;
+    border: 1px solid #e2e8f0; background: #fff;
+    font-size: 12px; color: #64748b; cursor: pointer;
+    transition: border-color .15s ease, color .15s ease;
+}
+.agent-avatar-upload:hover { border-color: #4ABE6E; color: #17803d; }
+.dark .agent-avatar-upload { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); color: #94a3b8; }
+
+/* While bytes are in flight: dim the preview and spin a ring over it, and make
+   the upload button read as busy so a second click does not stack requests. */
+.agent-avatar-picker.is-uploading .agent-avatar-picker-preview { position: relative; }
+.agent-avatar-picker.is-uploading .agent-avatar-picker-preview::after {
+    content: ""; position: absolute; inset: 0; margin: auto;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid rgba(74,190,110,.35); border-top-color: #4ABE6E;
+    animation: agent-avatar-spin .7s linear infinite;
+}
+.agent-avatar-picker.is-uploading .agent-avatar-picker-preview .agent-avatar { opacity: .35; }
+.agent-avatar-picker.is-uploading .agent-avatar-upload { opacity: .6; pointer-events: none; }
+@keyframes agent-avatar-spin { to { transform: rotate(360deg); } }
+
+/* Detail-drawer buttons, matching the create modal's foot. */
+.agent-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.agent-btn {
+    height: 34px; padding: 0 14px; border-radius: 9px;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.agent-btn-primary { background: #4ABE6E; color: #fff; }
+.agent-btn-primary:hover { background: #3aa85d; }
+.agent-btn-ghost { border: 1px solid #e2e8f0; color: #475569; background: #fff; }
+.agent-btn-ghost:hover { border-color: #94a3b8; }
+.dark .agent-btn-ghost { background: transparent; border-color: rgba(255,255,255,.12); color: #cbd5e1; }
+.agent-btn-text { color: #64748b; background: transparent; }
+.agent-btn-text:hover { color: #334155; }
+.dark .agent-btn-text:hover { color: #e2e8f0; }
+.agent-btn-accent { color: #17803d; }
+.agent-btn-danger { color: #ef4444; background: transparent; }
+.agent-btn-danger:hover { color: #dc2626; }
 
 .composer-identity-row { display: flex; align-items: flex-start; gap: 10px; }
-.composer-identity { position: relative; padding-top: 8px; }
+.composer-identity { position: relative; padding-top: 2px; }
 .composer-agent-btn {
     border-radius: 50%; padding: 0; line-height: 0;
     box-shadow: 0 0 0 2px transparent;
@@ -2993,8 +3175,14 @@
 }
 .dark .composer-agent-count { border-color: #1A1A1A; }
 
-.composer-menu-item.current { background: #EDFDF3; color: #228547; }
-.dark .composer-menu-item.current { background: rgba(74, 190, 110, .14); color: #6EE7A0; }
+/* The current Agent is marked by its trailing check, not a standing highlight:
+   a permanent green fill fought the hover state, so two rows looked selected at
+   once. Hover is the only fill; current just tints its text and check. */
+.composer-menu-item.current { color: #228547; }
+.composer-menu-item.current:hover { background: #EDFDF3; }
+.dark .composer-menu-item.current { color: #6EE7A0; }
+.dark .composer-menu-item.current:hover { background: rgba(74, 190, 110, .14); }
+.composer-menu-item.current > i.fa-check { color: #4ABE6E; }
 .composer-menu-item.joined:hover { background: #FEF2F2; color: #b91c1c; }
 .dark .composer-menu-item.joined:hover { background: rgba(239, 68, 68, .12); color: #fca5a5; }
 .composer-menu-item .agent-avatar { flex-shrink: 0; }
@@ -3018,10 +3206,21 @@
 }
 .dark .bot-speaker { color: #94a3b8; }
 
+/* A mention reads as the teammate it names: a rounded chip carrying their face
+   and name, so "@我的运营助手" looks addressed rather than typed. */
 .mention-tag {
-    padding: 1px 5px; border-radius: 5px;
-    background: rgba(255, 255, 255, .22); font-weight: 500;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 7px 1px 2px; border-radius: 999px;
+    font-weight: 500; line-height: 1.4;
+    vertical-align: baseline;
+    background: rgba(255, 255, 255, .22);
 }
+.mention-tag-face {
+    display: inline-flex; width: 16px; height: 16px; flex-shrink: 0;
+}
+.mention-tag-face .agent-avatar { width: 16px; height: 16px; border-radius: 50%; }
+.mention-tag-name { white-space: nowrap; }
+/* In a bot bubble (white surface) the chip needs its own tint to read as a chip. */
 .bot-message-group .mention-tag { background: #EDFDF3; color: #17803d; }
 .dark .bot-message-group .mention-tag { background: rgba(74, 190, 110, .16); color: #6EE7A0; }
 
