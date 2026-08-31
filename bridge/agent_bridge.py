@@ -1055,10 +1055,14 @@ class AgentBridge:
                 # drop it here so it isn't stored twice.
                 if pre_persisted and new_messages and new_messages[0].get("role") == "user":
                     new_messages = new_messages[1:]
-                if speaker_agent_id != resolved_agent_id:
-                    new_messages = self._attribute_to_speaker(
-                        new_messages, speaker_agent_id
-                    )
+                # Stamp every reply with its author, the owner's included. In a
+                # shared conversation a guest reconstructs "who said what" from
+                # this stamp; if the owner's turns went unstamped they would read
+                # as unattributed, and a guest would mistake the owner's persona
+                # ("I am Gray…") for its own and answer in that voice.
+                new_messages = self._attribute_to_speaker(
+                    new_messages, speaker_agent_id
+                )
                 if new_messages:
                     self._persist_messages(
                         session_id,
