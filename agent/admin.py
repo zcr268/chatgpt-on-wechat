@@ -465,6 +465,89 @@ class AgentAdminService:
     def archive_agent(self, agent_id: str, revision: str = None) -> Dict:
         return self.update_agent(agent_id, enabled=False, revision=revision)
 
+    def delete_agent(self, agent_id: str, revision: str = None) -> Dict:
+        """Remove an Agent from the roster for good, files and all.
+
+        The default Agent is the instance itself — its workspace is the
+        instance root, holding every other Agent and the shared library — so it
+        can never be deleted. For anyone else we drop the roster entry, forget
+        any channel bindings that pointed at them, and delete their own
+        workspace, but only when it is the layout we created
+        (``<instance root>/agents/<id>``): a hand-picked path could be anywhere,
+        and we will not recursively erase a directory we did not make.
+        """
+        with self._lock:
+            settings = self._load()
+            registry = self._registry(settings)
+            profile = registry.get(agent_id, require_enabled=False)
+            if agent_id == registry.default_agent_id:
+                raise AgentAdminError("the default agent cannot be deleted")
+
+            profiles = [
+                item.to_dict()
+                for item in registry.list()
+                if item.id != agent_id
+            ]
+            # A binding to a now-missing Agent would route messages into the
+            # void, so prune those alongside the roster entry.
+            bindings = [
+                dict(item)
+                for item in (settings.get("agent_bindings") or [])
+                if (item.get("agent_id") or "") != agent_id
+            ]
+            candidate = dict(settings)
+            candidate["agents"] = profiles
+            candidate["agent_bindings"] = bindings
+            candidate["default_agent_id"] = registry.default_agent_id
+            # Validate the resulting roster/router before writing anything.
+            new_registry = self._registry(candidate)
+            AgentRouter.from_config(candidate, new_registry)
+            self._commit(
+                {
+                    "agents": profiles,
+                    "agent_bindings": bindings,
+                    "default_agent_id": registry.default_agent_id,
+                },
+                revision,
+            )
+
+            sanctioned = self._instance_root(settings) / "agents" / agent_id
+            workspace = profile.workspace_path
+            if workspace == sanctioned and workspace.is_dir():
+                shutil.rmtree(workspace, ignore_errors=True)
+            return {"id": agent_id, "deleted": True}
+
+    def prune_skill(self, skill_name: str) -> bool:
+        """Drop an uninstalled skill's name from every Agent's selection.
+
+        A per-Agent ``skills`` list references shared skills by name. When a
+        skill is uninstalled that name becomes dead weight in team.json; this
+        removes it so the file self-heals. An Agent that used "all" (no list)
+        is untouched, and one whose list empties out keeps an empty list
+        (a deliberate "none"), never silently reverting to "all".
+
+        :return: True if any Agent's selection changed.
+        """
+        if not skill_name:
+            return False
+        with self._lock:
+            settings = self._load()
+            raw_agents = settings.get("agents")
+            if not raw_agents:
+                return False
+            changed = False
+            new_agents = []
+            for item in raw_agents:
+                entry = dict(item)
+                sel = entry.get("skills")
+                if isinstance(sel, list) and skill_name in sel:
+                    entry["skills"] = [s for s in sel if s != skill_name]
+                    changed = True
+                new_agents.append(entry)
+            if changed:
+                self._commit({"agents": new_agents})
+            return changed
+
     # ------------------------------------------------------------------
     # Channel bindings
     # ------------------------------------------------------------------
@@ -604,3 +687,14 @@ class AgentAdminService:
                 "revision": _revision(raw),
                 "exists": True,
             }
+
+
+def get_agent_admin_service() -> "AgentAdminService":
+    """Build a service pointed at the instance's standard config location.
+
+    A single helper so callers outside the web layer (the CLI plugin, cloud
+    client, …) don't each re-derive the ``config.json`` path.
+    """
+    from config import get_data_root
+
+    return AgentAdminService(os.path.join(get_data_root(), "config.json"))

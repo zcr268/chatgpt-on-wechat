@@ -183,6 +183,36 @@ def test_default_agent_cannot_be_archived(admin):
         service.archive_agent("primary")
 
 
+def test_delete_agent_removes_roster_entry_and_own_workspace(admin):
+    service, root, _ = admin
+    workspace = root / "agents" / "research"
+    service.create_agent("research", "Research")
+    assert workspace.is_dir()
+
+    result = service.delete_agent("research")
+
+    assert result["deleted"] is True
+    assert [item["id"] for item in service.snapshot()["agents"]] == ["primary"]
+    assert not workspace.exists()
+
+
+def test_delete_agent_prunes_bindings_pointing_at_it(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research")
+    service.set_binding("research", "feishu", "chat-1")
+
+    service.delete_agent("research")
+
+    bindings = _saved(root).get("agent_bindings") or []
+    assert all(b.get("agent_id") != "research" for b in bindings)
+
+
+def test_default_agent_cannot_be_deleted(admin):
+    service, _, _ = admin
+    with pytest.raises(Exception):
+        service.delete_agent("primary")
+
+
 def test_core_file_write_is_allowlisted_atomic_and_revision_guarded(admin):
     service, root, _ = admin
     workspace = root / "research"
