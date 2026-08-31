@@ -206,6 +206,34 @@ def reset_scheduler_services(stop: bool = True) -> None:
         _task_store = None
 
 
+def stop_scheduler(agent_id: str = None, workspace_root: str = None) -> bool:
+    """Stop and forget a single Agent's scheduler service, leaving the rest of
+    the fleet running. Used when an Agent is archived/removed so a roster edit
+    does not have to reset every scheduler. Returns True if one was found.
+
+    The actual stop is detached to a daemon thread: ``service.stop()`` joins the
+    scan loop (up to a few seconds), and a roster edit should not block the HTTP
+    response on that. We drop the service from the registry synchronously so it
+    is immediately forgotten; the thread just winds the loop down."""
+    workspace_root = _resolve_workspace(workspace_root, agent_id)
+    with _init_lock:
+        service = _scheduler_services.pop(workspace_root, None)
+        _task_stores.pop(workspace_root, None)
+    if service is None:
+        return False
+    threading.Thread(
+        target=lambda: _safe_stop(service), daemon=True, name="scheduler-stop"
+    ).start()
+    return True
+
+
+def _safe_stop(service) -> None:
+    try:
+        service.stop()
+    except Exception:
+        pass
+
+
 def _remember_delivered_output(
     agent_bridge,
     task: dict,
