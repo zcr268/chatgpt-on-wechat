@@ -5861,7 +5861,28 @@ def _agent_admin_service():
     return AgentAdminService(os.path.join(get_data_root(), "config.json"))
 
 
-def _reload_agent_runtime(service) -> None:
+def _reload_agent_runtime(service, changed_agent_ids=None) -> None:
+    """Re-point the live runtime at a freshly loaded roster.
+
+    This runs inside the roster-edit request, so it must stay cheap. The old
+    implementation tore everything down - stop every scheduler, drop every
+    cached session, then rebuild all of them - which grew linearly with the
+    number of Agents (each rebuild reloads dozens of skills). Editing one
+    Agent's name should not cost a full-fleet reload.
+
+    Instead we reconcile incrementally:
+      * swap the registry/router (always cheap),
+      * start a scheduler only for Agents that gained one, stop those that
+        disappeared, and leave already-running ones untouched,
+      * evict only the sessions of the Agents that actually changed, so their
+        next turn picks up the new name / model / persona. Everyone else keeps
+        their warm cache.
+
+    ``changed_agent_ids`` narrows the session eviction to just the edited
+    Agents. When omitted we fall back to evicting nothing extra beyond the
+    add/remove diff, since pure metadata edits without an id (e.g. binding
+    changes) touch no cached runtime.
+    """
     from agent.registry import set_agent_registry
     from agent.routing import AgentRouter, set_agent_router
 
@@ -5876,16 +5897,37 @@ def _reload_agent_runtime(service) -> None:
     agent_bridge = getattr(bridge, "_agent_bridge", None)
     if agent_bridge is None:
         return
-    agent_bridge.clear_all_sessions()
+
     agent_bridge.agent_registry = registry
     agent_bridge.agent_router = router
-    from agent.tools.scheduler.integration import init_scheduler, reset_scheduler_services
-    reset_scheduler_services()
-    agent_bridge.scheduler_agent_ids.clear()
+
+    # Reconcile schedulers against what is already running, rather than
+    # stopping and recreating the whole set.
+    from agent.tools.scheduler.integration import init_scheduler, stop_scheduler
+    live_ids = {p.id for p in registry.list(include_disabled=False)}
+    previously = set(agent_bridge.scheduler_agent_ids)
+
+    for agent_id in previously - live_ids:
+        try:
+            stop_scheduler(agent_id)
+        except Exception as e:
+            logger.warning(f"[WebChannel] stop_scheduler({agent_id}) failed: {e}")
+        agent_bridge.scheduler_agent_ids.discard(agent_id)
+
     for profile in registry.list(include_disabled=False):
+        if profile.id in previously:
+            continue  # already has a running scheduler; init_scheduler is a no-op
         if init_scheduler(agent_bridge, profile.workspace, profile.id):
             agent_bridge.scheduler_agent_ids.add(profile.id)
     agent_bridge.scheduler_initialized = bool(agent_bridge.scheduler_agent_ids)
+
+    # Drop cached runtimes only for the Agents whose definition changed, so the
+    # edit takes effect on their next turn without wiping everyone's session.
+    for agent_id in (changed_agent_ids or []):
+        try:
+            agent_bridge.clear_agent(agent_id)
+        except Exception as e:
+            logger.warning(f"[WebChannel] clear_agent({agent_id}) failed: {e}")
 
 
 class AgentsHandler:
@@ -5941,6 +5983,8 @@ class AgentsHandler:
                 result = service.update_agent(body.get("id", ""), **updates)
             elif action == "archive":
                 result = service.archive_agent(body.get("id", ""), revision=revision)
+            elif action == "delete":
+                result = service.delete_agent(body.get("id", ""), revision=revision)
             elif action == "set_binding":
                 result = service.set_binding(
                     body.get("agent_id", ""),
@@ -5962,8 +6006,24 @@ class AgentsHandler:
                 return json.dumps({
                     "status": "error", "message": f"unknown action: {action}"
                 })
-            _reload_agent_runtime(service)
-            return json.dumps({"status": "success", "result": result}, ensure_ascii=False)
+            # Only the edited Agent needs its cached runtime dropped; a create
+            # has no live sessions yet, and binding edits are handled by the
+            # router swap alone.
+            changed = None
+            if action in ("update", "archive", "delete"):
+                changed = [body.get("id", "")] if body.get("id") else None
+            _reload_agent_runtime(service, changed_agent_ids=changed)
+            # Hand back the fresh revision so a client making rapid successive
+            # edits (e.g. ticking skill checkboxes) can chain them without a
+            # full reload and without tripping the stale-roster guard.
+            try:
+                revision_after = service.snapshot().get("revision")
+            except Exception:
+                revision_after = None
+            return json.dumps(
+                {"status": "success", "result": result, "revision": revision_after},
+                ensure_ascii=False,
+            )
         except Exception as e:
             from agent.admin import StaleRosterError
             code = None
