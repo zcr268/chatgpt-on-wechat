@@ -1992,6 +1992,7 @@ class WebChannel(ChatChannel):
             '/api/feishu/register', 'FeishuRegisterHandler',
             '/api/tools', 'ToolsHandler',
             '/api/skills', 'SkillsHandler',
+            '/api/skills/content', 'SkillContentHandler',
             '/api/memory', 'MemoryHandler',
             '/api/memory/content', 'MemoryContentHandler',
             '/api/knowledge/list', 'KnowledgeListHandler',
@@ -2490,8 +2491,11 @@ class ChatHandler:
         with open(file_path, 'r', encoding='utf-8') as f:
             html = f.read()
         cache_bust = str(int(time.time()))
-        html = html.replace('assets/js/console.js', f'assets/js/console.js?v={cache_bust}')
-        html = html.replace('assets/css/console.css', f'assets/css/console.css?v={cache_bust}')
+        # Every first-party asset the page pulls in, so an upgraded console is
+        # never left running against a browser-cached copy of the old scripts.
+        for asset in ('js/console.js', 'js/workspace.js', 'js/doc-editor.js',
+                      'css/console.css'):
+            html = html.replace(f'assets/{asset}', f'assets/{asset}?v={cache_bust}')
         # Inject the backend-resolved default language for first-load fallback.
         html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
         return html
@@ -5511,17 +5515,26 @@ class ToolsHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _skill_service():
+    """
+    A SkillService over the skills the console manages.
+
+    Skills stay anchored to the agent's state root even while a session has a
+    project open, so this deliberately resolves the workspace without a session.
+    """
+    from agent.skills.manager import SkillManager
+    from agent.skills.service import SkillService
+    custom_dir = os.path.join(_get_workspace_root(), "skills")
+    return SkillService(SkillManager(custom_dir=custom_dir))
+
+
 class SkillsHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.skills.service import SkillService
-            from agent.skills.manager import SkillManager
             from common import i18n
-            workspace_root = _get_workspace_root()
-            manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
-            service = SkillService(manager)
+            service = _skill_service()
             skills = service.query()
             if i18n.get_language() == i18n.ZH_HANT:
                 for skill in skills:
@@ -5538,16 +5551,12 @@ class SkillsHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            from agent.skills.service import SkillService
-            from agent.skills.manager import SkillManager
             body = json.loads(web.data())
             action = body.get("action")
             name = body.get("name")
             if not action or not name:
                 return json.dumps({"status": "error", "message": "action and name are required"})
-            workspace_root = _get_workspace_root()
-            manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
-            service = SkillService(manager)
+            service = _skill_service()
             if action == "open":
                 service.open({"name": name})
             elif action == "close":
@@ -5557,6 +5566,69 @@ class SkillsHandler:
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Skills POST error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class SkillContentHandler:
+    """
+    A skill's definition file, for the console's viewer and editor.
+
+    Addressed by skill name rather than by path, because the loader is what
+    resolves a name to a file: a workspace skill shadows a builtin of the same
+    name, and a builtin sits outside the workspace that the file APIs are
+    confined to.
+
+    Unlike the skill list, the text is served exactly as stored - no
+    simplified-to-traditional conversion. What comes back here is what a save
+    would write, and rewriting someone's file into another script because of
+    the console's display language is not a conversion they asked for.
+    """
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            params = web.input(name='')
+            name = (params.name or '').strip()
+            if not name:
+                return json.dumps({"status": "error", "message": "name is required"})
+            result = _skill_service().read_content(name)
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except Exception as e:
+            logger.error(f"[WebChannel] Skill content error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from agent.workspace.service import WorkspaceConflictError
+
+            body = json.loads(web.data() or b'{}')
+            name = (body.get("name") or "").strip()
+            if not name:
+                return json.dumps({"status": "error", "message": "name is required"})
+            content = body.get("content")
+            if not isinstance(content, str):
+                return json.dumps({"status": "error", "message": "content must be a string"})
+
+            try:
+                result = _skill_service().write_content(
+                    name, content, expected_mtime=body.get("expected_mtime"),
+                )
+            except WorkspaceConflictError as e:
+                return json.dumps({"status": "error", "code": "conflict", "message": str(e)})
+
+            logger.info(f"[WebChannel] Skill saved: {name} ({result['size']} bytes)")
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except (ValueError, FileNotFoundError) as e:
+            return json.dumps({"status": "error", "message": str(e)})
+        except PermissionError:
+            return json.dumps({"status": "error", "message": "permission denied"})
+        except Exception as e:
+            logger.error(f"[WebChannel] Skill write error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 

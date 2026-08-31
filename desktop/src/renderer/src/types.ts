@@ -638,6 +638,21 @@ export interface SkillInfo {
   category?: string
 }
 
+/** Response of GET /api/skills/content: a skill's definition file. */
+export interface SkillContent extends WorkspaceReadResult {
+  name: string
+  /** `builtin` or `custom`, by where the loader resolved the skill. */
+  source: string
+  /** File being shown, relative to the skill's own directory. */
+  filename: string
+  /**
+   * True when the file is replaced from the installation on startup, so an edit
+   * would not survive. Reported apart from `source`, which reads `custom` for
+   * the workspace copy of a builtin skill and so cannot answer this.
+   */
+  ships_with_install: boolean
+}
+
 // ============================================================
 // Memory
 // ============================================================
@@ -656,6 +671,18 @@ export interface MemoryPage {
   total: number
   page: number
   page_size: number
+}
+
+/** Response of GET /api/memory/content. */
+export interface MemoryDoc {
+  filename: string
+  /**
+   * Path relative to the agent's state root, which is what the workspace read
+   * and write endpoints take. Resolved by the backend because a memory file is
+   * addressed by name and category, not by path.
+   */
+  rel_path: string
+  content: string
 }
 
 // ============================================================

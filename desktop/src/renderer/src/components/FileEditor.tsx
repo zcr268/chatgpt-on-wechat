@@ -1,5 +1,6 @@
 import React, { useEffect, useLayoutEffect } from 'react'
 import { AlertTriangle } from 'lucide-react'
+import { useConfirmStore } from '../store/confirmStore'
 import { useWorkspaceStore, type EditState } from '../store/workspaceStore'
 
 /**
@@ -18,7 +19,7 @@ const FileEditor: React.FC<{
   const stashEditText = useWorkspaceStore((s) => s.stashEditText)
   const saveEdit = useWorkspaceStore((s) => s.saveEdit)
   const cancelEdit = useWorkspaceStore((s) => s.cancelEdit)
-  const pendingConfirm = useWorkspaceStore((s) => s.pendingConfirm)
+  const pendingConfirm = useConfirmStore((s) => s.pending)
 
   // autoFocus covers the normal mount. This also hands focus back once a
   // dialog that took it (discard / overwrite) has closed, so typing resumes

@@ -3,10 +3,12 @@ import type {
   ChannelInfo,
   ChannelAction,
   SkillInfo,
+  SkillContent,
   ToolInfo,
   MemoryItem,
   MemoryCategory,
   MemoryPage,
+  MemoryDoc,
   SchedulerTask,
   Attachment,
   SessionsPage,
@@ -26,7 +28,7 @@ import type {
 } from '../types'
 import { getLang } from '../i18n'
 
-interface ApiResult {
+export interface ApiResult {
   status: string
   message?: string
 }
@@ -514,6 +516,38 @@ class ApiClient {
     })
   }
 
+  /**
+   * Read a skill's definition file.
+   *
+   * Addressed by name rather than by path: which file a name resolves to is the
+   * loader's business, and a builtin skill's file sits outside the workspace.
+   */
+  async readSkill(name: string): Promise<SkillContent & ApiResult> {
+    return this.request(`/api/skills/content?name=${encodeURIComponent(name)}`)
+  }
+
+  /**
+   * Save a skill's definition file.
+   *
+   * Refuses a skill that ships with the installation, and answers
+   * `code === 'conflict'` when the file changed since `expectedMtime` - both
+   * with status 200, so the caller has to look.
+   */
+  async writeSkill(args: {
+    name: string
+    content: string
+    expectedMtime?: number | null
+  }): Promise<WorkspaceWriteResult & ApiResult> {
+    return this.request('/api/skills/content', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: args.name,
+        content: args.content,
+        expected_mtime: args.expectedMtime ?? null,
+      }),
+    })
+  }
+
   // ---------------------------------------------------------
   // Memory
   // ---------------------------------------------------------
@@ -524,11 +558,16 @@ class ApiClient {
     )
   }
 
-  async getMemoryContent(filename: string, category: MemoryCategory = 'memory'): Promise<string> {
-    const data = await this.request<{ status: string; content: string }>(
+  /**
+   * Read a memory file.
+   *
+   * `rel_path` is what an edit needs: memory files are addressed by name and
+   * category here, but the read and write endpoints take a path.
+   */
+  async getMemoryDoc(filename: string, category: MemoryCategory = 'memory'): Promise<MemoryDoc & ApiResult> {
+    return this.request(
       `/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}`
     )
-    return data.content
   }
 
   // ---------------------------------------------------------

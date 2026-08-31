@@ -102,6 +102,9 @@ const translations: Record<string, Record<string, string>> = {
     ws_edit_overwrite: '覆盖保存',
     ws_edit_conflict_title: '文件已被改动',
     ws_edit_conflict_msg: '该文件在你编辑期间已被改动（可能来自智能体）。继续将用你的内容覆盖它。',
+    // document editor (memory files, skill definitions)
+    doc_edit: '编辑',
+    doc_edit_save: '保存',
     // workspace / project selector
     ws_sel_title: '工作空间',
     ws_sel_system_space: '系统空间',
@@ -364,6 +367,9 @@ const translations: Record<string, Record<string, string>> = {
     skill_disabled: '已禁用',
     tools_empty: '暂无内置工具',
     skills_empty: '暂无技能',
+    skill_open_hint: '点击查看技能内容',
+    skill_back: '返回列表',
+    skill_builtin_readonly: '内置技能不可编辑（重启会覆盖）',
     memory_title: '记忆管理',
     memory_desc: '查看 Agent 记忆文件和内容',
     memory_tab_files: '记忆文件',
@@ -627,6 +633,9 @@ const translations: Record<string, Record<string, string>> = {
     ws_edit_conflict_title: 'File changed on disk',
     ws_edit_conflict_msg:
       'This file changed while you were editing it (the agent may have rewritten it). Continuing overwrites it with your version.',
+    // document editor (memory files, skill definitions)
+    doc_edit: 'Edit',
+    doc_edit_save: 'Save',
     // workspace / project selector
     ws_sel_title: 'Workspace',
     ws_sel_system_space: 'System space',
@@ -889,6 +898,9 @@ const translations: Record<string, Record<string, string>> = {
     skill_disabled: 'Disabled',
     tools_empty: 'No built-in tools',
     skills_empty: 'No skills found',
+    skill_open_hint: 'Open to read this skill',
+    skill_back: 'Back to list',
+    skill_builtin_readonly: 'Built-in skill, read-only (replaced on restart)',
     memory_title: 'Memory',
     memory_desc: 'View agent memory files and contents',
     memory_tab_files: 'Memory Files',

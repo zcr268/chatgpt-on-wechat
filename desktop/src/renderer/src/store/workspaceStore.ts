@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import apiClient from '../api/client'
 import { t } from '../i18n'
 import { isEditable } from '../lib/fileKind'
+import { askConfirm } from './confirmStore'
 import type { Artifact, WorkspaceEntry } from '../types'
 
 const WIDTH_KEY = 'cow_workspace_width'
@@ -40,15 +41,6 @@ export interface EditState {
   error: string | null
 }
 
-export interface PendingConfirm {
-  /** i18n keys for the heading and the body text. */
-  titleKey: string
-  msgKey: string
-  /** Label for the affirmative button; the other one is always a plain cancel. */
-  okKey: string
-  resolve: (ok: boolean) => void
-}
-
 interface WorkspaceState {
   open: boolean
   tab: WorkspaceTab
@@ -79,18 +71,6 @@ interface WorkspaceState {
    */
   editNotice: string | null
   dismissEditNotice: () => void
-
-  /**
-   * Question awaiting an answer, rendered by WorkspaceConfirm.
-   *
-   * An in-app dialog rather than window.confirm: Electron serves the native one
-   * synchronously off the renderer's own thread, where it swallows the result
-   * and leaves the window without keyboard focus.
-   */
-  pendingConfirm: PendingConfirm | null
-  answerConfirm: (ok: boolean) => void
-  /** Put a yes/no question on screen and wait for the answer. */
-  ask: (question: Omit<PendingConfirm, 'resolve'>) => Promise<boolean>
 
   openPanel: (tab?: WorkspaceTab) => void
   closePanel: (byUser?: boolean) => Promise<void>
@@ -167,7 +147,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   sessionId: '',
   edit: null,
   editNotice: null,
-  pendingConfirm: null,
 
   dismissEditNotice: () => set({ editNotice: null }),
 
@@ -351,16 +330,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     preview(previewable[0])
   },
 
-  answerConfirm: (ok) => {
-    const pending = get().pendingConfirm
-    set({ pendingConfirm: null })
-    pending?.resolve(ok)
-  },
-
   guardUnsavedEdit: async () => {
     const { edit } = get()
     if (!edit?.dirty) return true
-    const ok = await get().ask({
+    const ok = await askConfirm({
       titleKey: 'ws_edit_discard_title',
       msgKey: 'ws_edit_discard_msg',
       okKey: 'ws_edit_discard_ok',
@@ -369,14 +342,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     set({ edit: null })
     return true
   },
-
-  ask: (question) =>
-    new Promise<boolean>((resolve) => {
-      // Two questions can't share the dialog. Retract the older one as declined
-      // so whoever is awaiting it unblocks instead of hanging forever.
-      get().pendingConfirm?.resolve(false)
-      set({ pendingConfirm: { ...question, resolve } })
-    }),
 
   startEdit: async () => {
     const { current, edit, sessionId } = get()
@@ -457,7 +422,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
       if (res.code === 'conflict') {
         set((s) => (s.edit ? { edit: { ...s.edit, saving: false } } : s))
-        const overwrite = await get().ask({
+        const overwrite = await askConfirm({
           titleKey: 'ws_edit_conflict_title',
           msgKey: 'ws_edit_conflict_msg',
           okKey: 'ws_edit_overwrite',

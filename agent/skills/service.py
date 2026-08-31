@@ -95,6 +95,97 @@ class SkillService:
         return result
 
     # ------------------------------------------------------------------
+    # content — read and edit a skill's definition file
+    # ------------------------------------------------------------------
+    def read_content(self, name: str) -> dict:
+        """
+        Read a skill's definition file, for viewing or editing in a console.
+
+        Every skill is readable; ``editable`` is what says whether saving would
+        be accepted, and is false for one that ships with the installation.
+
+        :param name: skill name as listed by :meth:`query`
+        :return: the fields of :meth:`WorkspaceService.read_text` plus the skill
+            ``name``, its ``source``, the ``filename`` being shown, and
+            ``ships_with_install`` to explain a refusal.
+        :raises FileNotFoundError: if no skill of that name is loaded.
+        """
+        skill, svc, rel = self._locate(name)
+        shipped = self._ships_with_install(skill)
+        result = svc.read_text(rel)
+        result["name"] = skill.name
+        result["source"] = skill.source
+        result["filename"] = rel
+        # Reported separately from `source`, which stays `custom` for the
+        # workspace copy of a builtin: the console needs this to say *why* it is
+        # refusing the edit, and `source` alone does not tell it.
+        result["ships_with_install"] = shipped
+        result["editable"] = result["editable"] and not shipped
+        return result
+
+    def write_content(self, name: str, content: str,
+                      expected_mtime: Optional[float] = None) -> dict:
+        """
+        Overwrite a skill's definition file.
+
+        :param expected_mtime: the mtime the caller read, forwarded to
+            :meth:`WorkspaceService.write_text` so a rewrite that happened
+            mid-edit raises rather than being overwritten silently.
+        :raises ValueError: for a skill that ships with the installation, whose
+            files do not survive an edit. See :meth:`_ships_with_install`.
+        """
+        skill, svc, rel = self._locate(name)
+        if self._ships_with_install(skill):
+            raise ValueError(f"skill ships with the installation and is read-only: {name}")
+
+        result = svc.write_text(rel, content, expected_mtime=expected_mtime)
+        # The frontmatter holds the name and description the skill list shows,
+        # so an edit can change how this skill presents itself.
+        self.manager.refresh_skills()
+        logger.info(f"[SkillService] write_content: skill '{name}' saved ({result['size']} bytes)")
+        return result
+
+    def _ships_with_install(self, skill) -> bool:
+        """
+        True when this skill's files come back from the installation, so an edit
+        made here would not survive.
+
+        Deliberately not just ``source == "builtin"``. Startup copies every
+        builtin skill directory into the workspace and deletes whatever was
+        there first (``_sync_builtin_skills`` in app.py), so the copy the loader
+        resolves is a ``custom`` one that is *still* replaced on the next start.
+        Offering an editor for it would throw the edit away at the next restart,
+        with nothing to say so.
+        """
+        if skill.source == "builtin":
+            return True
+        shadowed = os.path.join(self.manager.builtin_dir,
+                                os.path.basename(skill.base_dir))
+        return os.path.isfile(os.path.join(shadowed, "SKILL.md"))
+
+    def _locate(self, name: str):
+        """
+        Resolve a skill name to ``(skill, service, path within its directory)``.
+
+        Skills are addressed by name because the loader is what knows where a
+        name lands: a workspace skill shadows a builtin one of the same name,
+        and a builtin lives outside the workspace entirely. Rooting a
+        :class:`WorkspaceService` at the skill's own directory then keeps both
+        the read and the write inside it, and reuses the containment check, the
+        mtime comparison, the atomic replace and the UTF-8 and size limits that
+        the workspace file editor already enforces.
+        """
+        from agent.workspace.service import WorkspaceService
+
+        if not name or not name.strip():
+            raise ValueError("skill name is required")
+        entry = self.manager.get_skill(name)
+        if entry is None:
+            raise FileNotFoundError(f"skill not found: {name}")
+        skill = entry.skill
+        return skill, WorkspaceService(skill.base_dir), os.path.basename(skill.file_path)
+
+    # ------------------------------------------------------------------
     # add / install
     # ------------------------------------------------------------------
     def add(self, payload: dict) -> None:

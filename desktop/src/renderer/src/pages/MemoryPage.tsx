@@ -1,10 +1,13 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, ArrowLeft, Brain, Sprout, FileText, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
-import type { MemoryItem, MemoryCategory } from '../types'
+import type { ApiResult } from '../api/client'
+import type { MemoryItem, MemoryCategory, WorkspaceReadResult } from '../types'
 import Markdown from '../components/Markdown'
+import { DocActions, DocEditor, DocNotice } from '../components/DocEditor'
+import { createDocEditorStore } from '../store/docEditorStore'
 
 interface MemoryPageProps {
   baseUrl: string
@@ -12,6 +15,32 @@ interface MemoryPageProps {
 
 type Tab = 'files' | 'evolution'
 const PAGE_SIZE = 10
+
+/** A memory file, once its path has been resolved. */
+interface MemoryRef {
+  filename: string
+  category: MemoryCategory
+  /**
+   * Path relative to the agent's state root. Memory files are addressed by name
+   * and category, so the backend resolves this for us when the file is opened.
+   */
+  relPath: string
+}
+
+/**
+ * Created at module scope so an unsaved edit survives this page being unmounted
+ * by a route change, which is also what lets the navigation guard find it.
+ *
+ * No session is passed: memory files live in the agent's state root, and a
+ * session would resolve the same relative path inside whatever project that
+ * session has open - editing or creating the wrong file.
+ */
+const memoryEditor = createDocEditorStore<MemoryRef, WorkspaceReadResult & ApiResult>({
+  keyOf: (doc) => `${doc.category}:${doc.filename}`,
+  read: (doc) => apiClient.workspaceRead(doc.relPath),
+  write: (doc, content, expectedMtime) =>
+    apiClient.workspaceWrite({ path: doc.relPath, content, expectedMtime }),
+})
 
 const formatSize = (bytes: number): string => {
   if (bytes < 1024) return bytes + ' B'
@@ -38,10 +67,14 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  /** Failure to resolve a file the user clicked, shown above the list. */
+  const [listError, setListError] = useState<string | null>(null)
 
-  const [viewing, setViewing] = useState<string | null>(null)
-  const [content, setContent] = useState('')
-  const [docLoading, setDocLoading] = useState(false)
+  const doc = memoryEditor((s) => s.doc)
+  const content = memoryEditor((s) => s.content)
+  const docLoading = memoryEditor((s) => s.loading)
+  const edit = memoryEditor((s) => s.edit)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
 
   const category: MemoryCategory = tab === 'evolution' ? 'evolution' : 'memory'
 
@@ -74,17 +107,26 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
     // In the evolution tab a file lives in its own dir (dream vs evolution).
     const fileCategory: MemoryCategory =
       item.type === 'dream' || item.type === 'evolution' ? (item.type as MemoryCategory) : category
-    setViewing(item.filename)
-    setDocLoading(true)
-    setContent('')
+    // Resolve the path first: the editor addresses the file by path, while the
+    // list only knows its name and category.
+    let relPath: string
     try {
-      const text = await apiClient.getMemoryContent(item.filename, fileCategory)
-      setContent(text)
+      const meta = await apiClient.getMemoryDoc(item.filename, fileCategory)
+      if (meta.status !== 'success' || !meta.rel_path) throw new Error(meta.message)
+      relPath = meta.rel_path
     } catch {
-      setContent(`> ${t('memory_doc_load_error')}`)
-    } finally {
-      setDocLoading(false)
+      setListError(t('memory_doc_load_error'))
+      return
     }
+    setListError(null)
+    void memoryEditor.getState().open({ filename: item.filename, category: fileCategory, relPath })
+  }
+
+  const switchTab = async (next: Tab) => {
+    if (next === tab) return
+    if (!(await memoryEditor.getState().guard())) return
+    memoryEditor.getState().forget()
+    setTab(next)
   }
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
@@ -97,48 +139,68 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
           <h2 className="text-xl font-bold text-content">{t('memory_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{t('memory_desc')}</p>
         </div>
-        {!viewing && (
+        {!doc && (
           <div className="flex items-center gap-1 bg-inset rounded-btn p-0.5">
-            <TabBtn icon={Brain} label={t('memory_tab_files')} active={tab === 'files'} onClick={() => setTab('files')} />
+            <TabBtn icon={Brain} label={t('memory_tab_files')} active={tab === 'files'} onClick={() => void switchTab('files')} />
             <TabBtn
               icon={Sprout}
               label={t('memory_tab_dreams')}
               active={tab === 'evolution'}
-              onClick={() => setTab('evolution')}
+              onClick={() => void switchTab('evolution')}
             />
           </div>
         )}
       </div>
 
-      {viewing ? (
-        /* File viewer */
+      <DocNotice store={memoryEditor} />
+
+      {doc ? (
+        /* File viewer / editor */
         <div className="flex-1 flex flex-col min-h-0 border-t border-default">
           <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0 border-b border-subtle">
             <button
-              onClick={() => setViewing(null)}
+              onClick={() => void memoryEditor.getState().close()}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-sm text-content-secondary hover:bg-inset border border-strong transition-colors cursor-pointer"
             >
               <ArrowLeft size={14} />
               {t('memory_back')}
             </button>
-            <h3 className="text-sm font-semibold text-content font-mono truncate">{viewing}</h3>
-          </div>
-          <div className="flex-1 overflow-y-auto">
-            <div className="max-w-3xl mx-auto px-6 py-6">
-              {docLoading ? (
-                <div className="flex items-center text-content-tertiary py-8">
-                  <Loader2 size={16} className="animate-spin mr-2" />
-                </div>
-              ) : (
-                <Markdown content={content} />
+            <h3 className="flex-1 text-sm font-semibold text-content font-mono truncate">
+              {doc.filename}
+              {edit?.dirty && (
+                <span className="text-accent" title={t('ws_edit_unsaved')}>
+                  {' '}
+                  •
+                </span>
               )}
-            </div>
+            </h3>
+            <DocActions store={memoryEditor} textareaRef={editorRef} />
           </div>
+          {edit ? (
+            // Keyed so switching the edited file remounts the text area and
+            // reseeds it, instead of keeping the previous file's text.
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <DocEditor key={doc.filename} store={memoryEditor} textareaRef={editorRef} />
+            </div>
+          ) : (
+            <div className="flex-1 overflow-y-auto">
+              <div className="max-w-3xl mx-auto px-6 py-6">
+                {docLoading ? (
+                  <div className="flex items-center text-content-tertiary py-8">
+                    <Loader2 size={16} className="animate-spin mr-2" />
+                  </div>
+                ) : (
+                  <Markdown content={content} />
+                )}
+              </div>
+            </div>
+          )}
         </div>
       ) : (
         /* List */
         <div className="flex-1 overflow-y-auto border-t border-default">
           <div className="max-w-4xl mx-auto px-6 py-5">
+            {listError && <p className="mb-3 text-sm text-red-500">{listError}</p>}
             {loading ? (
               <div className="flex items-center justify-center py-20 text-content-tertiary">
                 <Loader2 size={18} className="animate-spin mr-2" />

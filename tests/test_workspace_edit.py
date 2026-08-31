@@ -445,18 +445,18 @@ def test_desktop_editor_avoids_native_confirm():
     where it swallows the answer and leaves the window without keyboard focus -
     the editor became unusable after the first discard prompt. Ask through the
     in-app dialog instead."""
-    for rel in ("store/workspaceStore.ts", "components/FileEditor.tsx",
-                "components/WorkspacePanel.tsx"):
+    for rel in ("store/workspaceStore.ts", "store/confirmStore.ts",
+                "store/docEditorStore.ts", "components/FileEditor.tsx",
+                "components/DocEditor.tsx", "components/WorkspacePanel.tsx"):
         src = _desktop(rel)
         # The call, not the word: the comments explain why it is avoided.
         assert "window.confirm(" not in src, rel
         assert "window.alert(" not in src, rel
 
-    # Mounted at the app level, not inside the panel: an unsaved editor outlives
-    # the panel while the user is on another route, and a question asked then
-    # would have nothing to render it and would hang its caller.
-    assert "<WorkspaceConfirm />" in _desktop("App.tsx")
-    confirm = _desktop("components/WorkspaceConfirm.tsx")
-    assert "answerConfirm" in confirm
+    # Mounted at the app level, not inside any one page: an unsaved editor
+    # outlives its page while the user is on another route, and a question asked
+    # then would have nothing to render it and would hang its caller.
+    assert "<ConfirmDialog />" in _desktop("App.tsx")
+    assert "useConfirmStore" in _desktop("components/ConfirmDialog.tsx")
     # A second question must retract the first, or whoever awaits it hangs.
-    assert "get().pendingConfirm?.resolve(false)" in _desktop("store/workspaceStore.ts")
+    assert "get().pending?.resolve(false)" in _desktop("store/confirmStore.ts")

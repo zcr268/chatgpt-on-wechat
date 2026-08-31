@@ -172,6 +172,10 @@ const I18N = {
         tools_section_title: '内置工具', tools_loading: '加载工具中...',
         skills_section_title: '技能', skill_enable: '启用', skill_disable: '禁用',
         skill_toggle_error: '操作失败，请稍后再试',
+        skill_open_hint: '点击查看技能内容',
+        skill_back: '返回列表',
+        skill_load_failed: '读取技能内容失败',
+        skill_builtin_readonly: '内置技能不可编辑（重启会覆盖）',
         memory_title: '记忆管理', memory_desc: '查看 Agent 记忆文件和内容',
         memory_tab_files: '记忆文件', memory_tab_dreams: '自主进化',
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
@@ -506,6 +510,10 @@ const I18N = {
         tools_section_title: '內建工具', tools_loading: '載入工具中...',
         skills_section_title: '技能', skill_enable: '啟用', skill_disable: '禁用',
         skill_toggle_error: '操作失敗，請稍後再試',
+        skill_open_hint: '點擊檢視技能內容',
+        skill_back: '返回列表',
+        skill_load_failed: '讀取技能內容失敗',
+        skill_builtin_readonly: '內建技能不可編輯（重啟會覆蓋）',
         memory_title: '記憶管理', memory_desc: '檢視 Agent 記憶檔案和內容',
         memory_tab_files: '記憶檔案', memory_tab_dreams: '自主進化',
         memory_loading: '載入記憶檔案中...', memory_loading_desc: '記憶檔案將顯示在此處',
@@ -835,6 +843,10 @@ const I18N = {
         tools_section_title: 'Built-in Tools', tools_loading: 'Loading tools...',
         skills_section_title: 'Skills', skill_enable: 'Enable', skill_disable: 'Disable',
         skill_toggle_error: 'Operation failed, please try again',
+        skill_open_hint: 'Click to view this skill',
+        skill_back: 'Back to list',
+        skill_load_failed: 'Could not read the skill',
+        skill_builtin_readonly: 'Built-in skill, read-only (replaced on restart)',
         memory_title: 'Memory', memory_desc: 'View agent memory files and contents',
         memory_tab_files: 'Memory Files', memory_tab_dreams: 'Self-Evolution',
         memory_loading: 'Loading memory files...', memory_loading_desc: 'Memory files will be displayed here',
@@ -7258,9 +7270,12 @@ function loadSkillsSection() {
 
         skills.forEach(sk => {
             const card = document.createElement('div');
-            card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-4 flex items-start gap-3 transition-opacity';
+            card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 '
+                + 'p-4 flex items-start gap-3 transition-opacity cursor-pointer '
+                + 'hover:border-slate-300 dark:hover:border-white/20';
             card.dataset.skillName = sk.name;
             card.dataset.skillDesc = sk.description || '';
+            card.dataset.skillDisplayName = sk.display_name || '';
             card.dataset.enabled = sk.enabled ? '1' : '0';
             renderSkillCard(card, sk);
             listEl.appendChild(card);
@@ -7284,8 +7299,8 @@ function renderSkillCard(card, sk) {
                 <span class="font-medium text-sm text-slate-700 dark:text-slate-200 truncate flex-1">${escapeHtml(sk.display_name || sk.name)}</span>
                 <button
                     role="switch"
+                    data-skill-switch
                     aria-checked="${enabled}"
-                    onclick="toggleSkill('${escapeHtml(sk.name)}', ${enabled})"
                     class="relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${trackClass}"
                     title="${enabled ? (currentLang === 'zh' ? '点击禁用' : 'Click to disable') : (currentLang === 'zh' ? '点击启用' : 'Click to enable')}"
                 >
@@ -7294,6 +7309,19 @@ function renderSkillCard(card, sk) {
             </div>
             <p class="text-xs text-slate-400 dark:text-slate-500 line-clamp-2">${escapeHtml(sk.description || '--')}</p>
         </div>`;
+
+    // Bound here rather than written into the markup above: a skill name comes
+    // from its own frontmatter, and one containing a quote would break out of
+    // an inline onclick attribute.
+    card.title = t('skill_open_hint');
+    card.onclick = () => openSkillFile(sk.name);
+    const sw = card.querySelector('[data-skill-switch]');
+    if (sw) {
+        sw.onclick = (e) => {
+            e.stopPropagation();
+            toggleSkill(sk.name, enabled);
+        };
+    }
 }
 
 function toggleSkill(name, currentlyEnabled) {
@@ -7310,10 +7338,14 @@ function toggleSkill(name, currentlyEnabled) {
     .then(data => {
         if (data.status === 'success') {
             if (card) {
-                const desc = card.dataset.skillDesc || '';
                 card.dataset.enabled = currentlyEnabled ? '0' : '1';
                 card.style.opacity = '1';
-                renderSkillCard(card, { name, description: desc, enabled: !currentlyEnabled });
+                renderSkillCard(card, {
+                    name: name,
+                    description: card.dataset.skillDesc || '',
+                    display_name: card.dataset.skillDisplayName || '',
+                    enabled: !currentlyEnabled,
+                });
             }
         } else {
             if (card) card.style.opacity = '1';
@@ -7324,6 +7356,94 @@ function toggleSkill(name, currentlyEnabled) {
         if (card) card.style.opacity = '1';
         alert(currentLang === 'zh' ? '操作失败，请稍后再试' : 'Operation failed, please try again');
     });
+}
+
+// ---------------------------------------------------------------------
+// Skill viewer / editor
+// ---------------------------------------------------------------------
+
+/**
+ * Skills are addressed by name, not by path: which file a name resolves to is
+ * the loader's business, and a builtin skill lives outside the workspace that
+ * the file APIs are confined to.
+ */
+async function skillReadContent(name) {
+    const res = await fetch(`/api/skills/content?name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+    if (data.status !== 'success') throw new Error(data.message || 'read failed');
+    return data;
+}
+
+/** Save a skill's definition. Returns the raw response, a conflict included. */
+async function skillWriteContent(name, content, expectedMtime) {
+    const res = await fetch('/api/skills/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, content: content, expected_mtime: expectedMtime }),
+    });
+    return res.json();
+}
+
+/** The i18n key explaining why a skill cannot be edited, or null if it can. */
+function skillReadonlyReason(data) {
+    if (data.editable) return null;
+    // Not `source === 'builtin'`: the workspace copy of a builtin skill reads
+    // back as `custom` and is refused all the same, so the server says so.
+    if (data.ships_with_install) return 'skill_builtin_readonly';
+    return docUneditableReason(data);
+}
+
+const skillEditor = createDocEditor({
+    body: () => document.getElementById('skill-viewer-content'),
+    buttons: () => ({
+        edit: document.getElementById('skill-btn-edit'),
+        save: document.getElementById('skill-btn-save'),
+        cancel: document.getElementById('skill-btn-cancel'),
+    }),
+    read: (doc) => skillReadContent(doc.name),
+    write: (doc, content, mtime) => skillWriteContent(doc.name, content, mtime),
+    render: (doc) => docRenderBody('skill-viewer-content', doc.content),
+    canEdit: (doc) => !doc.readonlyKey,
+    refusal: skillReadonlyReason,
+    onState: (state) => docRenderTitle('skill-viewer-title', skillEditor.current()?.name, state),
+});
+
+function openSkillFile(name) {
+    skillReadContent(name).then(data => {
+        const badge = document.getElementById('skill-viewer-readonly');
+        const readonlyKey = skillReadonlyReason(data);
+        if (badge) {
+            badge.classList.toggle('hidden', !readonlyKey);
+            if (readonlyKey) {
+                // Keep data-i18n in step so a language switch re-translates it.
+                badge.dataset.i18n = readonlyKey;
+                badge.textContent = t(readonlyKey);
+                badge.title = t(readonlyKey);
+            }
+        }
+        document.getElementById('skills-panel-list').classList.add('hidden');
+        document.getElementById('skills-panel-viewer').classList.remove('hidden');
+        skillEditor.open({
+            name: data.name || name,
+            content: data.content || '',
+            readonlyKey: readonlyKey,
+        });
+    }).catch(e => _wsToast(`${t('skill_load_failed')}: ${e.message}`));
+}
+
+function closeSkillViewer() {
+    if (!skillEditor.guard(closeSkillViewer)) return;
+    resetSkillViewer();
+    // A saved edit can change the name and description in the frontmatter, so
+    // the cards behind this panel may be out of date.
+    loadSkillsSection();
+}
+
+/** Drop the viewer and show the list, without asking about unsaved edits. */
+function resetSkillViewer() {
+    skillEditor.forget();
+    document.getElementById('skills-panel-viewer')?.classList.add('hidden');
+    document.getElementById('skills-panel-list')?.classList.remove('hidden');
 }
 
 // =====================================================================
@@ -7430,23 +7550,109 @@ function loadMemoryView(page) {
     }).catch(() => {});
 }
 
+// =====================================================================
+// Document viewers (memory files, skill definitions)
+// =====================================================================
+
+/**
+ * Read one file's text for an editor. Throws on an API error so the editor can
+ * report it.
+ *
+ * No session is passed on purpose. Memory files are anchored to the agent's
+ * state root, and a session with a project open would resolve the same relative
+ * path against that project instead.
+ */
+async function docReadFile(relPath) {
+    const res = await fetch(`/api/workspace/read?path=${encodeURIComponent(relPath)}`);
+    const data = await res.json();
+    if (data.status !== 'success') throw new Error(data.message || 'read failed');
+    return data;
+}
+
+/** Save one file's text. Returns the raw response, a conflict included. */
+async function docWriteFile(relPath, content, expectedMtime) {
+    const res = await fetch('/api/workspace/write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: relPath, content: content, expected_mtime: expectedMtime }),
+    });
+    return res.json();
+}
+
+/** Render Markdown into a viewer body. */
+function docRenderBody(id, content) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = renderMarkdown(content || '');
+    applyHighlighting(el);
+}
+
+/** Put a document's name in a viewer title, with a dot while it is unsaved. */
+function docRenderTitle(id, name, state) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = name || '';
+    if (state && state.dirty) {
+        el.insertAdjacentHTML('beforeend', ' <span class="doc-dirty-dot">•</span>');
+    }
+}
+
+/**
+ * Ask about any unsaved document edit before something tears its page down.
+ *
+ * @param {function} next - retried once the user agrees to lose the edits.
+ * @returns {boolean} true when nothing is at stake and the caller may proceed.
+ */
+function docGuardUnsaved(next) {
+    return memoryEditor.guard(next) && skillEditor.guard(next);
+}
+
+const memoryEditor = createDocEditor({
+    body: () => document.getElementById('memory-viewer-content'),
+    buttons: () => ({
+        edit: document.getElementById('memory-btn-edit'),
+        save: document.getElementById('memory-btn-save'),
+        cancel: document.getElementById('memory-btn-cancel'),
+    }),
+    read: (doc) => docReadFile(doc.relPath),
+    write: (doc, content, mtime) => docWriteFile(doc.relPath, content, mtime),
+    render: (doc) => docRenderBody('memory-viewer-content', doc.content),
+    onState: (state) => docRenderTitle('memory-viewer-title', memoryEditor.current()?.filename, state),
+});
+
 function openMemoryFile(filename, category) {
     category = category || 'memory';
     fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         document.getElementById('memory-panel-list').classList.add('hidden');
-        const panel = document.getElementById('memory-panel-viewer');
-        document.getElementById('memory-viewer-title').textContent = filename;
-        document.getElementById('memory-viewer-content').innerHTML = renderMarkdown(data.content || '');
-        panel.classList.remove('hidden');
-        applyHighlighting(panel);
+        document.getElementById('memory-panel-viewer').classList.remove('hidden');
+        memoryEditor.open({
+            filename: filename,
+            // The memory API reports where the file sits under the workspace
+            // root; the editor addresses it there rather than rebuilding the
+            // path from filename plus category.
+            relPath: data.rel_path || filename,
+            content: data.content || '',
+        });
     }).catch(() => {});
 }
 
 function closeMemoryViewer() {
+    if (!memoryEditor.guard(closeMemoryViewer)) return;
+    memoryEditor.forget();
     document.getElementById('memory-panel-viewer').classList.add('hidden');
     document.getElementById('memory-panel-list').classList.remove('hidden');
+    // A save changed the size and timestamp the list shows.
+    loadMemoryView(memoryPage);
 }
+
+// Reloading or closing the tab drops an unsaved edit. All the browser allows
+// here is its own generic prompt, which still beats losing the text in silence.
+window.addEventListener('beforeunload', (e) => {
+    if (!memoryEditor.isDirty() && !skillEditor.isDirty()) return;
+    e.preventDefault();
+    e.returnValue = '';
+});
 
 // =====================================================================
 // Custom Confirm Dialog
@@ -10429,6 +10635,10 @@ function stopLogStream() {
 // =====================================================================
 const _origNavigateTo = navigateTo;
 navigateTo = function(viewId) {
+    // An open document editor is about to be replaced by another view, which
+    // would drop the edit with nothing on screen to say so.
+    if (!docGuardUnsaved(() => navigateTo(viewId))) return;
+
     // Stop log stream when leaving logs view
     if (currentView === 'logs' && viewId !== 'logs') stopLogStream();
 
@@ -10445,8 +10655,9 @@ navigateTo = function(viewId) {
 
     // Lazy-load view data
     if (viewId === 'config') { loadConfigView(); switchConfigTab('basic'); }
-    else if (viewId === 'skills') loadSkillsView();
+    else if (viewId === 'skills') { resetSkillViewer(); loadSkillsView(); }
     else if (viewId === 'memory') {
+        memoryEditor.forget();
         document.getElementById('memory-panel-viewer').classList.add('hidden');
         document.getElementById('memory-panel-list').classList.remove('hidden');
         switchMemoryTab('files');

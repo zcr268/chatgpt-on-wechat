@@ -2576,6 +2576,68 @@
 .dark .workspace-preview-content .ws-editor { color: #e2e8f0; }
 .workspace-icon-btn.ws-btn-busy { opacity: 0.5; pointer-events: none; }
 
+/* =====================================================================
+   Document editor (memory files, skill definitions)
+   ===================================================================== */
+
+/* Sized to the viewport rather than to the content: a text area that grows with
+   the document would push its own save button off the top of the page. */
+textarea.doc-editor {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 280px);
+    min-height: 240px;
+    border: 0;
+    outline: none;
+    resize: vertical;
+    background: transparent;
+    color: #1e293b;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    tab-size: 4;
+    /* Wrap instead of scrolling sideways: these are prose documents, and a
+       horizontal scrollbar hides the end of every long paragraph. `anywhere`
+       covers the unbreakable cases (long URLs) that would still overflow. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+.dark textarea.doc-editor { color: #e2e8f0; }
+
+.doc-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #64748b;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+.doc-action-btn:hover { background: #f1f5f9; color: #334155; }
+.dark .doc-action-btn { border-color: rgba(255, 255, 255, 0.1); color: #94a3b8; }
+.dark .doc-action-btn:hover { background: rgba(255, 255, 255, 0.1); color: #e2e8f0; }
+
+/* primary-500 / primary-600 from the Tailwind theme in chat.html. */
+.doc-action-btn-primary {
+    border-color: transparent;
+    background: #35A85B;
+    color: #fff;
+}
+.doc-action-btn-primary:hover { background: #228547; color: #fff; }
+.dark .doc-action-btn-primary { border-color: transparent; background: #35A85B; color: #fff; }
+.dark .doc-action-btn-primary:hover { background: #228547; color: #fff; }
+
+.doc-action-btn.doc-btn-busy { opacity: 0.5; pointer-events: none; }
+
+/* Unsaved-changes marker beside the file name in a viewer title. */
+.doc-dirty-dot { color: #35A85B; }
+
 .workspace-empty {
     height: 100%;
     display: flex;

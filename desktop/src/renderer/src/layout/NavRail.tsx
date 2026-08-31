@@ -30,6 +30,7 @@ import type { Theme } from '../theme/themes'
 import brandLogo from '../assets/logo.png'
 import { t, getLang, setLang, Lang } from '../i18n'
 import { useUIStore } from '../store/uiStore'
+import { guardDocEditors } from '../store/docEditorStore'
 import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
 import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/updateStore'
@@ -88,6 +89,13 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const collapsed = navCollapsed
   const width = collapsed ? 'w-[56px]' : 'w-[208px]'
+
+  // Leaving a page unmounts its document editor, so settle any unsaved work
+  // first - here, while declining can still stop the navigation.
+  const go = async (path: string) => {
+    if (!(await guardDocEditors())) return
+    navigate(path)
+  }
 
   const updateState = useUpdateStore()
   // Footer dot: hidden once dismissed for this version (user asked for this).
@@ -202,7 +210,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
           return (
             <button
               key={item.path}
-              onClick={() => navigate(item.path)}
+              onClick={() => void go(item.path)}
               title={collapsed ? t(item.labelKey) : undefined}
               className={`group w-full flex items-center gap-3 rounded-btn cursor-pointer transition-colors h-9 ${
                 collapsed ? 'justify-center px-0' : 'px-3'
@@ -237,7 +245,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
             upToDate={checkedManually && updateStatusState === 'not-available' && !availableUpdate}
             onLogs={() => {
               setMenuOpen(false)
-              navigate('/logs')
+              void go('/logs')
             }}
             onTheme={toggleTheme}
             themeId={themeId}
