@@ -155,6 +155,11 @@
                     </button>
                     <div class="menu-group-items pl-2">
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="agents">
+                            <i class="fas fa-people-group item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_agents">智能体</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="config">
                             <i class="fas fa-sliders item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_config">配置</span>
@@ -244,7 +249,13 @@
             <div class="agent-modal-card">
                 <h3 class="agent-modal-title" data-i18n="new_team_chat">多智能体对话</h3>
                 <div class="agent-modal-body">
-                    <p class="agent-field-hint mb-3" data-i18n="new_team_chat_hint">勾选参与本次对话的智能体，第一个为会话归属者。</p>
+                    <p class="agent-field-hint mb-3" data-i18n="new_team_chat_hint">选择参与本次对话的智能体，第一个为会话的默认智能体。</p>
+                    <div class="team-chat-list-head">
+                        <span class="team-chat-list-label" data-i18n="agents_pick_hint">选择智能体</span>
+                        <button type="button" class="agent-btn agent-btn-text agent-btn-sm" onclick="openAgentCreateFromModal()">
+                            <i class="fas fa-plus mr-1"></i><span data-i18n="agents_create">创建智能体</span>
+                        </button>
+                    </div>
                     <div id="team-chat-list" class="team-chat-list"></div>
                 </div>
                 <div class="agent-modal-foot">
@@ -622,83 +633,57 @@
                 </div>
 
                 <!-- ====================================================== -->
-                <!-- VIEW: Config                                            -->
+                <!-- VIEW: Agent Team                                        -->
                 <!-- ====================================================== -->
-                <div id="view-config" class="view">
-                    <!-- Tailwind JIT safelist: models capability-card icon colors
-                         are emitted from JS template strings. Listing them here
-                         (display:none) guarantees the CDN-side compiler picks
-                         them up regardless of render timing. -->
-                    <div class="hidden bg-blue-50 dark:bg-blue-900/30 text-blue-500
-                                       bg-orange-50 dark:bg-orange-900/30 text-orange-500
-                                       bg-purple-50 dark:bg-purple-900/30 text-purple-500
-                                       bg-amber-50 dark:bg-amber-900/30 text-amber-500
-                                       bg-primary-50 dark:bg-primary-900/30 text-primary-500"></div>
+                <div id="view-agents" class="view">
                     <div class="flex-1 overflow-y-auto p-6">
                         <div class="max-w-4xl mx-auto">
                             <div class="flex items-center justify-between mb-6">
                                 <div>
-                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="config_title">配置管理</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="config_desc">管理模型和 Agent 配置</p>
+                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="agents_page_title">智能体团队</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="agents_page_desc">管理团队中的智能体成员</p>
                                 </div>
-                            </div>
-
-                            <!-- Tabs: 基础配置 / 模型配置 / 智能体团队 -->
-                            <div class="flex items-center justify-between gap-3 mb-6">
-                                <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 w-max">
-                                    <button id="config-tab-basic" onclick="switchConfigTab('basic')"
-                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
-                                        <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
-                                    </button>
-                                    <button id="config-tab-models" onclick="switchConfigTab('models')"
-                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                        <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
-                                    </button>
-                                    <button id="config-tab-team" onclick="switchConfigTab('team')"
-                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                        <i class="fas fa-people-group mr-1.5"></i><span data-i18n="settings_tab_team">智能体团队</span>
-                                    </button>
-                                </div>
-                                <button id="agents-create-btn" onclick="openAgentCreateForm()"
-                                        class="hidden px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium whitespace-nowrap">
+                                <button onclick="openAgentCreateForm()"
+                                        class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium whitespace-nowrap">
                                     <i class="fas fa-plus mr-1.5"></i><span data-i18n="agents_create">创建智能体</span>
                                 </button>
                             </div>
 
+                            <div id="agents-grid" class="agents-grid"></div>
+                        </div>
+                    </div>
 
-                            <!-- Panel: 智能体团队 -->
-                            <div id="config-panel-team" class="hidden">
-                                <div id="agents-grid" class="agents-grid"></div>
-                        <aside id="agent-detail" class="agent-detail hidden">
-                            <div class="agent-detail-header">
-                                <button type="button" class="agent-detail-close" onclick="closeAgentDetail()">
-                                    <i class="fas fa-times"></i>
-                                </button>
-                                <div id="agent-detail-identity" class="agent-detail-identity"></div>
+                    <aside id="agent-detail" class="agent-detail hidden">
+                        <div class="agent-detail-header">
+                            <button type="button" class="agent-detail-close" onclick="closeAgentDetail()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            <div id="agent-detail-identity" class="agent-detail-identity"></div>
+                        </div>
+                        <div class="agent-detail-tabs">
+                            <button type="button" class="agent-detail-tab active" data-tab="profile" onclick="selectAgentDetailTab('profile')" data-i18n="agents_tab_profile">概况</button>
+                            <button type="button" class="agent-detail-tab" data-tab="skills" onclick="selectAgentDetailTab('skills')" data-i18n="agents_tab_skills">能力</button>
+                            <button type="button" class="agent-detail-tab" data-tab="files" onclick="selectAgentDetailTab('files')" data-i18n="agents_tab_files">核心文件</button>
+                        </div>
+                        <div id="agent-detail-profile" class="agent-detail-pane"></div>
+                        <div id="agent-detail-skills" class="agent-detail-pane hidden"></div>
+                        <div id="agent-detail-files" class="agent-detail-pane hidden">
+                            <div class="flex flex-wrap items-center gap-2 mb-3">
+                                <select id="agent-core-file" onchange="loadAgentCoreFile()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#222] text-sm">
+                                    <option>AGENT.md</option>
+                                    <option>USER.md</option>
+                                    <option>RULE.md</option>
+                                    <option>MEMORY.md</option>
+                                    <option>BOOTSTRAP.md</option>
+                                </select>
+                                <span id="agent-editor-label" class="text-xs text-slate-400"></span>
+                                <button onclick="saveAgentCoreFile()" class="ml-auto px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm" data-i18n="save">保存</button>
                             </div>
-                            <div class="agent-detail-tabs">
-                                <button type="button" class="agent-detail-tab active" data-tab="profile" onclick="selectAgentDetailTab('profile')" data-i18n="agents_tab_profile">概况</button>
-                                <button type="button" class="agent-detail-tab" data-tab="skills" onclick="selectAgentDetailTab('skills')" data-i18n="agents_tab_skills">能力</button>
-                                <button type="button" class="agent-detail-tab" data-tab="files" onclick="selectAgentDetailTab('files')" data-i18n="agents_tab_files">核心文件</button>
-                            </div>
-                            <div id="agent-detail-profile" class="agent-detail-pane"></div>
-                            <div id="agent-detail-skills" class="agent-detail-pane hidden"></div>
-                            <div id="agent-detail-files" class="agent-detail-pane hidden">
-                                <div class="flex flex-wrap items-center gap-2 mb-3">
-                                    <select id="agent-core-file" onchange="loadAgentCoreFile()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#222] text-sm">
-                                        <option>AGENT.md</option>
-                                        <option>USER.md</option>
-                                        <option>RULE.md</option>
-                                        <option>MEMORY.md</option>
-                                        <option>BOOTSTRAP.md</option>
-                                    </select>
-                                    <span id="agent-editor-label" class="text-xs text-slate-400"></span>
-                                    <button onclick="saveAgentCoreFile()" class="ml-auto px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm" data-i18n="save">保存</button>
-                                </div>
-                                <textarea id="agent-core-editor" spellcheck="false" class="agent-core-editor" placeholder=""></textarea>
-                                <div id="agent-editor-status" class="text-xs text-slate-500 mt-2"></div>
-                            </div>
-                        </aside>
+                            <textarea id="agent-core-editor" spellcheck="false" class="agent-core-editor" placeholder=""></textarea>
+                            <div id="agent-editor-status" class="text-xs text-slate-500 mt-2"></div>
+                        </div>
+                    </aside>
+
                     <div id="agent-create-form" class="agent-modal hidden">
                         <div class="agent-modal-card">
                             <h3 class="agent-modal-title" data-i18n="agents_create">创建智能体</h3>
@@ -737,7 +722,44 @@
                             </div>
                         </div>
                     </div>
-                                            </div>
+                </div>
+
+                <!-- ====================================================== -->
+                <!-- VIEW: Config                                            -->
+                <!-- ====================================================== -->
+                <div id="view-config" class="view">
+                    <!-- Tailwind JIT safelist: models capability-card icon colors
+                         are emitted from JS template strings. Listing them here
+                         (display:none) guarantees the CDN-side compiler picks
+                         them up regardless of render timing. -->
+                    <div class="hidden bg-blue-50 dark:bg-blue-900/30 text-blue-500
+                                       bg-orange-50 dark:bg-orange-900/30 text-orange-500
+                                       bg-purple-50 dark:bg-purple-900/30 text-purple-500
+                                       bg-amber-50 dark:bg-amber-900/30 text-amber-500
+                                       bg-primary-50 dark:bg-primary-900/30 text-primary-500"></div>
+                    <div class="flex-1 overflow-y-auto p-6">
+                        <div class="max-w-4xl mx-auto">
+                            <div class="flex items-center justify-between mb-6">
+                                <div>
+                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="config_title">配置管理</h2>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="config_desc">管理模型和 Agent 配置</p>
+                                </div>
+                            </div>
+
+                            <!-- Tabs: 基础配置 / 模型配置 -->
+                            <div class="flex items-center justify-between gap-3 mb-6">
+                                <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 w-max">
+                                    <button id="config-tab-basic" onclick="switchConfigTab('basic')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
+                                        <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
+                                    </button>
+                                    <button id="config-tab-models" onclick="switchConfigTab('models')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                        <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
+                                    </button>
+                                </div>
+                            </div>
+
                             <!-- Panel: 基础配置 -->
                             <div id="config-panel-basic" class="grid gap-6">
 
@@ -1104,20 +1126,25 @@
                                         <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="memory_title">记忆管理</h2>
                                         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="memory_desc">查看 Agent 记忆文件和内容</p>
                                     </div>
-                                    <label class="flex items-center gap-2 text-xs text-slate-500">
-                                        <span data-i18n="memory_for_agent">查看谁的记忆</span>
-                                        <select id="memory-agent-select" onchange="selectMemoryAgent(this.value)"
-                                                class="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-[#222] text-sm text-slate-700 dark:text-slate-200"></select>
-                                    </label>
-                                    <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
-                                        <button id="memory-tab-files" onclick="switchMemoryTab('files')"
-                                                class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
-                                            <i class="fas fa-file-lines mr-1.5"></i><span data-i18n="memory_tab_files">记忆文件</span>
-                                        </button>
-                                        <button id="memory-tab-dreams" onclick="switchMemoryTab('dreams')"
-                                                class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                            <i class="fas fa-seedling mr-1.5"></i><span data-i18n="memory_tab_dreams">自主进化</span>
-                                        </button>
+                                    <div class="flex items-center gap-3">
+                                        <div id="memory-agent-select" class="cfg-dropdown cfg-dropdown-avatar cfg-dropdown-sm" tabindex="0" style="width: 160px;">
+                                            <div class="cfg-dropdown-selected">
+                                                <span class="cfg-dropdown-face"></span>
+                                                <span class="cfg-dropdown-text">--</span>
+                                                <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                            </div>
+                                            <div class="cfg-dropdown-menu"></div>
+                                        </div>
+                                        <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
+                                            <button id="memory-tab-files" onclick="switchMemoryTab('files')"
+                                                    class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
+                                                <i class="fas fa-file-lines mr-1.5"></i><span data-i18n="memory_tab_files">记忆文件</span>
+                                            </button>
+                                            <button id="memory-tab-dreams" onclick="switchMemoryTab('dreams')"
+                                                    class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                                <i class="fas fa-seedling mr-1.5"></i><span data-i18n="memory_tab_dreams">自主进化</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="memory-empty" class="flex flex-col items-center justify-center py-20">

@@ -186,6 +186,14 @@
 .dark .new-chat-team-ico { background: rgba(74,190,110,.16); color: #6EE7A0; }
 
 /* Team-chat picker rows in the modal */
+.team-chat-list-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+}
+.team-chat-list-label {
+    font-size: 12px; font-weight: 600; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
 .team-chat-list { display: flex; flex-direction: column; gap: 6px; }
 .team-chat-row {
     display: flex; align-items: center; gap: 10px;
@@ -1026,6 +1034,12 @@
 }
 .cfg-dropdown-selected:hover { border-color: #94a3b8; }
 .dark .cfg-dropdown-selected:hover { border-color: #64748b; }
+/* A compact trigger for header rows, so the picker lines up with the pill
+   tabs beside it instead of towering over them. */
+.cfg-dropdown-sm .cfg-dropdown-selected {
+    height: 32px; padding: 0 0.5rem; font-size: 0.8125rem;
+}
+.cfg-dropdown-sm .cfg-dropdown-face .agent-avatar { width: 18px; height: 18px; }
 .cfg-dropdown.open .cfg-dropdown-selected,
 .cfg-dropdown:focus .cfg-dropdown-selected {
     border-color: #4ABE6E;
@@ -1039,6 +1053,19 @@
     margin-left: 0.5rem;
 }
 .cfg-dropdown.open .cfg-dropdown-arrow { transform: rotate(180deg); }
+/* Avatar variant: a face sits left of the label in both the trigger and each
+   row. The trigger keeps its space-between layout, so face+text are grouped by
+   letting the text flex and the arrow stay pinned right. */
+.cfg-dropdown-avatar .cfg-dropdown-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cfg-dropdown-face {
+    display: inline-flex; width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px;
+}
+.cfg-dropdown-face:empty { display: none; }
+.cfg-dropdown-face .agent-avatar,
+.cfg-dropdown-item-face .agent-avatar { width: 20px; height: 20px; border-radius: 50%; }
+.cfg-dropdown-item-face {
+    display: inline-flex; width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px;
+}
 .cfg-dropdown-menu {
     display: none;
     position: absolute;
@@ -1534,6 +1561,20 @@
    only the multi-line permission rows need top alignment. */
 .composer-menu-item.agent-row { align-items: center; }
 .composer-menu-item.agent-row > i:last-child { margin-top: 0; }
+/* "Create Agent" row: a dashed circle stands in for the avatar so it lines up
+   with the Agent rows above while reading as an action, not a person. */
+.composer-menu-create-icon {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    border: 1px dashed #cbd5e1;
+    color: #94a3b8; font-size: 11px;
+}
+.composer-menu-item.composer-menu-create:hover .composer-menu-create-icon {
+    border-color: #4ABE6E; color: #228547;
+}
+.dark .composer-menu-create-icon { border-color: #475569; color: #94a3b8; }
 .composer-menu-item > i:first-child {
     width: 15px;
     text-align: center;
@@ -2928,6 +2969,7 @@
     gap: 16px;
 }
 .agent-card {
+    position: relative;
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 16px;
@@ -2935,11 +2977,26 @@
     cursor: pointer;
     transition: border-color .15s, box-shadow .15s, transform .15s;
 }
+/* The status chip floats in the corner instead of taking a row of its own, so
+   the "default" card is the same height as the rest of the grid. */
+.agent-card-badge {
+    position: absolute;
+    top: 12px; right: 12px;
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-weight: 500;
+}
+.agent-card-badge.agent-chip-on { background: #EDFDF3; color: #17803d; }
+.dark .agent-card-badge { background: rgba(255,255,255,.06); color: #94a3b8; }
+.dark .agent-card-badge.agent-chip-on { background: rgba(74, 190, 110, .15); color: #86efac; }
 .agent-card:hover { border-color: #4ABE6E; box-shadow: 0 8px 24px -12px rgba(74, 190, 110, .35); }
 .agent-card.selected { border-color: #4ABE6E; box-shadow: 0 0 0 1px #4ABE6E; }
 .agent-card.archived { opacity: .55; }
 .dark .agent-card { background: #1A1A1A; border-color: rgba(255,255,255,.08); }
-.agent-card-top { display: flex; align-items: center; gap: 12px; }
+.agent-card-top { display: flex; align-items: center; gap: 12px; padding-right: 52px; }
 .agent-card-name { font-weight: 600; font-size: 15px; color: #1e293b; }
 .dark .agent-card-name { color: #f1f5f9; }
 .agent-card-id { font-size: 12px; color: #94a3b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -3003,7 +3060,7 @@
     right: 0;
     bottom: 0;
     z-index: 40;
-    width: 420px;
+    width: 520px;
     max-width: 100%;
     border-left: 1px solid #e2e8f0;
     background: #fff;
@@ -3035,10 +3092,35 @@
 }
 .dark .agent-core-editor { background: #151515; color: #e2e8f0; border-color: rgba(255,255,255,.08); }
 .agent-skill-row {
-    display: flex; align-items: flex-start; gap: 10px;
+    display: flex; align-items: center; gap: 10px;
     padding: 10px 0; border-bottom: 1px solid #f1f5f9;
 }
 .dark .agent-skill-row { border-color: rgba(255,255,255,.05); }
+
+/* Custom checkbox: green fill with a white tick when checked, instead of the
+   browser default (accent-color renders a black tick that clashes with green).
+   Applies to the skills pane's "use all" toggle and each skill row. */
+#agent-detail-skills input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none;
+    flex-shrink: 0; margin: 0; cursor: pointer;
+    width: 16px; height: 16px; border-radius: 5px;
+    border: 1.5px solid #cbd5e1; background: #fff;
+    position: relative; transition: background .12s, border-color .12s;
+}
+.dark #agent-detail-skills input[type="checkbox"] { background: #1f1f1f; border-color: rgba(255,255,255,.2); }
+#agent-detail-skills input[type="checkbox"]:hover { border-color: #4ABE6E; }
+#agent-detail-skills input[type="checkbox"]:checked {
+    background: #4ABE6E; border-color: #4ABE6E;
+}
+#agent-detail-skills input[type="checkbox"]:checked::after {
+    content: ""; position: absolute;
+    left: 5px; top: 2px; width: 4px; height: 8px;
+    border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+#agent-detail-skills input[type="checkbox"]:disabled {
+    opacity: .5; cursor: not-allowed;
+}
 .agent-modal {
     position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
     display: flex; align-items: center; justify-content: center; z-index: 60;
@@ -3138,6 +3220,8 @@
 
 /* Detail-drawer buttons, matching the create modal's foot. */
 .agent-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* Delete is destructive, so it sits apart from the everyday save/chat buttons. */
+.agent-detail-delete { margin-left: auto; }
 .agent-btn {
     height: 34px; padding: 0 14px; border-radius: 9px;
     font-size: 13px; font-weight: 500; cursor: pointer;
@@ -3151,6 +3235,9 @@
 .agent-btn-text { color: #64748b; background: transparent; }
 .agent-btn-text:hover { color: #334155; }
 .dark .agent-btn-text:hover { color: #e2e8f0; }
+.agent-btn-sm { padding: 4px 8px; font-size: 12px; }
+.agent-btn-text.agent-btn-sm { color: #4ABE6E; }
+.agent-btn-text.agent-btn-sm:hover { color: #228547; }
 .agent-btn-accent { color: #17803d; }
 .agent-btn-danger { color: #ef4444; background: transparent; }
 .agent-btn-danger:hover { color: #dc2626; }
@@ -3198,6 +3285,15 @@
 }
 .session-faces .agent-avatar + .agent-avatar { margin-left: -8px; }
 .dark .session-faces .agent-avatar { border-color: #141414; }
+/* A "+N" cap keeps the stack short while still telling how big the group is. */
+.session-face-more {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 4px; margin-left: -8px;
+    border: 1.5px solid #fff; box-sizing: content-box;
+    border-radius: 999px; background: #e2e8f0; color: #475569;
+    font-size: 10px; font-weight: 600; line-height: 1;
+}
+.dark .session-face-more { border-color: #141414; background: #2a2a2a; color: #cbd5e1; }
 
 .bot-face { flex-shrink: 0; line-height: 0; }
 .bot-speaker {
@@ -3211,14 +3307,25 @@
 .mention-tag {
     display: inline-flex; align-items: center; gap: 4px;
     padding: 1px 7px 1px 2px; border-radius: 999px;
-    font-weight: 500; line-height: 1.4;
-    vertical-align: baseline;
+    font-weight: 500; line-height: 1;
+    /* The chip carries a 16px avatar, so it is taller than the surrounding
+       text. `vertical-align: middle` centres it on the font's x-height, which
+       for CJK still leaves it sitting a hair low; the small negative shift
+       lands its optical centre on the text centre. */
+    vertical-align: middle;
+    transform: translateY(-1.5px);
     background: rgba(255, 255, 255, .22);
 }
 .mention-tag-face {
-    display: inline-flex; width: 16px; height: 16px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; flex-shrink: 0;
 }
-.mention-tag-face .agent-avatar { width: 16px; height: 16px; border-radius: 50%; }
+/* The avatar is an inline <img>; without `block` it rides the text baseline and
+   leaves a descender gap that drops it a few px below the name. `block` removes
+   that gap so the face and the name share a centre. */
+.mention-tag-face .agent-avatar {
+    display: block; width: 16px; height: 16px; border-radius: 50%;
+}
 .mention-tag-name { white-space: nowrap; }
 /* In a bot bubble (white surface) the chip needs its own tint to read as a chip. */
 .bot-message-group .mention-tag { background: #EDFDF3; color: #17803d; }

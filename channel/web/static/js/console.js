@@ -14,7 +14,8 @@ const I18N = {
     zh: {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
-        menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
+        menu_chat: '对话', menu_agents: '智能体', menu_config: '配置', menu_skills: '技能',
+        agents_page_title: '智能体团队', agents_page_desc: '管理团队中的智能体成员',
         agents_create: '创建智能体',
         agents_name_placeholder: '智能体名称',
         agents_name_required: '请填写名称',
@@ -27,6 +28,10 @@ const I18N = {
         agents_default: '默认',
         agents_archived: '已归档',
         agents_chat: '开始对话',
+        agents_delete: '删除',
+        agents_delete_title: '删除智能体',
+        agents_delete_confirm: '确定删除智能体「{name}」吗？其工作空间和会话将一并移除，且无法恢复。',
+        agents_pick_hint: '选择智能体',
         agents_clone_label: '人格模板',
         agents_avatar_upload: '上传图片',
         agents_clone_none: '默认人格',
@@ -51,8 +56,6 @@ const I18N = {
         channel_bound_default: '跟随默认（{name}）',
         settings_tab_basic: '基础配置',
         settings_tab_models: '模型配置',
-        settings_tab_team: '智能体团队',
-        memory_for_agent: '查看谁的记忆',
         knowledge_shared_hint: '知识库默认全员共享，在侧栏「知识」查看和编辑。',
         menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
         menu_logs: '日志',
@@ -282,8 +285,8 @@ const I18N = {
         logs_live: '实时', logs_coming_msg: '日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。',
         new_chat: '新对话',
         new_team_chat: '多智能体对话',
-        new_team_chat_hint: '勾选参与本次对话的智能体，第一个为会话归属者。',
-        new_team_chat_owner: '归属',
+        new_team_chat_hint: '选择参与本次对话的智能体，第一个为会话的默认智能体。',
+        new_team_chat_owner: '默认',
         new_team_chat_start: '开始对话',
         new_team_chat_min: '至少选择两个智能体',
         session_history: '历史会话',
@@ -375,7 +378,8 @@ const I18N = {
 
         console: '控制台',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
-        menu_chat: '對話', menu_config: '設定', menu_skills: '技能',
+        menu_chat: '對話', menu_agents: '智慧體', menu_config: '設定', menu_skills: '技能',
+        agents_page_title: '智慧體團隊', agents_page_desc: '管理團隊中的智慧體成員',
         agents_create: '建立智慧體',
         agents_name_placeholder: '智慧體名稱',
         agents_name_required: '請填寫名稱',
@@ -388,6 +392,10 @@ const I18N = {
         agents_default: '預設',
         agents_archived: '已封存',
         agents_chat: '開始對話',
+        agents_delete: '刪除',
+        agents_delete_title: '刪除智慧體',
+        agents_delete_confirm: '確定刪除智慧體「{name}」嗎？其工作空間與會話將一併移除，且無法復原。',
+        agents_pick_hint: '選擇智慧體',
         agents_clone_label: '人格範本',
         agents_avatar_upload: '上傳圖片',
         agents_clone_none: '預設人格',
@@ -412,8 +420,6 @@ const I18N = {
         channel_bound_default: '跟隨預設（{name}）',
         settings_tab_basic: '基礎設定',
         settings_tab_models: '模型設定',
-        settings_tab_team: '智慧體團隊',
-        memory_for_agent: '查看誰的記憶',
         knowledge_shared_hint: '知識庫預設全員共享，在側欄「知識」查看和編輯。',
         menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '管道', menu_tasks: '定時',
         menu_logs: '日誌',
@@ -643,8 +649,8 @@ const I18N = {
         logs_live: '實時', logs_coming_msg: '日誌流即將在此提供。將連線 run.log 實現類似 tail -f 的實時輸出。',
         new_chat: '新對話',
         new_team_chat: '多智慧體對話',
-        new_team_chat_hint: '勾選參與本次對話的智慧體，第一個為會話歸屬者。',
-        new_team_chat_owner: '歸屬',
+        new_team_chat_hint: '選擇參與本次對話的智慧體，第一個為會話的預設智慧體。',
+        new_team_chat_owner: '預設',
         new_team_chat_start: '開始對話',
         new_team_chat_min: '至少選擇兩個智慧體',
         session_history: '歷史會話',
@@ -731,7 +737,8 @@ const I18N = {
     en: {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
-        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
+        menu_chat: 'Chat', menu_agents: 'Agents', menu_config: 'Config', menu_skills: 'Skills',
+        agents_page_title: 'Agent Team', agents_page_desc: 'Manage the Agents on your team',
         agents_create: 'New Agent',
         agents_name_placeholder: 'Agent name',
         agents_name_required: 'Please enter a name',
@@ -744,6 +751,10 @@ const I18N = {
         agents_default: 'Default',
         agents_archived: 'Archived',
         agents_chat: 'Start chat',
+        agents_delete: 'Delete',
+        agents_delete_title: 'Delete Agent',
+        agents_delete_confirm: 'Delete Agent "{name}"? Its workspace and conversations will be removed for good.',
+        agents_pick_hint: 'Pick Agents',
         agents_clone_label: 'Persona template',
         agents_avatar_upload: 'Upload image',
         agents_clone_none: 'Default persona',
@@ -768,8 +779,6 @@ const I18N = {
         channel_bound_default: 'Follow default ({name})',
         settings_tab_basic: 'General',
         settings_tab_models: 'Models',
-        settings_tab_team: 'Agent team',
-        memory_for_agent: 'Whose memory',
         knowledge_shared_hint: 'Knowledge is shared by every Agent. Open it from the Knowledge page.',
         menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channels', menu_tasks: 'Tasks',
         menu_logs: 'Logs',
@@ -999,8 +1008,8 @@ const I18N = {
         logs_live: 'Live', logs_coming_msg: 'Log streaming will be available here. Connects to run.log for real-time output similar to tail -f.',
         new_chat: 'New Chat',
         new_team_chat: 'Group chat',
-        new_team_chat_hint: 'Pick the Agents for this conversation; the first one owns it.',
-        new_team_chat_owner: 'Owner',
+        new_team_chat_hint: 'Pick the Agents for this conversation; the first is its default Agent.',
+        new_team_chat_owner: 'Default',
         new_team_chat_start: 'Start chat',
         new_team_chat_min: 'Pick at least two Agents',
         session_history: 'History',
@@ -1546,6 +1555,7 @@ document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);
 // =====================================================================
 const VIEW_META = {
     chat:     { group: 'nav_chat',    page: 'menu_chat' },
+    agents:   { group: 'nav_manage',  page: 'menu_agents' },
     config:   { group: 'nav_manage',  page: 'menu_config' },
     skills:   { group: 'nav_manage',  page: 'menu_skills' },
     memory:   { group: 'nav_manage',  page: 'menu_memory' },
@@ -1571,9 +1581,10 @@ function navigateTo(viewId) {
     document.getElementById('breadcrumb-page').textContent = t(meta.page);
     document.getElementById('breadcrumb-page').dataset.i18n = meta.page;
     currentView = viewId;
-    // The Agent list is a settings tab now, and the drawer it opens is fixed,
-    // so it would otherwise hang over whatever view you navigate to.
-    if (viewId !== 'config') closeAgentDetail();
+    // The Agent detail is a fixed drawer, so it would otherwise hang over
+    // whatever view you navigate to. It only belongs to the Agent Team page.
+    if (viewId !== 'agents') closeAgentDetail();
+    if (viewId === 'agents') loadAgentCatalog();
     
     // Clear status messages when navigating away
     document.querySelectorAll('[id$="-status"]').forEach(el => {
@@ -1692,6 +1703,9 @@ function loadAgentCatalog() {
             rosterRevision = data.revision || '';
             defaultAgentId = data.default_agent_id || (agentCatalog[0] && agentCatalog[0].id) || 'default';
             localStorage.setItem('cow_default_agent', defaultAgentId);
+            // The default Agent leads every list it appears in — menus, the grid,
+            // the memory picker — so its position never depends on load order.
+            agentCatalog.sort((a, b) => (b.id === defaultAgentId) - (a.id === defaultAgentId));
             const enabled = enabledAgents();
             if (!enabled.some(a => a.id === activeAgentId)) {
                 activeAgentId = defaultAgentId;
@@ -1728,7 +1742,13 @@ function renderAgentsGrid() {
     grid.innerHTML = agentCatalog.map(agent => {
         const selected = agent.id === selectedAdminAgentId;
         const desc = (agent.description || '').trim();
+        // Status chips float in the top-right corner so a "default" or
+        // "archived" card is exactly as tall as every other card.
+        const corner = agent.id === defaultAgentId
+            ? `<span class="agent-card-badge agent-chip-on">${escapeHtml(t('agents_default'))}</span>`
+            : (!agent.enabled ? `<span class="agent-card-badge">${escapeHtml(t('agents_archived'))}</span>` : '');
         return `<div class="agent-card${selected ? ' selected' : ''}${agent.enabled ? '' : ' archived'}" onclick="openAgentDetail('${escapeHtml(agent.id)}')">
+            ${corner}
             <div class="agent-card-top">
                 ${agentAvatarHTML(agent, 40)}
                 <div class="min-w-0">
@@ -1737,10 +1757,6 @@ function renderAgentsGrid() {
                 </div>
             </div>
             <div class="agent-card-desc">${desc ? escapeHtml(desc) : `<span class="agent-card-desc-empty">${escapeHtml(t('agents_no_desc'))}</span>`}</div>
-            <div class="agent-card-meta">
-                ${agent.id === defaultAgentId ? `<span class="agent-chip agent-chip-on">${escapeHtml(t('agents_default'))}</span>` : ''}
-                ${agent.enabled ? '' : `<span class="agent-chip">${escapeHtml(t('agents_archived'))}</span>`}
-            </div>
         </div>`;
     }).join('');
 }
@@ -1819,6 +1835,7 @@ function renderAgentDetail() {
         <div class="agent-detail-actions">
             <button type="button" onclick="saveAgentProfile()" class="agent-btn agent-btn-primary">${escapeHtml(t('save'))}</button>
             <button type="button" onclick="startChatWithAgent('${escapeHtml(agent.id)}')" class="agent-btn agent-btn-ghost">${escapeHtml(t('agents_chat'))}</button>
+            ${isDefault ? '' : `<button type="button" onclick="deleteAgent('${escapeHtml(agent.id)}')" class="agent-btn agent-btn-danger agent-detail-delete">${escapeHtml(t('agents_delete'))}</button>`}
         </div>
         <div id="agent-profile-status" class="agent-field-hint mt-3"></div>`;
 
@@ -1872,13 +1889,48 @@ function agentModelDropdownOptions() {
     return opts;
 }
 
+// Persist an Agent's skill selection. Writes are serialized per Agent and
+// coalesce to the latest desired state, so ticking several boxes quickly sends
+// them in order (each with the revision the previous one returned) instead of
+// racing and tripping the stale-roster guard. No catalog reload happens, so the
+// grid, composer and avatars never flicker and the checkboxes never jump.
+//   null  -> use every installed skill (the "use all" master toggle)
+//   [...] -> exactly this subset ([] means none)
+const _skillSaveState = {};  // agentId -> { inflight: bool, pending: skills|undefined }
+
+function saveAgentSkills(agent, skills) {
+    agent.skills = skills;  // optimistic; the pane already reflects it
+    const st = _skillSaveState[agent.id] || (_skillSaveState[agent.id] = { inflight: false, pending: undefined });
+    if (st.inflight) { st.pending = skills; return; }  // newest wins; drop stale intermediate
+    st.inflight = true;
+    fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id: agent.id, revision: rosterRevision, skills }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            if (data.revision) rosterRevision = data.revision;
+        } else {
+            const status = document.getElementById('agent-editor-status');
+            if (status) status.textContent = data.message || 'Update failed';
+        }
+    }).catch(() => {}).then(() => {
+        st.inflight = false;
+        if (st.pending !== undefined) {
+            const next = st.pending;
+            st.pending = undefined;
+            saveAgentSkills(agent, next);  // flush the latest queued state
+        }
+    });
+}
+
 function renderAgentSkillsPane() {
     const pane = document.getElementById('agent-detail-skills');
     const agent = findAgent(selectedAdminAgentId);
     if (!pane || !agent) return;
     const render = () => {
-        const selected = agent.skills;
-        const all = selected == null;
+        const all = agent.skills == null;
+        const picked = new Set(all ? [] : agent.skills);
         pane.innerHTML = `
             <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-3">
                 <input type="checkbox" id="agent-skills-all" ${all ? 'checked' : ''}>
@@ -1887,7 +1939,7 @@ function renderAgentSkillsPane() {
             <p class="text-xs text-slate-400 mb-3">${escapeHtml(t('agents_skills_pick'))}</p>
             ${(installedSkills || []).map(skill => {
                 const name = skill.name || skill.id;
-                const checked = all || (selected || []).includes(name);
+                const checked = all || picked.has(name);
                 return `<label class="agent-skill-row">
                     <input type="checkbox" class="agent-skill-item" value="${escapeHtml(name)}" ${checked ? 'checked' : ''} ${all ? 'disabled' : ''}>
                     <div>
@@ -1897,16 +1949,17 @@ function renderAgentSkillsPane() {
                 </label>`;
             }).join('')}`;
         document.getElementById('agent-skills-all')?.addEventListener('change', (e) => {
-            if (e.target.checked) {
-                updateAgentWorkspace(agent.id, { skills: null });
-            } else {
-                updateAgentWorkspace(agent.id, { skills: installedSkills.map(s => s.name || s.id) });
-            }
+            // Toggle only flips ALL <-> empty subset. Turning it off starts from
+            // an empty list so the user picks up exactly what they want, and the
+            // stored value is [] rather than a full enumeration.
+            const next = e.target.checked ? null : [];
+            saveAgentSkills(agent, next);
+            render();  // repaint in place — no page-wide reload, no flicker
         });
         pane.querySelectorAll('.agent-skill-item').forEach(box => {
             box.addEventListener('change', () => {
-                const picked = Array.from(pane.querySelectorAll('.agent-skill-item:checked')).map(el => el.value);
-                updateAgentWorkspace(agent.id, { skills: picked });
+                const names = Array.from(pane.querySelectorAll('.agent-skill-item:checked')).map(el => el.value);
+                saveAgentSkills(agent, names);
             });
         });
     };
@@ -2126,6 +2179,50 @@ function updateAgentWorkspace(agentId, updates, _retried) {
     });
 }
 
+function deleteAgent(agentId) {
+    const agent = findAgent(agentId);
+    if (!agent) return;
+    if (agentId === defaultAgentId) return; // the default Agent is the instance
+    showConfirmDialog({
+        title: t('agents_delete_title'),
+        message: t('agents_delete_confirm').replace('{name}', agent.name || agentId),
+        okText: t('agents_delete'),
+        cancelText: t('cancel'),
+        onConfirm: () => _performAgentDelete(agentId),
+    });
+}
+
+function _performAgentDelete(agentId, _retried) {
+    return fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: agentId, revision: rosterRevision }),
+    }).then(r => r.json()).then(data => {
+        if (data.status !== 'success') {
+            if (data.code === 'stale_roster' && !_retried) {
+                return loadAgentCatalog().then(() => _performAgentDelete(agentId, true));
+            }
+            throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Delete failed'));
+        }
+        // Leaving the detail open on a now-deleted Agent would show a ghost.
+        if (selectedAdminAgentId === agentId) closeAgentDetail();
+        // A conversation owned by the deleted Agent falls back to the default.
+        if (activeAgentId === agentId) {
+            activeAgentId = defaultAgentId;
+            localStorage.setItem('cow_active_agent', activeAgentId);
+        }
+        return loadAgentCatalog().then(() => {
+            renderComposerIdentity();
+            return true;
+        });
+    }).catch(err => {
+        const status = document.getElementById('agent-profile-status');
+        if (status) status.textContent = err.message;
+        else alert(err.message);
+        return false;
+    });
+}
+
 function loadAgentCoreFile() {
     if (!selectedAdminAgentId) return;
     const filename = document.getElementById('agent-core-file')?.value;
@@ -2282,6 +2379,9 @@ function renderComposerIdentity() {
     const wrap = document.getElementById('composer-identity');
     const btn = document.getElementById('composer-agent-btn');
     if (!wrap || !btn) return;
+    // A single-Agent install keeps the composer exactly as it always was: no
+    // avatar, no menu. The identity chip only appears once there is more than
+    // one Agent and thus an actual choice to make.
     if (!multiAgentMode()) {
         wrap.classList.add('hidden');
         document.getElementById('composer-agent-menu')?.classList.add('hidden');
@@ -2309,6 +2409,16 @@ function toggleComposerAgentMenu(event) {
         return;
     }
     _closeComposerMenus(menu);
+    renderComposerAgentMenu();
+    menu.classList.remove('hidden');
+}
+
+/** Paint the agent menu's body from the current roster / team. Kept separate
+ *  from the open/close toggle so an invite or removal can refresh the list in
+ *  place — the menu stays open, the +/× flips, and the user can keep going. */
+function renderComposerAgentMenu() {
+    const menu = document.getElementById('composer-agent-menu');
+    if (!menu) return;
     const taken = new Set(currentTeamIds());
     const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
     const sections = [];
@@ -2352,8 +2462,25 @@ function toggleComposerAgentMenu(event) {
         );
     }
 
+    // Always offer a way to make a new Agent, so a single-Agent user discovers
+    // the team feature straight from the composer.
+    sections.push(
+        `<button type="button" class="composer-menu-item agent-row composer-menu-create"
+                onclick="openAgentCreateFromComposer()">
+            <span class="composer-menu-create-icon"><i class="fas fa-plus"></i></span>
+            <span>${escapeHtml(t('agents_create'))}</span>
+        </button>`
+    );
+
     menu.innerHTML = sections.join('<div class="composer-menu-sep"></div>');
-    menu.classList.remove('hidden');
+}
+
+/** Jump from the composer straight into agent creation: close the menu, land on
+ *  the team tab, and open the create form. */
+function openAgentCreateFromComposer() {
+    document.getElementById('composer-agent-menu')?.classList.add('hidden');
+    navigateTo('agents');
+    if (typeof openAgentCreateForm === 'function') openAgentCreateForm();
 }
 
 function pickComposerAgent(agentId) {
@@ -2369,8 +2496,10 @@ function pickComposerAgent(agentId) {
 }
 
 function inviteTeamMember(agentId) {
-    document.getElementById('composer-agent-menu')?.classList.add('hidden');
-    addTeamMember(agentId);
+    // Keep the menu open so the invited Agent visibly moves from "+ add" to the
+    // "× remove" list, and the user can invite several in a row without having
+    // to reopen it each time.
+    addTeamMember(agentId).then(refreshComposerAgentMenuIfOpen);
 }
 
 /** Everyone addressable in this conversation, owner first. */
@@ -2439,7 +2568,14 @@ function addTeamMember(agentId) {
 }
 
 function removeTeamMember(agentId) {
-    setTeamMembers(currentTeamIds().filter(id => id !== agentId));
+    return setTeamMembers(currentTeamIds().filter(id => id !== agentId))
+        .then(refreshComposerAgentMenuIfOpen);
+}
+
+/** Repaint the agent menu if it is still open, so add/remove show immediately. */
+function refreshComposerAgentMenuIfOpen() {
+    const menu = document.getElementById('composer-agent-menu');
+    if (menu && !menu.classList.contains('hidden')) renderComposerAgentMenu();
 }
 
 async function syncTeamFromText(text) {
@@ -2480,13 +2616,12 @@ function viewingMemoryAgentId() {
 }
 
 function renderMemoryAgentSelect() {
-    const sel = document.getElementById('memory-agent-select');
-    if (!sel) return;
+    const el = document.getElementById('memory-agent-select');
+    if (!el) return;
     const current = viewingMemoryAgentId();
     const list = agentCatalog.length ? agentCatalog : enabledAgents();
-    sel.innerHTML = list.map(a =>
-        `<option value="${escapeHtml(a.id)}" ${a.id === current ? 'selected' : ''}>${escapeHtml(a.name)}</option>`
-    ).join('');
+    const options = list.map(a => ({ value: a.id, label: a.name || a.id, agent: a }));
+    initDropdown(el, options, current, (value) => selectMemoryAgent(value), { withAvatar: true });
 }
 
 function selectMemoryAgent(agentId) {
@@ -5055,9 +5190,15 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
         // in .bot-face so a later avatar change repaints it like any bubble.
         const speaker = liveSpeakerAgent(requestId);
         if (speaker && speaker.id) botEl.dataset.speakerAgent = speaker.id;
+        // In a group the bubble is labelled with its author while it streams,
+        // exactly as the replayed history shows it — a solo chat stays unlabelled.
+        const speakerName = (sharedConversation() && speaker)
+            ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
+            : '';
         botEl.innerHTML = `
             <span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>
             <div class="min-w-0 flex-1 max-w-[85%]">
+                ${speakerName}
                 <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                     <div class="agent-steps"></div>
                     <div class="answer-content sse-streaming"></div>
@@ -6245,7 +6386,14 @@ function loadHistory(page) {
     historyLoading = true;
     const historySessionId = sessionId;
 
-    fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
+    // A shared conversation labels each bubble with its author and paints the
+    // right face. That resolution needs this session's team roster (_sessCfg),
+    // which loads asynchronously; without it every replayed bubble falls back
+    // to the owner's avatar and loses its name. Make sure the roster is in hand
+    // before rendering so a reload looks exactly like the live conversation.
+    const ready = _sessCfg ? Promise.resolve() : refreshSessionSettings().catch(() => {});
+
+    ready.then(() => fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
         .then(r => r.json())
         .then(data => {
             // A response from a session we have since left must never render
@@ -6350,7 +6498,7 @@ function loadHistory(page) {
         .finally(() => {
             historyLoading = false;
             renderComposerIdentity();
-        });
+        }));
 }
 
 function addLoadingIndicator() {
@@ -6421,6 +6569,13 @@ function openTeamChatModal() {
 
 function closeTeamChatModal() {
     document.getElementById('team-chat-modal')?.classList.add('hidden');
+}
+
+/** From the group-chat picker, jump to creating a new Agent. */
+function openAgentCreateFromModal() {
+    closeTeamChatModal();
+    navigateTo('agents');
+    if (typeof openAgentCreateForm === 'function') openAgentCreateForm();
 }
 
 function toggleTeamChatPick(agentId) {
@@ -7010,10 +7165,16 @@ function _sessionItemEl(s, indent) {
     const owner = ownerId ? _wsAttr(ownerId) : '';
     // Faces mark a conversation that has several Agents in it, the way a group
     // chat is distinguishable from a direct one. A conversation with a single
-    // Agent stays a plain row, whatever the roster looks like elsewhere.
-    const crowd = (s.participants || []).length > 1 ? s.participants.slice(0, 3) : null;
+    // Agent stays a plain row, whatever the roster looks like elsewhere. We show
+    // at most three overlapping faces to keep the row tidy; when more took part,
+    // a small "+N" caps the stack so the group's size is still legible.
+    const roster = s.participants || [];
+    const crowd = roster.length > 1 ? roster.slice(0, 3) : null;
+    const overflow = roster.length - 3;
     const face = crowd
-        ? `<span class="session-faces">${crowd.map(a => agentAvatarHTML(a, 20)).join('')}</span>`
+        ? `<span class="session-faces">${crowd.map(a => agentAvatarHTML(a, 20)).join('')}`
+            + (overflow > 0 ? `<span class="session-face-more">+${overflow}</span>` : '')
+            + `</span>`
         : `<i class="fas ${s.pinned ? 'fa-thumbtack' : 'fa-message'} session-icon"></i>`;
     item.innerHTML = `
         ${face}
@@ -7593,9 +7754,17 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
     const textEl = el.querySelector('.cfg-dropdown-text');
     const menuEl = el.querySelector('.cfg-dropdown-menu');
     const selEl = el.querySelector('.cfg-dropdown-selected');
+    // Optional avatar face in the trigger (opts.withAvatar). Each option then
+    // carries an `agent` object so both the row and the trigger can paint it.
+    const faceEl = el.querySelector('.cfg-dropdown-face');
 
     el._ddValue = selectedValue || '';
     el._ddOnChange = onChange;
+
+    function paintFace(opt) {
+        if (!faceEl) return;
+        faceEl.innerHTML = (opt && opt.agent) ? agentAvatarHTML(opt.agent, 20) : '';
+    }
 
     function render() {
         menuEl.innerHTML = '';
@@ -7607,7 +7776,16 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
             // side of the row (e.g. friendly brand name next to a technical
             // model id). When absent the row degrades to the original
             // single-string layout.
-            if (opt.hint) {
+            if (opt.agent) {
+                const face = document.createElement('span');
+                face.className = 'cfg-dropdown-item-face';
+                face.innerHTML = agentAvatarHTML(opt.agent, 20);
+                const labelEl = document.createElement('span');
+                labelEl.className = 'cfg-dropdown-label';
+                labelEl.textContent = opt.label;
+                item.appendChild(face);
+                item.appendChild(labelEl);
+            } else if (opt.hint) {
                 const labelEl = document.createElement('span');
                 labelEl.className = 'cfg-dropdown-label';
                 labelEl.textContent = opt.label;
@@ -7623,6 +7801,7 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
                 e.stopPropagation();
                 el._ddValue = opt.value;
                 textEl.textContent = opt.label;
+                paintFace(opt);
                 menuEl.querySelectorAll('.cfg-dropdown-item').forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
                 el.classList.remove('open');
@@ -7633,15 +7812,18 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
         const sel = options.find(o => o.value === el._ddValue);
         if (sel) {
             textEl.textContent = sel.label;
+            paintFace(sel);
             textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
         } else if (opts.placeholder && !el._ddValue) {
             // No selection yet — show the placeholder in muted style.
             // Do NOT write a fallback value, so the dropdown stays
             // "unsaved" until the user explicitly picks.
             textEl.textContent = opts.placeholder;
+            paintFace(null);
             textEl.classList.add('text-slate-400', 'dark:text-slate-500');
         } else {
             textEl.textContent = options[0] ? options[0].label : '--';
+            paintFace(options[0]);
             textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
             if (options[0]) el._ddValue = options[0].value;
         }
@@ -8139,15 +8321,11 @@ function loadConfigView() {
 }
 
 function switchConfigTab(tab) {
-    ['basic', 'models', 'team'].forEach(name => {
+    ['basic', 'models'].forEach(name => {
         document.getElementById(`config-tab-${name}`)?.classList.toggle('active', name === tab);
         document.getElementById(`config-panel-${name}`)?.classList.toggle('hidden', name !== tab);
     });
-    // The create button lives on the tab row, so it only belongs to this tab.
-    document.getElementById('agents-create-btn')?.classList.toggle('hidden', tab !== 'team');
-    if (tab !== 'team') closeAgentDetail();
     if (tab === 'models') loadModelsView();
-    if (tab === 'team') loadAgentCatalog();
 }
 
 // =====================================================================
