@@ -5300,6 +5300,21 @@ class ChannelsHandler:
         from channel.channel_instances import upsert_instance
 
         creds = self._clean_credentials(channel_name, updates)
+        # Weixin scans its token during the QR flow (before the instance exists),
+        # which lands in the global config. Fold it into this instance's own
+        # credentials so the instance is self-contained: it stays logged in
+        # across restarts and never depends on the transient global value.
+        if channel_name == "weixin" and not creds.get("weixin_token"):
+            token = conf().get("weixin_token", "")
+            if token:
+                creds["weixin_token"] = token
+                base_url = conf().get("weixin_base_url", "")
+                if base_url:
+                    creds["weixin_base_url"] = base_url
+                # Consume the transient QR token so the *next* Weixin instance
+                # created (a different account) does not inherit this one's
+                # token from the global config.
+                conf()["weixin_token"] = ""
         inst = upsert_instance(
             conf(),
             channel_type=channel_name,

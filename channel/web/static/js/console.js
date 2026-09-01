@@ -10761,7 +10761,7 @@ function renderActiveChannels() {
         }
 
         card.innerHTML = `
-            <div class="flex items-center gap-4${hasFields || weixinWaiting || wecomNeedsCreds || isFeishu ? ' mb-5' : ''}">
+            <div class="flex items-center gap-4${hasFields || weixinWaiting || wecomNeedsCreds || isFeishu || multiAgentMode() ? ' mb-5' : ''}">
                 <div class="w-10 h-10 rounded-xl bg-${ch.color}-50 dark:bg-${ch.color}-900/20 flex items-center justify-center flex-shrink-0">
                     <i class="fas ${ch.icon} text-${ch.color}-500 text-base"></i>
                 </div>
@@ -11388,6 +11388,15 @@ function connectWeixinAfterQr() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // Multi-Agent: the new Weixin instance only lives in the server's
+            // channel_instances yet, and its card is rendered from that list —
+            // so reload the channels view to make it appear. Re-rendering from
+            // the stale local state would drop the freshly scanned card until a
+            // manual refresh. Legacy single-instance patches local state.
+            if (isMultiInstanceType('weixin') || data.instance_id) {
+                setTimeout(() => loadChannelsView(), 1500);
+                return;
+            }
             const ch = channelsData.find(c => c.name === 'weixin');
             if (ch) ch.active = true;
             setTimeout(() => renderActiveChannels(), 1500);

@@ -6,6 +6,8 @@ credentials, and a multi-instance install driven by an explicit
 behavior (so it never regresses) and cover the new persistence helpers.
 """
 
+import os
+
 import pytest
 
 from channel import channel_instances as ci
@@ -299,6 +301,35 @@ def test_bootstrap_folds_multi_instance_types_beyond_feishu(tmp_path):
     assert records[0]["channel_type"] == "dingtalk"
     assert records[0]["agent_id"] == "primary"
     assert records[0]["credentials"]["dingtalk_client_id"] == "id"
+
+
+def test_bootstrap_carries_weixin_token_file_to_instance_path(tmp_path, monkeypatch):
+    # A scan-login Weixin user keeps their token in a credentials file, not in
+    # config.json. Bootstrapping must copy that file to the per-instance path so
+    # the user is not forced to re-scan after adding an Agent.
+    import config
+
+    legacy = tmp_path / "weixin_creds.json"
+    legacy.write_text('{"token": "SCAN_TOKEN"}', encoding="utf-8")
+
+    def fake_path(instance_id=""):
+        if not instance_id:
+            return str(legacy)
+        root, ext = os.path.splitext(str(legacy))
+        return f"{root}.{instance_id}{ext}"
+
+    monkeypatch.setattr(config, "get_weixin_credentials_path", fake_path)
+
+    settings = {
+        "agent_workspace": str(tmp_path),
+        "channel_type": "weixin",
+        "weixin_token": "",  # empty: token lives in the file, not config
+    }
+    records = ci.bootstrap_legacy_instances(settings, {}, "primary")
+    assert any(r["channel_type"] == "weixin" for r in records)
+    carried = tmp_path / "weixin_creds.weixin.json"
+    assert carried.exists()
+    assert "SCAN_TOKEN" in carried.read_text(encoding="utf-8")
 
 
 def test_write_bootstraps_feishu_on_first_roster_write(tmp_path):

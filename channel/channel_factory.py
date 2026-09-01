@@ -81,7 +81,7 @@ def _build_channel(channel_type, multi_instance) -> Channel:
         ch = _fresh(DingTalkChanel) if multi_instance else DingTalkChanel()
     elif channel_type == const.WECOM_BOT:
         from channel.wecom_bot.wecom_bot_channel import WecomBotChannel
-        ch = WecomBotChannel()
+        ch = _fresh(WecomBotChannel) if multi_instance else WecomBotChannel()
     elif channel_type == const.QQ:
         from channel.qq.qq_channel import QQChannel
         ch = _fresh(QQChannel) if multi_instance else QQChannel()
@@ -96,7 +96,7 @@ def _build_channel(channel_type, multi_instance) -> Channel:
         ch = _fresh(DiscordChannel) if multi_instance else DiscordChannel()
     elif channel_type in (const.WEIXIN, "wx"):
         from channel.weixin.weixin_channel import WeixinChannel
-        ch = WeixinChannel()
+        ch = _fresh(WeixinChannel) if multi_instance else WeixinChannel()
         channel_type = const.WEIXIN
     else:
         raise RuntimeError

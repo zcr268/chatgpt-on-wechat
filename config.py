@@ -886,20 +886,30 @@ def get_appdata_dir():
     return data_path
 
 
-def get_weixin_credentials_path():
+def get_weixin_credentials_path(instance_id: str = ""):
     """Resolve the Weixin credentials (token) file path.
 
     Honors an explicit ``weixin_credentials_path`` from config. Otherwise the
     packaged desktop build (COW_DATA_DIR set) keeps it under the data dir
     (~/.cow) so all user data stays together, while source deployments retain
     the legacy ~/.weixin_cow_credentials.json default unchanged.
+
+    ``instance_id`` isolates the credentials file when several Weixin instances
+    run in one process, each logged into a different account: their tokens must
+    not share (and overwrite) one file. Empty (the single-instance default)
+    keeps the legacy path byte-for-byte, so existing installs are untouched.
     """
     configured = conf().get("weixin_credentials_path")
     if configured:
-        return os.path.expanduser(configured)
-    if os.environ.get("COW_DATA_DIR"):
-        return os.path.join(get_data_root(), "weixin_credentials.json")
-    return os.path.expanduser("~/.weixin_cow_credentials.json")
+        base = os.path.expanduser(configured)
+    elif os.environ.get("COW_DATA_DIR"):
+        base = os.path.join(get_data_root(), "weixin_credentials.json")
+    else:
+        base = os.path.expanduser("~/.weixin_cow_credentials.json")
+    if not instance_id:
+        return base
+    root, ext = os.path.splitext(base)
+    return f"{root}.{instance_id}{ext or '.json'}"
 
 
 def subscribe_msg():

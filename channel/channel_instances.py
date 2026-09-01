@@ -19,6 +19,7 @@ behavior byte-for-byte.
 
 from __future__ import annotations
 
+import os
 import secrets
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional
@@ -68,6 +69,12 @@ CREDENTIAL_KEYS: Dict[str, tuple] = {
     const.WECOM_BOT: (
         "wecom_bot_id",
         "wecom_bot_secret",
+        "wecom_bot_token",
+        "wecom_bot_encoding_aes_key",
+    ),
+    const.WEIXIN: (
+        "weixin_token",
+        "weixin_base_url",
     ),
     const.QQ: (
         "qq_app_id",
@@ -95,6 +102,8 @@ MULTI_INSTANCE_READY = frozenset({
     const.TELEGRAM,
     const.SLACK,
     const.DISCORD,
+    const.WEIXIN,
+    const.WECOM_BOT,
 })
 
 
@@ -290,11 +299,43 @@ def bootstrap_legacy_instances(
             }
         )
         have_types.add(ctype)
+        # Weixin's scan-login token lives in a credentials file, not config.json.
+        # The bootstrapped instance (instance_id == "weixin") reads a per-instance
+        # file, so carry the legacy default file over to it — otherwise the user
+        # would have to re-scan just because they added an Agent.
+        if ctype == const.WEIXIN:
+            _carry_weixin_credentials_file(ctype)
         logger.info(
             f"[ChannelInstances] bootstrapped legacy '{ctype}' credentials into a "
             f"channel_instances record bound to '{default_id or 'default'}'"
         )
     return records
+
+
+def _carry_weixin_credentials_file(instance_id: str) -> None:
+    """Copy the legacy Weixin token file to the per-instance path, once.
+
+    Best-effort and idempotent: if the legacy default file exists and the
+    per-instance file does not yet, the token (and persisted context tokens) are
+    copied so the bootstrapped instance stays logged in. Never overwrites an
+    existing per-instance file, and never raises into the write path.
+    """
+    try:
+        import shutil
+        from config import get_weixin_credentials_path
+
+        legacy = get_weixin_credentials_path()
+        target = get_weixin_credentials_path(instance_id)
+        if legacy == target:
+            return
+        if os.path.exists(legacy) and not os.path.exists(target):
+            shutil.copy2(legacy, target)
+            logger.info(
+                f"[ChannelInstances] carried Weixin credentials '{legacy}' -> "
+                f"'{target}' so the bootstrapped instance stays logged in"
+            )
+    except Exception as e:
+        logger.warning(f"[ChannelInstances] Weixin credentials carry-over skipped: {e}")
 
 
 def read_raw_instances(settings: Mapping[str, Any]) -> List[Dict[str, Any]]:
