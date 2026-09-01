@@ -539,7 +539,11 @@ def _build_knowledge_section(
     In project mode ``project_dir`` anchors knowledge paths to ``workspace_dir``
     (absolute) so writes don't leak into the project cwd.
     """
-    index_path = os.path.join(workspace_dir, "knowledge", "index.md")
+    # Resolve through state_dir so an Agent on the shared base (no knowledge/ of
+    # its own) still gets the shared index injected, not an empty local one.
+    from common import state_dir
+    knowledge_root = str(state_dir.knowledge_dir(base=workspace_dir))
+    index_path = os.path.join(knowledge_root, "index.md")
     if not os.path.exists(index_path):
         return []
 

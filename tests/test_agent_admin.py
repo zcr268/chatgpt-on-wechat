@@ -383,3 +383,86 @@ def test_a_description_round_trips(admin):
     assert stored()["description"] == "Digs up sources"
     service.update_agent("research", description="")
     assert "description" not in stored()
+
+
+def test_new_agent_can_start_with_its_own_knowledge(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research", str(root / "research"), knowledge_mode="own")
+    kdir = root / "research" / "knowledge"
+    assert kdir.is_dir() and not kdir.is_symlink()
+    assert (kdir / "index.md").is_file()
+    assert service.knowledge_mode("research") == "own"
+
+
+def test_new_agent_inherits_the_operator_profile(admin):
+    service, root, _ = admin
+    # The default Agent's USER.md is what a fresh Agent should carry over.
+    (root / "primary" / "USER.md").write_text("# Operator\n- name: Zhang", encoding="utf-8")
+
+    service.create_agent("research", "Research", str(root / "research"))
+
+    seeded = (root / "research" / "USER.md").read_text(encoding="utf-8")
+    assert "Zhang" in seeded
+
+
+def test_knowledge_mode_defaults_to_shared(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research", str(root / "research"))
+    # No knowledge/ dir of its own -> reads the shared base.
+    assert service.knowledge_mode("research") == "shared"
+    assert not (root / "research" / "knowledge").exists()
+
+
+def test_switching_to_own_creates_a_real_knowledge_dir(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research", str(root / "research"))
+
+    result = service.set_knowledge_mode("research", "own")
+
+    assert result == {"id": "research", "mode": "own", "changed": True}
+    kdir = root / "research" / "knowledge"
+    assert kdir.is_dir() and not kdir.is_symlink()
+    assert (kdir / "index.md").is_file()
+    assert service.knowledge_mode("research") == "own"
+
+
+def test_switching_back_to_shared_links_the_shared_base(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research", str(root / "research"))
+    service.set_knowledge_mode("research", "own")
+    # Empty own base is safe to swap for the shared link.
+    result = service.set_knowledge_mode("research", "shared")
+
+    assert result["mode"] == "shared"
+    kdir = root / "research" / "knowledge"
+    assert kdir.is_symlink()
+    assert service.knowledge_mode("research") == "shared"
+
+
+def test_shared_refuses_to_discard_a_non_empty_own_base(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research", str(root / "research"))
+    service.set_knowledge_mode("research", "own")
+    (root / "research" / "knowledge" / "note.md").write_text("keep me", encoding="utf-8")
+
+    with pytest.raises(AgentAdminError):
+        service.set_knowledge_mode("research", "shared")
+    # The Agent's data is left untouched.
+    assert (root / "research" / "knowledge" / "note.md").read_text(encoding="utf-8") == "keep me"
+
+
+def test_default_agent_cannot_switch_knowledge_mode(admin):
+    service, _, _ = admin
+    assert service.knowledge_mode("primary") == "shared"
+    with pytest.raises(AgentAdminError):
+        service.set_knowledge_mode("primary", "own")
+
+
+def test_snapshot_reports_knowledge_mode(admin):
+    service, root, _ = admin
+    service.create_agent("research", "Research", str(root / "research"))
+    service.set_knowledge_mode("research", "own")
+
+    modes = {a["id"]: a.get("knowledge_mode") for a in service.snapshot()["agents"]}
+    assert modes["primary"] == "shared"
+    assert modes["research"] == "own"

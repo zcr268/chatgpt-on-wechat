@@ -5963,6 +5963,7 @@ class AgentsHandler:
                     description=body.get("description") or None,
                     skills=body.get("skills"),
                     knowledge=body.get("knowledge"),
+                    knowledge_mode=body.get("knowledge_mode") or None,
                     revision=revision,
                 )
             elif action == "update":
@@ -5985,6 +5986,12 @@ class AgentsHandler:
                 result = service.archive_agent(body.get("id", ""), revision=revision)
             elif action == "delete":
                 result = service.delete_agent(body.get("id", ""), revision=revision)
+            elif action == "set_knowledge_mode":
+                # A filesystem toggle (symlink vs own dir), not a roster edit, so
+                # it doesn't participate in the roster revision guard.
+                result = service.set_knowledge_mode(
+                    body.get("id", ""), body.get("mode", "")
+                )
             elif action == "set_binding":
                 result = service.set_binding(
                     body.get("agent_id", ""),
@@ -6010,7 +6017,7 @@ class AgentsHandler:
             # has no live sessions yet, and binding edits are handled by the
             # router swap alone.
             changed = None
-            if action in ("update", "archive", "delete"):
+            if action in ("update", "archive", "delete", "set_knowledge_mode"):
                 changed = [body.get("id", "")] if body.get("id") else None
             _reload_agent_runtime(service, changed_agent_ids=changed)
             # Hand back the fresh revision so a client making rapid successive
