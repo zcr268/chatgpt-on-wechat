@@ -682,7 +682,7 @@ class McpClient:
             # overwriting each other.
             if (
                 session_id
-                and message.get("method") == "initialize"
+                and (message.get("method") == "initialize" or sid is None)
                 and not self._http_session_id
             ):
                 with self._http_lock:
