@@ -26,6 +26,12 @@ const I18N = {
         agents_tab_profile: '概况',
         agents_tab_skills: '能力',
         agents_tab_files: '核心文件',
+        agents_core_edit: '编辑',
+        agents_core_preview: '预览',
+        agents_core_file_agent: '智能体设定',
+        agents_core_file_user: '用户信息',
+        agents_core_file_rule: '工作空间规则',
+        agents_core_file_memory: '长期记忆',
         agents_default: '默认',
         agents_archived: '已归档',
         agents_chat: '开始对话',
@@ -52,7 +58,7 @@ const I18N = {
         agents_knowledge: '知识库',
         agents_knowledge_shared: '共享',
         agents_knowledge_own: '独立',
-        agents_knowledge_hint: '共享：与团队读写同一个知识库；独立：拥有专属知识库，互不影响。',
+        agents_knowledge_hint: '共享：与团队读写同一个知识库。\n独立：拥有专属知识库，互不影响。',
         agents_knowledge_working: '处理中…',
         agents_knowledge_failed: '切换失败',
         agents_empty: '还没有智能体。创建一个，开始组团队。',
@@ -397,6 +403,12 @@ const I18N = {
         agents_tab_profile: '概況',
         agents_tab_skills: '能力',
         agents_tab_files: '核心檔案',
+        agents_core_edit: '編輯',
+        agents_core_preview: '預覽',
+        agents_core_file_agent: '智慧體設定',
+        agents_core_file_user: '使用者資訊',
+        agents_core_file_rule: '工作空間規則',
+        agents_core_file_memory: '長期記憶',
         agents_default: '預設',
         agents_archived: '已封存',
         agents_chat: '開始對話',
@@ -423,7 +435,7 @@ const I18N = {
         agents_knowledge: '知識庫',
         agents_knowledge_shared: '共享',
         agents_knowledge_own: '獨立',
-        agents_knowledge_hint: '共享：與團隊讀寫同一個知識庫；獨立：擁有專屬知識庫，互不影響。',
+        agents_knowledge_hint: '共享：與團隊讀寫同一個知識庫。\n獨立：擁有專屬知識庫，互不影響。',
         agents_knowledge_working: '處理中…',
         agents_knowledge_failed: '切換失敗',
         agents_empty: '還沒有智慧體。建立一個，開始組團隊。',
@@ -763,6 +775,12 @@ const I18N = {
         agents_tab_profile: 'Profile',
         agents_tab_skills: 'Skills',
         agents_tab_files: 'Core files',
+        agents_core_edit: 'Edit',
+        agents_core_preview: 'Preview',
+        agents_core_file_agent: 'Persona',
+        agents_core_file_user: 'User info',
+        agents_core_file_rule: 'Workspace rules',
+        agents_core_file_memory: 'Long-term memory',
         agents_default: 'Default',
         agents_archived: 'Archived',
         agents_chat: 'Start chat',
@@ -788,7 +806,7 @@ const I18N = {
         agents_knowledge: 'Knowledge base',
         agents_knowledge_shared: 'Shared',
         agents_knowledge_own: 'Own',
-        agents_knowledge_hint: 'Shared: read and write the same knowledge base as the team. Own: a private base, isolated from others.',
+        agents_knowledge_hint: 'Shared: read and write the same knowledge base as the team.\nOwn: a private base, isolated from others.',
         agents_knowledge_working: 'Working…',
         agents_knowledge_failed: 'Switch failed',
         agents_skills_pick: 'Only the skills checked below',
@@ -1790,6 +1808,12 @@ function openAgentDetail(agentId) {
     document.getElementById('agent-detail')?.classList.remove('hidden');
     renderAgentsGrid();
     renderAgentDetail();
+    // Reset the core-file picker to a clean state per Agent, rather than
+    // carrying over whichever file/view mode was left selected for the
+    // previous one.
+    const fileDd = document.getElementById('agent-core-file');
+    if (fileDd) fileDd._ddValue = 'AGENT.md';
+    setAgentCoreViewMode('edit');
     loadAgentCoreFile();
     // The model picker is drawn from the same catalog the composer uses, which
     // depends on which providers have keys. Re-render once it has arrived.
@@ -1817,12 +1841,82 @@ function selectAgentDetailTab(tab) {
 
 // A field label followed by a small info icon whose help shows on hover, so a
 // form stays compact instead of carrying a paragraph of hint under every field.
+// The tip text may contain \n to force a line break (e.g. one line per option
+// of a shared/own choice) — rendered via the popup's `white-space: pre-line`.
 function fieldLabelWithTip(label, tip) {
     return `<div class="agent-field-label-row">
         <label class="agent-field-label">${escapeHtml(label)}</label>
         <span class="agent-field-tip" data-tip="${escapeHtml(tip)}"><i class="fas fa-circle-info"></i></span>
     </div>`;
 }
+
+// Single popup instance fixed to <body>, positioned relative to whichever
+// .agent-field-tip is hovered. Living outside every drawer/modal means it is
+// never clipped by an ancestor's `overflow: auto` (unlike a CSS ::after would
+// be inside the scrolling Agent detail pane).
+let _fieldTipEl = null;
+let _fieldTipIcon = null;  // which icon the popup currently belongs to
+function _ensureFieldTipEl() {
+    if (!_fieldTipEl) {
+        _fieldTipEl = document.createElement('div');
+        _fieldTipEl.className = 'agent-tip-popup';
+        document.body.appendChild(_fieldTipEl);
+    }
+    return _fieldTipEl;
+}
+
+function _showFieldTip(iconEl) {
+    const tip = iconEl.dataset.tip;
+    if (!tip) return;
+    // Already showing for this icon: don't re-measure/re-animate. Moving the
+    // cursor from the <span> onto its own <i> would otherwise re-trigger the
+    // whole show sequence and make the tip visibly flicker.
+    if (_fieldTipIcon === iconEl && _fieldTipEl && _fieldTipEl.classList.contains('show')) return;
+    _fieldTipIcon = iconEl;
+    const popup = _ensureFieldTipEl();
+    popup.textContent = tip;
+    popup.classList.remove('show');
+    popup.style.left = '0px';
+    popup.style.top = '0px';
+    // Measure after layout so width/height reflect the actual (possibly
+    // multi-line) content before we clamp it into the viewport.
+    requestAnimationFrame(() => {
+        const rect = iconEl.getBoundingClientRect();
+        const pw = popup.offsetWidth, ph = popup.offsetHeight;
+        let left = rect.left + rect.width / 2 - pw / 2;
+        const margin = 8;
+        left = Math.max(margin, Math.min(left, window.innerWidth - pw - margin));
+        let top = rect.top - ph - 8;
+        let arrowTop = false;
+        if (top < margin) { top = rect.bottom + 8; arrowTop = true; } // flip below if clipped above
+        popup.style.left = `${left}px`;
+        popup.style.top = `${top}px`;
+        popup.style.setProperty('--tip-arrow-x', `${rect.left + rect.width / 2 - left}px`);
+        popup.classList.toggle('tip-arrow-top', arrowTop);
+        popup.classList.add('show');
+    });
+}
+
+function _hideFieldTip() {
+    if (_fieldTipEl) _fieldTipEl.classList.remove('show');
+    _fieldTipIcon = null;
+}
+
+document.addEventListener('mouseover', (e) => {
+    const icon = e.target.closest ? e.target.closest('.agent-field-tip') : null;
+    if (icon) _showFieldTip(icon);
+});
+document.addEventListener('mouseout', (e) => {
+    const icon = e.target.closest ? e.target.closest('.agent-field-tip') : null;
+    if (!icon) return;
+    // mouseout fires when moving between the icon's own children (span -> <i>).
+    // Only hide when the cursor actually leaves this icon's subtree, i.e. the
+    // element it moved to isn't inside the same .agent-field-tip.
+    const to = e.relatedTarget;
+    if (to && icon.contains(to)) return;
+    _hideFieldTip();
+});
+document.addEventListener('scroll', _hideFieldTip, true);
 
 function renderAgentDetail() {
     const agent = findAgent(selectedAdminAgentId);
@@ -2364,35 +2458,130 @@ function _performAgentDelete(agentId, _retried) {
     });
 }
 
+// The four core files an Agent can be edited through. BOOTSTRAP.md exists on
+// disk for internal use but isn't meant for hand-editing, so it's left out of
+// the picker entirely. Each option carries a short hint (rendered on the
+// right of the dropdown row) so the raw filename isn't the only clue to what
+// it holds.
+function _agentCoreFileOptions() {
+    return [
+        { value: 'AGENT.md', label: 'AGENT.md', hint: t('agents_core_file_agent') },
+        { value: 'USER.md', label: 'USER.md', hint: t('agents_core_file_user') },
+        { value: 'RULE.md', label: 'RULE.md', hint: t('agents_core_file_rule') },
+        { value: 'MEMORY.md', label: 'MEMORY.md', hint: t('agents_core_file_memory') },
+    ];
+}
+
+let agentCoreViewMode = 'edit';
+
+function initAgentCoreFileDropdown() {
+    const el = document.getElementById('agent-core-file');
+    if (!el) return;
+    const current = el._ddValue || 'AGENT.md';
+    initDropdown(el, _agentCoreFileOptions(), current, () => loadAgentCoreFile());
+}
+
+function currentAgentCoreFile() {
+    const el = document.getElementById('agent-core-file');
+    return (el && el._ddValue) || 'AGENT.md';
+}
+
+function setAgentCoreViewMode(mode) {
+    agentCoreViewMode = mode;
+    document.querySelectorAll('#agent-core-mode .agent-seg-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    const editor = document.getElementById('agent-core-editor');
+    const preview = document.getElementById('agent-core-preview');
+    if (!editor || !preview) return;
+    if (mode === 'preview') {
+        preview.innerHTML = renderMarkdown(editor.value || '');
+        // Same post-processing chat messages get: syntax highlighting plus the
+        // language label + copy button on each code block (renderMarkdown only
+        // produces the raw <pre>; the headers are added to the live DOM after).
+        if (typeof applyHighlighting === 'function') applyHighlighting(preview);
+        editor.classList.add('hidden');
+        preview.classList.remove('hidden');
+    } else {
+        preview.classList.add('hidden');
+        editor.classList.remove('hidden');
+    }
+}
+
 function loadAgentCoreFile() {
     if (!selectedAdminAgentId) return;
-    const filename = document.getElementById('agent-core-file')?.value;
-    const status = document.getElementById('agent-editor-status');
-    if (!filename || !status) return;
-    status.textContent = '…';
+    initAgentCoreFileDropdown();
+    const filename = currentAgentCoreFile();
+    if (!filename) return;
+    _paintCoreFileStatus('pending', '…');
     fetch(`/api/agents/${encodeURIComponent(selectedAdminAgentId)}/files/${encodeURIComponent(filename)}`)
         .then(r => r.json()).then(data => {
-            if (data.status !== 'success') throw new Error(data.message || 'Load failed');
+            if (data.status !== 'success') throw new Error(data.message || t('agents_save_failed'));
             selectedCoreRevision = data.revision;
             document.getElementById('agent-core-editor').value = data.content || '';
             document.getElementById('agent-editor-label').textContent = `${selectedAdminAgentId} / ${filename}`;
-            status.textContent = data.exists ? data.revision.slice(0, 12) : '';
-        }).catch(err => { status.textContent = err.message; });
+            // The revision hash meant nothing to a human reader; a blank status
+            // (nothing to report) reads better than a stray hex fragment.
+            _paintCoreFileStatus('pending', '');
+            // Refresh the preview in place if that's the active view, so
+            // switching files while in preview mode doesn't show stale content.
+            if (agentCoreViewMode === 'preview') setAgentCoreViewMode('preview');
+        }).catch(err => { _paintCoreFileStatus('error', err.message); });
+}
+
+// Paint the save status with a colour + icon, not just bare text, so success
+// and failure actually read differently at a glance. Success fades back to
+// blank after a bit; failure stays until the next attempt so it isn't missed.
+//
+// Every other `*-status` element in this console is hidden via the shared
+// `opacity-0` convention (see navigateTo/setLanguage, which blanket-fade any
+// `[id$="-status"]` element on navigation). This one has the same id suffix
+// so it gets caught by that same sweep — it must toggle `opacity-0` itself
+// too, or a stray earlier sweep leaves it permanently invisible no matter
+// what innerHTML is painted into it afterwards.
+function _paintCoreFileStatus(kind, text) {
+    const status = document.getElementById('agent-editor-status');
+    if (!status) return;
+    clearTimeout(_paintCoreFileStatus._t);
+    status.classList.remove('agent-status-ok', 'agent-status-error');
+    if (kind === 'ok') {
+        status.innerHTML = `<i class="fas fa-check mr-1"></i>${escapeHtml(text)}`;
+        status.classList.add('agent-status-ok');
+        status.classList.remove('opacity-0');
+        _paintCoreFileStatus._t = setTimeout(() => {
+            status.textContent = '';
+            status.classList.remove('agent-status-ok');
+            status.classList.add('opacity-0');
+        }, 2200);
+    } else if (kind === 'error') {
+        status.innerHTML = `<i class="fas fa-triangle-exclamation mr-1"></i>${escapeHtml(text)}`;
+        status.classList.add('agent-status-error');
+        status.classList.remove('opacity-0');
+    } else {
+        status.textContent = text || '';
+        if (text) status.classList.remove('opacity-0');
+    }
 }
 
 function saveAgentCoreFile() {
     if (!selectedAdminAgentId) return;
-    const filename = document.getElementById('agent-core-file').value;
-    const status = document.getElementById('agent-editor-status');
+    const filename = currentAgentCoreFile();
+    const btn = document.querySelector('#agent-detail-files button[onclick="saveAgentCoreFile()"]');
+    _paintCoreFileStatus('pending', '…');
+    if (btn) btn.disabled = true;
     fetch(`/api/agents/${encodeURIComponent(selectedAdminAgentId)}/files/${encodeURIComponent(filename)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: document.getElementById('agent-core-editor').value, revision: selectedCoreRevision }),
     }).then(async r => ({ ok: r.ok, data: await r.json() })).then(({ ok, data }) => {
-        if (!ok || data.status !== 'success') throw new Error(data.message || 'Save failed');
+        if (!ok || data.status !== 'success') throw new Error(data.message || t('agents_save_failed'));
         selectedCoreRevision = data.revision;
-        status.textContent = data.revision.slice(0, 12);
-    }).catch(err => { status.textContent = err.message; });
+        _paintCoreFileStatus('ok', t('agents_saved'));
+    }).catch(err => {
+        _paintCoreFileStatus('error', err.message);
+    }).finally(() => {
+        if (btn) btn.disabled = false;
+    });
 }
 
 function startChatWithAgent(agentId) {

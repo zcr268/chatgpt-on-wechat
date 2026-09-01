@@ -668,19 +668,28 @@
                         <div id="agent-detail-profile" class="agent-detail-pane"></div>
                         <div id="agent-detail-skills" class="agent-detail-pane hidden"></div>
                         <div id="agent-detail-files" class="agent-detail-pane hidden">
-                            <div class="flex flex-wrap items-center gap-2 mb-3">
-                                <select id="agent-core-file" onchange="loadAgentCoreFile()" class="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#222] text-sm">
-                                    <option>AGENT.md</option>
-                                    <option>USER.md</option>
-                                    <option>RULE.md</option>
-                                    <option>MEMORY.md</option>
-                                    <option>BOOTSTRAP.md</option>
-                                </select>
-                                <span id="agent-editor-label" class="text-xs text-slate-400"></span>
-                                <button onclick="saveAgentCoreFile()" class="ml-auto px-3 py-1.5 rounded-lg bg-primary-500 text-white text-sm" data-i18n="save">保存</button>
+                            <div class="flex items-center gap-2 mb-3">
+                                <div id="agent-core-file" class="cfg-dropdown cfg-dropdown-xs" tabindex="0" style="width: 180px;">
+                                    <div class="cfg-dropdown-selected">
+                                        <span class="cfg-dropdown-text">--</span>
+                                        <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                    </div>
+                                    <div class="cfg-dropdown-menu"></div>
+                                </div>
+                                <div id="agent-core-mode" class="agent-seg" role="group">
+                                    <button type="button" class="agent-seg-btn active" data-mode="edit" onclick="setAgentCoreViewMode('edit')">
+                                        <i class="fas fa-pen mr-1"></i><span data-i18n="agents_core_edit">编辑</span>
+                                    </button>
+                                    <button type="button" class="agent-seg-btn" data-mode="preview" onclick="setAgentCoreViewMode('preview')">
+                                        <i class="fas fa-eye mr-1"></i><span data-i18n="agents_core_preview">预览</span>
+                                    </button>
+                                </div>
+                                <div id="agent-editor-status" class="ml-auto text-xs whitespace-nowrap opacity-0 transition-opacity duration-300"></div>
+                                <button onclick="saveAgentCoreFile()" class="px-3 h-7 rounded-lg bg-primary-500 text-white text-xs font-medium" data-i18n="save">保存</button>
                             </div>
+                            <div id="agent-editor-label" class="text-xs text-slate-400 dark:text-slate-500 font-mono mb-2.5 truncate"></div>
                             <textarea id="agent-core-editor" spellcheck="false" class="agent-core-editor" placeholder=""></textarea>
-                            <div id="agent-editor-status" class="text-xs text-slate-500 mt-2"></div>
+                            <div id="agent-core-preview" class="agent-core-preview msg-content hidden"></div>
                         </div>
                     </aside>
 

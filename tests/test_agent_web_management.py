@@ -28,8 +28,16 @@ def test_console_has_agent_cards_not_a_tenant_switcher():
     assert 'id="agents-grid"' in html
     assert 'id="agent-core-editor"' in html
     assert 'id="composer-agent-btn"' in html
-    for filename in ("AGENT.md", "USER.md", "RULE.md", "MEMORY.md", "BOOTSTRAP.md"):
-        assert f"<option>{filename}</option>" in html
+    # The core-file picker is the same dropdown component used elsewhere in the
+    # console, not a native <select>; its options are built in JS from
+    # _agentCoreFileOptions() rather than hardcoded <option> tags in markup.
+    assert 'id="agent-core-file" class="cfg-dropdown cfg-dropdown-xs"' in html
+    js = _read("channel/web/static/js/console.js")
+    for filename in ("AGENT.md", "USER.md", "RULE.md", "MEMORY.md"):
+        assert f"value: '{filename}'" in js
+    # BOOTSTRAP.md is internal and deliberately left out of the hand-editable
+    # picker.
+    assert "value: 'BOOTSTRAP.md'" not in js
 
 
 def test_console_carries_agent_id_through_existing_feature_requests():
