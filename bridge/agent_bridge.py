@@ -516,6 +516,48 @@ class AgentBridge:
         from agent.memory import get_conversation_store
         return get_conversation_store(profile.workspace)
 
+    def _seed_team_members(self, session_id: str, host_agent_id: str, context: Context = None) -> None:
+        """Project a team bot's fixed roster onto the session, once.
+
+        A channel instance configured with ``members`` is a fixed team: its
+        owner (``host_agent_id``) plus teammates it may delegate to. The rest of
+        the stack learns a conversation is a team from
+        ``session_prefs.members``, so the instance roster is copied there the
+        first time a message arrives on a session that has none yet.
+
+        Only seeds when the session has no roster of its own, so a per-session
+        edit (Web) is never clobbered; and only for enabled teammates other than
+        the owner, matching how a Web team is stored.
+        """
+        if not session_id or not context:
+            return
+        members = context.get("members") or context.kwargs.get("members")
+        if not members:
+            return
+        try:
+            from agent.workspace import session_prefs
+
+            if session_prefs.get_prefs(session_id, host_agent_id).get("members"):
+                return  # session already has its own roster; leave it be
+            cleaned = []
+            for mid in members:
+                mid = str(mid or "").strip()
+                if not mid or mid == host_agent_id or mid in cleaned:
+                    continue
+                try:
+                    self.agent_registry.get(mid, require_enabled=True)
+                except Exception:
+                    continue  # skip unknown/disabled teammates
+                cleaned.append(mid)
+            if cleaned:
+                session_prefs.set_prefs(session_id, host_agent_id, members=cleaned)
+                logger.info(
+                    f"[AgentBridge] Seeded team roster {cleaned} onto session "
+                    f"'{session_id}' owned by {host_agent_id}"
+                )
+        except Exception as e:
+            logger.debug(f"[AgentBridge] _seed_team_members failed: {e}")
+
     def _resolve_speaker(self, host_agent_id: str, context: Context = None) -> str:
         """Pick who answers this turn: the conversation's owner, or a teammate
         the user addressed by name.
@@ -882,11 +924,49 @@ class AgentBridge:
                 else self.agent_registry.default_agent_id
             )
 
+            # A team channel bot (e.g. a Feishu instance with members) carries
+            # its roster on every inbound message. Materialize it into the
+            # session the first time we see the conversation so the shared
+            # delegate/@mention machinery — which reads session_prefs.members —
+            # treats it as a team, exactly like a Web team conversation.
+            self._seed_team_members(session_id, resolved_agent_id, context)
+
             # Addressing a teammate by name hands the turn to that teammate
             # directly. The conversation still belongs to `resolved_agent_id`,
             # so the transcript, the run and the queue all stay in one place —
             # only the voice answering this turn changes.
             speaker_agent_id = self._resolve_speaker(resolved_agent_id, context)
+            # With multiple Agents (and especially several bound channel
+            # instances) it isn't obvious from the logs which Agent a message
+            # was routed to. Emit one line naming the target Agent and, when
+            # present, the channel instance it arrived on. Skipped for
+            # single-Agent setups to avoid noise.
+            try:
+                if len(self.agent_registry.list()) > 1:
+                    instance_id = (
+                        context.get("instance_id")
+                        or context.kwargs.get("instance_id")
+                        if context is not None else ""
+                    )
+                    via = f" | {instance_id}" if instance_id else ""
+                    # The Agent that actually answers this turn is the speaker,
+                    # which differs from the owner when the user addressed a
+                    # teammate by name. Log the speaker so the line matches who
+                    # replies; note the owner's conversation it runs in when
+                    # they differ, so routing + addressing read consistently.
+                    speaker = self.agent_registry.get(speaker_agent_id)
+                    if speaker_agent_id != resolved_agent_id:
+                        owner = self.agent_registry.get(resolved_agent_id)
+                        logger.info(
+                            f"[Routing] → 🤖 {speaker.name}({speaker.id}) "
+                            f"in {owner.name}({owner.id})'s conversation{via}"
+                        )
+                    else:
+                        logger.info(
+                            f"[Routing] → 🤖 {speaker.name}({speaker.id}){via}"
+                        )
+            except Exception:
+                pass
             # What the Agent is asked, once the addressing has been acted on.
             # Kept apart from `query`, which stays verbatim for the transcript.
             model_query = (

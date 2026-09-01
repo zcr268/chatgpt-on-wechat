@@ -138,6 +138,92 @@ def test_guest_roster_names_the_host_and_never_itself(tmp_path, monkeypatch):
     assert [item["id"] for item in owner_view] == ["ops"]
 
 
+class TestSeedTeamMembersFromChannelInstance:
+    """A team channel bot (e.g. a Feishu instance with members) carries its
+    roster on every message. The bridge materializes it onto the session once,
+    so the shared delegate/@mention machinery — which reads session_prefs — sees
+    a team, exactly like a Web team conversation.
+    """
+
+    @staticmethod
+    def _ctx(**kw):
+        c = _Ctx(kw)
+        c.kwargs = {}
+        return c
+
+    def test_seeds_when_session_has_no_roster(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        calls = {}
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        monkeypatch.setattr(
+            session_prefs, "set_prefs",
+            lambda sid, aid, **kw: calls.update({"sid": sid, "aid": aid, **kw}),
+        )
+        bridge = _bridge(tmp_path)
+        bridge._seed_team_members("chat", "primary", self._ctx(members=["ops"]))
+        assert calls == {"sid": "chat", "aid": "primary", "members": ["ops"]}
+
+    def test_owner_is_never_seeded_as_a_member(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        calls = {}
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        monkeypatch.setattr(
+            session_prefs, "set_prefs",
+            lambda sid, aid, **kw: calls.update(kw),
+        )
+        bridge = _bridge(tmp_path)
+        bridge._seed_team_members(
+            "chat", "primary", self._ctx(members=["primary", "ops"])
+        )
+        assert calls.get("members") == ["ops"]
+
+    def test_leaves_an_existing_session_roster_untouched(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        seeded = []
+        monkeypatch.setattr(
+            session_prefs, "get_prefs", lambda sid, aid: {"members": ["research"]}
+        )
+        monkeypatch.setattr(
+            session_prefs, "set_prefs",
+            lambda *a, **kw: seeded.append(kw),
+        )
+        bridge = _bridge(tmp_path)
+        bridge._seed_team_members("chat", "primary", self._ctx(members=["ops"]))
+        assert seeded == []  # a per-session edit must never be clobbered
+
+    def test_disabled_or_unknown_teammates_are_dropped(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        calls = {}
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        monkeypatch.setattr(
+            session_prefs, "set_prefs",
+            lambda sid, aid, **kw: calls.update(kw),
+        )
+        bridge = _bridge(tmp_path, disabled=("ops",))
+        bridge._seed_team_members(
+            "chat", "primary", self._ctx(members=["ops", "ghost"])
+        )
+        # ops is disabled, ghost is unknown: nothing addressable remains, so
+        # no roster is written at all.
+        assert calls == {}
+
+    def test_no_members_on_context_is_a_noop(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        seeded = []
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        monkeypatch.setattr(
+            session_prefs, "set_prefs", lambda *a, **kw: seeded.append(kw)
+        )
+        bridge = _bridge(tmp_path)
+        bridge._seed_team_members("chat", "primary", self._ctx())
+        assert seeded == []
+
+
 class TestTheAddressComesOffBeforeTheModelSeesIt:
     """Routing has already answered what the mention was asking, so the Agent
     should be handed the question, not the envelope. Left in, it reads its own
