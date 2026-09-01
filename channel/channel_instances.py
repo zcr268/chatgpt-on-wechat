@@ -88,7 +88,14 @@ CREDENTIAL_KEYS: Dict[str, tuple] = {
 # Channel types that actually support running more than one instance today.
 # Others may appear in channel_instances but will run as a single instance
 # (their @singleton is not yet bypassed); we log and fall back gracefully.
-MULTI_INSTANCE_READY = frozenset({const.FEISHU})
+MULTI_INSTANCE_READY = frozenset({
+    const.FEISHU,
+    const.DINGTALK,
+    const.QQ,
+    const.TELEGRAM,
+    const.SLACK,
+    const.DISCORD,
+})
 
 
 @dataclass(frozen=True)

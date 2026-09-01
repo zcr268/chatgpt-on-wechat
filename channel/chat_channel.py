@@ -48,21 +48,10 @@ class ChatChannel(Channel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
-        # Multi-instance routing: an instance bound to a specific Agent stamps
-        # every inbound message with it, so the router sends it there rather
-        # than falling through to config-based channel_type routing. Empty on
-        # legacy single-instance channels, which keeps the old routing intact.
-        bound = getattr(self, "bound_agent_id", "")
-        if bound and "bound_agent_id" not in context:
-            context["bound_agent_id"] = bound
-        if "instance_id" not in context and getattr(self, "instance_id", ""):
-            context["instance_id"] = self.instance_id
-        # Team bot: carry the owner's teammates so the bridge can treat this
-        # conversation as a team (delegate + @mention), just like a Web team
-        # conversation. Empty on a solo bot, leaving routing untouched.
-        members = getattr(self, "members", None)
-        if members and "members" not in context:
-            context["members"] = list(members)
+        # Multi-instance routing + team: stamp the bound Agent, instance id and
+        # teammates so the router/bridge treat this as a bound (and possibly
+        # team) conversation. All empty on a legacy single-instance channel.
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
         # context首次传入时，receiver是None，根据类型设置receiver

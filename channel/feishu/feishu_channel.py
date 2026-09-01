@@ -819,21 +819,10 @@ class FeiShuChanel(ChatChannel):
         )
         if context:
             # Team bot: a leading "@teammate" hands this turn to that member,
-            # exactly like the Web console. Owner + members form the roster; the
-            # owner (bound_agent_id) answers when nobody is named. Resolved from
-            # the instance roster directly so it works on the very first message,
-            # before session_prefs is seeded.
-            members = getattr(self, "members", None)
-            if members:
-                try:
-                    from agent.team_addressing import roster_from_members, addressed_agent_id
-                    owner = getattr(self, "bound_agent_id", "") or ""
-                    roster = roster_from_members(owner, members)
-                    named = addressed_agent_id(feishu_msg.content_with_quote(), roster)
-                    if named and named != owner:
-                        context["speaker_agent_id"] = named
-                except Exception as e:
-                    logger.debug(f"[FeiShu] mention resolve failed: {e}")
+            # exactly like the Web console. Resolved from the instance roster
+            # directly so it works on the very first message.
+            from agent.team_addressing import stamp_speaker_from_channel
+            stamp_speaker_from_channel(self, context, feishu_msg.content_with_quote())
             # Feishu recall events only include message_id/chat_id. Keep the
             # accepted route and use message_id as the agent cancellation key.
             context["request_id"] = msg_id
@@ -2156,20 +2145,9 @@ class FeiShuChanel(ChatChannel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
-        # Multi-instance path: carry this instance's Agent binding and id so the
-        # router sends the message to the Agent this Feishu app is bound to,
-        # instead of falling through to config-based channel_type routing. Empty
-        # on legacy single-instance Feishu, keeping the old routing intact.
-        bound = getattr(self, "bound_agent_id", "")
-        if bound and "bound_agent_id" not in context:
-            context["bound_agent_id"] = bound
-        if "instance_id" not in context and getattr(self, "instance_id", ""):
-            context["instance_id"] = self.instance_id
-        # Team bot: carry the owner's teammates so the bridge treats this
-        # conversation as a team (delegate + @mention). Empty on a solo bot.
-        members = getattr(self, "members", None)
-        if members and "members" not in context:
-            context["members"] = list(members)
+        # Multi-instance routing + team: same stamp as the base channel, so a
+        # Feishu app bound to a specific Agent routes there and carries its team.
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
 

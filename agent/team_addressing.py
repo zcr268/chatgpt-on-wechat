@@ -63,6 +63,29 @@ def addressed_agent_id(text: str, roster: List[dict]) -> str:
     return ""
 
 
+def stamp_speaker_from_channel(channel, context, text) -> None:
+    """Set ``context["speaker_agent_id"]`` when a team message names a teammate.
+
+    A team channel instance carries its owner (``bound_agent_id``) plus
+    ``members``; a leading ``@teammate`` in *text* hands this turn to that
+    teammate, exactly like the Web console. Resolved from the instance roster
+    directly so it works on the very first message, before ``session_prefs`` is
+    seeded. A no-op for a solo bot (no members) or when nobody is named, so it
+    is safe to call on every inbound message from any channel.
+    """
+    try:
+        members = getattr(channel, "members", None)
+        if not members or context is None:
+            return
+        owner = getattr(channel, "bound_agent_id", "") or ""
+        roster = roster_from_members(owner, members)
+        named = addressed_agent_id(text, roster)
+        if named and named != owner:
+            context["speaker_agent_id"] = named
+    except Exception as e:
+        logger.debug(f"[TeamAddressing] stamp_speaker failed: {e}")
+
+
 def resolve_addressed_from_context(context, host_agent_id: str, query: str) -> Optional[str]:
     """The teammate a channel message addresses, using the session's team.
 

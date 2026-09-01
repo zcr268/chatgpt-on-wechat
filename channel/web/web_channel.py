@@ -4893,12 +4893,13 @@ class ChannelsHandler:
         return team.team_file(conf()).exists()
 
     @classmethod
-    def _feishu_instances(cls) -> list:
-        """Per-instance channel cards for multi-instance-ready types (feishu).
+    def _channel_instances_view(cls) -> list:
+        """Per-instance channel cards for every multi-instance-ready type.
 
         Expands ``channel_instances`` into one card each, carrying instance_id,
         the bound agent_id and masked credentials, so the console can show and
-        edit each bot independently.
+        edit each bot independently. Covers all MULTI_INSTANCE_READY types
+        (feishu, dingtalk, qq, telegram, slack, discord), not just feishu.
         """
         from common import i18n
         from channel.channel_instances import (
@@ -5024,7 +5025,7 @@ class ChannelsHandler:
             # In multi-Agent mode the multi-instance-ready types (feishu) render
             # one card per channel_instances record instead of one per type.
             if multi_agent:
-                payload["instances"] = self._feishu_instances()
+                payload["instances"] = self._channel_instances_view()
             return json.dumps(payload, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Channels API error: {e}")

@@ -148,8 +148,8 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
 
     def startup(self):
         import asyncio
-        self.dingtalk_client_id = conf().get('dingtalk_client_id')
-        self.dingtalk_client_secret = conf().get('dingtalk_client_secret')
+        self.dingtalk_client_id = self.cfg('dingtalk_client_id')
+        self.dingtalk_client_secret = self.cfg('dingtalk_client_secret')
         self._running = True
         credential = dingtalk_stream.Credential(self.dingtalk_client_id, self.dingtalk_client_secret)
         client = dingtalk_stream.DingTalkStreamClient(credential)
@@ -655,6 +655,8 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         
         context = self._compose_context(cmsg.ctype, cmsg.content, isgroup=False, msg=cmsg)
         if context:
+            from agent.team_addressing import stamp_speaker_from_channel
+            stamp_speaker_from_channel(self, context, cmsg.content)
             self.produce(context)
 
 
@@ -717,6 +719,8 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         context = self._compose_context(cmsg.ctype, cmsg.content, isgroup=True, msg=cmsg)
         context['no_need_at'] = True
         if context:
+            from agent.team_addressing import stamp_speaker_from_channel
+            stamp_speaker_from_channel(self, context, cmsg.content)
             self.produce(context)
 
 
@@ -732,8 +736,8 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
             logger.info(f"[DingTalk] Sending scheduled task message to {receiver} (is_group={is_group})")
             
             # 使用缓存的 robot_code 或配置的值
-            robot_code = self._robot_code or conf().get("dingtalk_robot_code")
-            logger.info(f"[DingTalk] Using robot_code: {robot_code}, cached: {self._robot_code}, config: {conf().get('dingtalk_robot_code')}")
+            robot_code = self._robot_code or self.cfg("dingtalk_robot_code")
+            logger.info(f"[DingTalk] Using robot_code: {robot_code}, cached: {self._robot_code}, config: {self.cfg('dingtalk_robot_code')}")
             
             if not robot_code:
                 logger.error(f"[DingTalk] Cannot send scheduled task: robot_code not available. Please send at least one message to the bot first, or configure dingtalk_robot_code in config.json")
@@ -765,7 +769,7 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         
         isgroup = msg.is_group
         incoming_message = msg.incoming_message
-        robot_code = self._robot_code or conf().get("dingtalk_robot_code")
+        robot_code = self._robot_code or self.cfg("dingtalk_robot_code")
         
         # 处理图片和视频发送
         if reply.type == ReplyType.IMAGE_URL:

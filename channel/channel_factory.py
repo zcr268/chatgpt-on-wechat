@@ -78,22 +78,22 @@ def _build_channel(channel_type, multi_instance) -> Channel:
         ch = _fresh(FeiShuChanel) if multi_instance else FeiShuChanel()
     elif channel_type == const.DINGTALK:
         from channel.dingtalk.dingtalk_channel import DingTalkChanel
-        ch = DingTalkChanel()
+        ch = _fresh(DingTalkChanel) if multi_instance else DingTalkChanel()
     elif channel_type == const.WECOM_BOT:
         from channel.wecom_bot.wecom_bot_channel import WecomBotChannel
         ch = WecomBotChannel()
     elif channel_type == const.QQ:
         from channel.qq.qq_channel import QQChannel
-        ch = QQChannel()
+        ch = _fresh(QQChannel) if multi_instance else QQChannel()
     elif channel_type == const.TELEGRAM:
         from channel.telegram.telegram_channel import TelegramChannel
-        ch = TelegramChannel()
+        ch = _fresh(TelegramChannel) if multi_instance else TelegramChannel()
     elif channel_type == const.SLACK:
         from channel.slack.slack_channel import SlackChannel
-        ch = SlackChannel()
+        ch = _fresh(SlackChannel) if multi_instance else SlackChannel()
     elif channel_type == const.DISCORD:
         from channel.discord.discord_channel import DiscordChannel
-        ch = DiscordChannel()
+        ch = _fresh(DiscordChannel) if multi_instance else DiscordChannel()
     elif channel_type in (const.WEIXIN, "wx"):
         from channel.weixin.weixin_channel import WeixinChannel
         ch = WeixinChannel()

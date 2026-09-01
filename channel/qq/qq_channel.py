@@ -96,8 +96,8 @@ class QQChannel(ChatChannel):
             logger.warning("[QQ] A session is already open, closing it before reconnecting")
             self.stop()
 
-        self.app_id = conf().get("qq_app_id", "")
-        self.app_secret = conf().get("qq_app_secret", "")
+        self.app_id = self.cfg("qq_app_id", "")
+        self.app_secret = self.cfg("qq_app_secret", "")
 
         if not self.app_id or not self.app_secret:
             err = "[QQ] qq_app_id and qq_app_secret are required"
@@ -440,6 +440,8 @@ class QQChannel(ChatChannel):
             no_need_at=True,
         )
         if context:
+            from agent.team_addressing import stamp_speaker_from_channel
+            stamp_speaker_from_channel(self, context, qq_msg.content)
             self.produce(context)
 
     # ------------------------------------------------------------------
@@ -451,6 +453,7 @@ class QQChannel(ChatChannel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
 

@@ -272,13 +272,33 @@ def test_bootstrap_skips_when_no_credentials(tmp_path):
 
 
 def test_bootstrap_ignores_non_multi_instance_types(tmp_path):
+    # wechatcom_app is a fixed-port webhook channel: it is not multi-instance
+    # ready, so its flat config credentials must NOT be folded into an instance.
+    settings = {
+        "agent_workspace": str(tmp_path),
+        "channel_type": "wechatcom_app",
+        "wechatcom_corp_id": "corp",
+        "wechatcomapp_secret": "sec",
+    }
+    assert ci.bootstrap_legacy_instances(settings, {}, "primary") == []
+
+
+def test_bootstrap_folds_multi_instance_types_beyond_feishu(tmp_path):
+    # dingtalk is now multi-instance ready, so a legacy flat dingtalk config is
+    # carried into a channel_instances record when crossing into multi-Agent
+    # mode (otherwise multi-Agent startup, which skips the flat config entry for
+    # multi-instance types, would drop it).
     settings = {
         "agent_workspace": str(tmp_path),
         "channel_type": "dingtalk",
         "dingtalk_client_id": "id",
         "dingtalk_client_secret": "sec",
     }
-    assert ci.bootstrap_legacy_instances(settings, {}, "primary") == []
+    records = ci.bootstrap_legacy_instances(settings, {}, "primary")
+    assert len(records) == 1
+    assert records[0]["channel_type"] == "dingtalk"
+    assert records[0]["agent_id"] == "primary"
+    assert records[0]["credentials"]["dingtalk_client_id"] == "id"
 
 
 def test_write_bootstraps_feishu_on_first_roster_write(tmp_path):
