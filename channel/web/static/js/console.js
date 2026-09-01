@@ -11690,7 +11690,7 @@ function runTaskNow(task, button) {
             fetch('/api/scheduler/run', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task_id: task.id})
+                body: JSON.stringify({task_id: task.id, agent_id: task.agent_id || ''})
             }).then(r => r.json()).then(res => {
                 if (res.status !== 'success') throw new Error(res.message || t('task_run_failed'));
                 button.innerHTML = `<i class="fas fa-check mr-1"></i>${t('task_run_started')}`;
@@ -11711,7 +11711,15 @@ function runTaskNow(task, button) {
 
 function loadTasksView() {
     if (tasksLoaded) return;
-    fetch('/api/scheduler').then(r => r.json()).then(data => {
+    // The list tags each task with an owning Agent; make sure the roster is in
+    // hand first so findAgent()/multiAgentMode() can resolve the avatar + name.
+    const rosterReady = agentCatalog.length ? Promise.resolve() : loadAgentCatalog();
+    rosterReady.then(() => {
+    // Explicit empty agent_id so the global fetch wrapper doesn't inject the
+    // active chat Agent: the task list is the whole team's schedule and must
+    // NOT follow whichever Agent the conversation is currently on. The backend
+    // treats an empty agent_id as "aggregate across all Agents".
+    fetch('/api/scheduler?agent_id=').then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const emptyEl = document.getElementById('tasks-empty');
         const listEl = document.getElementById('tasks-list');
@@ -11759,10 +11767,19 @@ function loadTasksView() {
             const action = task.action || {};
             const taskContent = action.content || action.task_description || '';
             const toggleId = 'toggle-' + task.id;
+            // Owner chip: only when several Agents exist (otherwise every task
+            // carries the same face and it's just noise). Empty on a solo install.
+            const owner = (multiAgentMode() && task.agent_id) ? findAgent(task.agent_id) : null;
+            const ownerChip = owner
+                ? `<span class="inline-flex items-center gap-1 ml-2 pl-1 pr-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-[10px] leading-none text-slate-400 dark:text-slate-500">
+                        ${agentAvatarHTML(owner, 15)}<span class="truncate max-w-[80px]">${escapeHtml(owner.name || owner.id)}</span>
+                   </span>`
+                : '';
             card.innerHTML = `
                 <div class="flex items-center gap-2 mb-2">
                     <span class="w-2 h-2 rounded-full ${isEnabled ? 'bg-primary-400' : 'bg-slate-300 dark:bg-slate-600'}"></span>
                     <span class="font-medium text-sm text-slate-700 dark:text-slate-200">${escapeHtml(task.name || task.id || '--')}</span>
+                    ${ownerChip}
                     <div class="flex-1"></div>
                     ${typeLabel}
                 </div>
@@ -11789,7 +11806,7 @@ function loadTasksView() {
                 fetch('/api/scheduler/toggle', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({task_id: task.id, enabled: newEnabled})
+                    body: JSON.stringify({task_id: task.id, enabled: newEnabled, agent_id: task.agent_id || ''})
                 }).then(r => r.json()).then(res => {
                     if (res.status === 'success') {
                         const dot = card.querySelector('.rounded-full.w-2');
@@ -11816,6 +11833,7 @@ function loadTasksView() {
         });
         tasksLoaded = true;
     }).catch(() => {});
+    });
 }
 
 // =====================================================================
@@ -13112,6 +13130,23 @@ function loadTaskChannelOptions(selectedChannelType) {
     });
 }
 
+// The owning Agent shown (read-only) in the task edit modal header. Hidden on a
+// single-Agent install, where every task belongs to the one Agent anyway.
+function renderTaskOwnerChip(task) {
+    const el = document.getElementById('task-edit-owner');
+    if (!el) return;
+    const agent = task.agent_id ? findAgent(task.agent_id) : null;
+    if (!multiAgentMode() || !agent) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = `${agentAvatarHTML(agent, 20)}
+        <span class="text-xs font-medium text-slate-600 dark:text-slate-300 truncate max-w-[120px]">${escapeHtml(agent.name || agent.id)}</span>`;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+}
+
 function openTaskEditModal(task) {
     currentEditingTask = task;
     const overlay = document.getElementById('task-edit-modal-overlay');
@@ -13132,6 +13167,10 @@ function openTaskEditModal(task) {
     titleEl.textContent = t('task_edit_title');
     subtitle.textContent = task.id;
     deleteBtn.classList.remove('hidden');
+
+    // Show which Agent owns this task (read-only). Only meaningful with more
+    // than one Agent; a solo install would just repeat the obvious.
+    renderTaskOwnerChip(task);
 
     // Populate data
     nameInput.value = task.name || '';
@@ -13351,6 +13390,7 @@ function saveTaskEdit() {
     
     const payload = {
         task_id: currentEditingTask.id,
+        agent_id: currentEditingTask.agent_id || '',
         name: name,
         enabled: enabledInput.checked,
         schedule: schedule,
@@ -13385,6 +13425,7 @@ function deleteTask() {
     
     const taskName = currentEditingTask.name || currentEditingTask.id || '未知任务';
     const taskId = currentEditingTask.id;  // Capture early to avoid closure race condition
+    const taskAgentId = currentEditingTask.agent_id || '';  // route delete to the owner's store
     showConfirmDialog({
         title: t('task_delete_confirm_title'),
         message: (currentLang === 'zh' ? `确定要删除任务「${taskName}」吗？` : `Are you sure to delete task "${taskName}"?`),
@@ -13392,7 +13433,7 @@ function deleteTask() {
             fetch('/api/scheduler/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task_id: taskId })
+                body: JSON.stringify({ task_id: taskId, agent_id: taskAgentId })
             }).then(r => r.json()).then(res => {
                 if (res.status === 'success') {
                     closeTaskEditModal();

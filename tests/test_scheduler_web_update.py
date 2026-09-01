@@ -166,3 +166,61 @@ def test_switch_to_message_drops_agent_only_fields(tmp_path):
     assert "task_description" not in action
     assert "silent" not in action
     assert action["notify_session_id"] == "session-1"
+
+
+def _seed_agent_task(dir_path, task_id):
+    store = TaskStore(str(dir_path / "scheduler" / "tasks.json"))
+    store.add_task({
+        "id": task_id,
+        "name": task_id,
+        "enabled": True,
+        "created_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "schedule": {"type": "interval", "seconds": 3600},
+        "action": {"type": "agent_task", "task_description": "x"},
+    })
+
+
+def test_list_aggregates_every_agent_and_tags_the_owner(tmp_path):
+    """Without an explicit agent_id the list spans the whole team, and each task
+    carries the id of the Agent whose store it came from."""
+    primary = tmp_path / "primary"
+    research = tmp_path / "research"
+    _seed_agent_task(primary, "p-task")
+    _seed_agent_task(research, "r-task")
+
+    registry = types.SimpleNamespace(
+        list=lambda include_disabled=False: [
+            types.SimpleNamespace(id="primary"),
+            types.SimpleNamespace(id="research"),
+        ]
+    )
+    roots = {"primary": str(primary), "research": str(research)}
+
+    with patch("channel.web.web_channel._require_auth"), \
+         patch("channel.web.web_channel.web.header"), \
+         patch("channel.web.web_channel.web.input", return_value=types.SimpleNamespace(agent_id="")), \
+         patch("agent.registry.get_agent_registry", return_value=registry), \
+         patch("channel.web.web_channel._get_workspace_root", side_effect=lambda agent_id=None: roots[agent_id]):
+        response = json.loads(web_channel.SchedulerHandler().GET())
+
+    assert response["status"] == "success"
+    owners = {task["id"]: task["agent_id"] for task in response["tasks"]}
+    assert owners == {"p-task": "primary", "r-task": "research"}
+
+
+def test_list_scopes_to_a_single_agent_when_asked(tmp_path):
+    primary = tmp_path / "primary"
+    research = tmp_path / "research"
+    _seed_agent_task(primary, "p-task")
+    _seed_agent_task(research, "r-task")
+
+    with patch("channel.web.web_channel._require_auth"), \
+         patch("channel.web.web_channel.web.header"), \
+         patch("channel.web.web_channel.web.input", return_value=types.SimpleNamespace(agent_id="research")), \
+         patch("channel.web.web_channel._get_workspace_root", return_value=str(research)):
+        response = json.loads(web_channel.SchedulerHandler().GET())
+
+    assert response["status"] == "success"
+    assert [task["id"] for task in response["tasks"]] == ["r-task"]
+    assert response["tasks"][0]["agent_id"] == "research"

@@ -5660,10 +5660,33 @@ class SchedulerHandler:
         try:
             from agent.tools.scheduler.task_store import TaskStore
             params = web.input(agent_id='')
-            workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
-            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
-            store = TaskStore(store_path)
-            tasks = store.list_tasks()
+            requested = _request_agent_id(params)
+
+            # An explicit agent_id scopes the list to that Agent (unchanged
+            # behaviour for callers that already target one). Without it the
+            # list aggregates every Agent's tasks so the console shows the whole
+            # team's schedule, each task tagged with the Agent that owns it —
+            # the owner is otherwise only implicit in which file it lives in.
+            if requested:
+                agents = [requested]
+            else:
+                from agent.registry import get_agent_registry
+                agents = [p.id for p in get_agent_registry().list(include_disabled=False)]
+
+            tasks = []
+            for agent_id in agents:
+                try:
+                    workspace_root = _get_workspace_root(agent_id=agent_id)
+                except Exception as e:
+                    logger.debug(f"[WebChannel] Scheduler skip agent {agent_id}: {e}")
+                    continue
+                store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+                for task in TaskStore(store_path).list_tasks():
+                    # Tag the owner so the frontend can show it and so write
+                    # operations (run/toggle/update/delete) route back to the
+                    # right Agent's store rather than defaulting to the default.
+                    task["agent_id"] = agent_id
+                    tasks.append(task)
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler API error: {e}")
