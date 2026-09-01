@@ -21,6 +21,7 @@ const I18N = {
         agents_name_required: '请填写名称',
         agents_stale: '列表已更新，请刷新后重试',
         agents_id_placeholder: '留空则自动生成',
+        agents_id_tip: '智能体的唯一标识，创建后不可修改。仅支持小写英文、数字和连字符（-），如 coding-agent。留空则根据名称自动生成。',
         agents_avatar: '头像',
         agents_tab_profile: '概况',
         agents_tab_skills: '能力',
@@ -48,6 +49,12 @@ const I18N = {
         agents_model_default_hint: '默认使用主模型，在「模型配置」中修改。',
         agents_skills_all: '使用全部已安装技能',
         agents_skills_pick: '只启用勾选的技能',
+        agents_knowledge: '知识库',
+        agents_knowledge_shared: '共享',
+        agents_knowledge_own: '独立',
+        agents_knowledge_hint: '共享：与团队读写同一个知识库；独立：拥有专属知识库，互不影响。',
+        agents_knowledge_working: '处理中…',
+        agents_knowledge_failed: '切换失败',
         agents_empty: '还没有智能体。创建一个，开始组团队。',
         agents_pick_tip: '切换当前智能体',
         team_invite: '添加到当前会话',
@@ -385,6 +392,7 @@ const I18N = {
         agents_name_required: '請填寫名稱',
         agents_stale: '列表已更新，請重新整理後再試',
         agents_id_placeholder: '留空則自動產生',
+        agents_id_tip: '智慧體的唯一識別碼，建立後不可修改。僅支援小寫英文、數字與連字號（-），如 coding-agent。留空則依名稱自動產生。',
         agents_avatar: '頭像',
         agents_tab_profile: '概況',
         agents_tab_skills: '能力',
@@ -412,6 +420,12 @@ const I18N = {
         agents_model_default_hint: '預設使用主模型，於「模型設定」中修改。',
         agents_skills_all: '使用全部已安裝技能',
         agents_skills_pick: '只啟用勾選的技能',
+        agents_knowledge: '知識庫',
+        agents_knowledge_shared: '共享',
+        agents_knowledge_own: '獨立',
+        agents_knowledge_hint: '共享：與團隊讀寫同一個知識庫；獨立：擁有專屬知識庫，互不影響。',
+        agents_knowledge_working: '處理中…',
+        agents_knowledge_failed: '切換失敗',
         agents_empty: '還沒有智慧體。建立一個，開始組團隊。',
         agents_pick_tip: '切換當前智能體',
         team_invite: '新增到目前會話',
@@ -744,6 +758,7 @@ const I18N = {
         agents_name_required: 'Please enter a name',
         agents_stale: 'The list changed; please refresh and try again',
         agents_id_placeholder: 'Auto-generated if left blank',
+        agents_id_tip: 'A unique identifier, fixed once created. Lowercase letters, digits and hyphens (-) only, e.g. ops-agent. Left blank, it is derived from the name.',
         agents_avatar: 'Avatar',
         agents_tab_profile: 'Profile',
         agents_tab_skills: 'Skills',
@@ -770,6 +785,12 @@ const I18N = {
         agents_model_follows_global: 'Follow the configured model',
         agents_model_default_hint: 'Uses the primary model. Change it under Model config.',
         agents_skills_all: 'Use every installed skill',
+        agents_knowledge: 'Knowledge base',
+        agents_knowledge_shared: 'Shared',
+        agents_knowledge_own: 'Own',
+        agents_knowledge_hint: 'Shared: read and write the same knowledge base as the team. Own: a private base, isolated from others.',
+        agents_knowledge_working: 'Working…',
+        agents_knowledge_failed: 'Switch failed',
         agents_skills_pick: 'Only the skills checked below',
         agents_empty: 'No Agents yet. Create one to start a team.',
         agents_pick_tip: 'Switch current Agent',
@@ -1150,6 +1171,9 @@ function applyI18n() {
     });
     document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
         el.setAttribute('aria-label', t(el.dataset['i18nAriaLabel']));
+    });
+    document.querySelectorAll('[data-i18n-tip]').forEach(el => {
+        el.setAttribute('data-tip', t(el.dataset['i18nTip']));
     });
     document.querySelectorAll('[data-tip-key]').forEach(el => {
         el.setAttribute('data-tooltip', t(el.dataset.tipKey));
@@ -1791,6 +1815,15 @@ function selectAgentDetailTab(tab) {
     if (tab === 'files') loadAgentCoreFile();
 }
 
+// A field label followed by a small info icon whose help shows on hover, so a
+// form stays compact instead of carrying a paragraph of hint under every field.
+function fieldLabelWithTip(label, tip) {
+    return `<div class="agent-field-label-row">
+        <label class="agent-field-label">${escapeHtml(label)}</label>
+        <span class="agent-field-tip" data-tip="${escapeHtml(tip)}"><i class="fas fa-circle-info"></i></span>
+    </div>`;
+}
+
 function renderAgentDetail() {
     const agent = findAgent(selectedAdminAgentId);
     const identity = document.getElementById('agent-detail-identity');
@@ -1813,11 +1846,10 @@ function renderAgentDetail() {
             <input id="agent-edit-name" value="${escapeHtml(agent.name)}" class="agent-input">
         </div>
         <div class="agent-field">
-            <label class="agent-field-label">${escapeHtml(t('agents_description'))}</label>
+            ${fieldLabelWithTip(t('agents_description'), t('agents_description_hint'))}
             <textarea id="agent-edit-description" rows="4"
                    placeholder="${escapeHtml(t('agents_description_placeholder'))}"
                    class="agent-input agent-textarea">${escapeHtml(agent.description || '')}</textarea>
-            <p class="agent-field-hint">${escapeHtml(t('agents_description_hint'))}</p>
         </div>
         <div class="agent-field">
             <label class="agent-field-label">${escapeHtml(t('agents_model'))}</label>
@@ -1832,6 +1864,21 @@ function renderAgentDetail() {
                        <div class="cfg-dropdown-menu"></div>
                    </div>`}
         </div>
+        ${isDefault ? '' : `
+        <div class="agent-field">
+            ${fieldLabelWithTip(t('agents_knowledge'), t('agents_knowledge_hint'))}
+            <div class="flex items-center gap-3">
+                <div id="agent-knowledge-toggle" class="agent-seg" role="group">
+                    <button type="button" class="agent-seg-btn ${agent.knowledge_mode !== 'own' ? 'active' : ''}" data-mode="shared" onclick="setAgentKnowledgeMode('${escapeHtml(agent.id)}','shared')">
+                        <i class="fas fa-users mr-1"></i>${escapeHtml(t('agents_knowledge_shared'))}
+                    </button>
+                    <button type="button" class="agent-seg-btn ${agent.knowledge_mode === 'own' ? 'active' : ''}" data-mode="own" onclick="setAgentKnowledgeMode('${escapeHtml(agent.id)}','own')">
+                        <i class="fas fa-box-archive mr-1"></i>${escapeHtml(t('agents_knowledge_own'))}
+                    </button>
+                </div>
+                <span id="agent-knowledge-status" class="agent-field-hint" style="margin-top:0"></span>
+            </div>
+        </div>`}
         <div class="agent-detail-actions">
             <button type="button" onclick="saveAgentProfile()" class="agent-btn agent-btn-primary">${escapeHtml(t('save'))}</button>
             <button type="button" onclick="startChatWithAgent('${escapeHtml(agent.id)}')" class="agent-btn agent-btn-ghost">${escapeHtml(t('agents_chat'))}</button>
@@ -1924,6 +1971,42 @@ function saveAgentSkills(agent, skills) {
     });
 }
 
+// Switch an Agent between the shared knowledge base and its own. This is a
+// filesystem toggle (symlink vs a real knowledge/ dir), so it applies at once
+// rather than waiting for the profile "save".
+async function setAgentKnowledgeMode(agentId, mode) {
+    const agent = findAgent(agentId);
+    if (!agent || agent.knowledge_mode === mode) return;
+    const status = document.getElementById('agent-knowledge-status');
+    const paintActive = (m) => document.querySelectorAll('#agent-knowledge-toggle .agent-seg-btn')
+        .forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    const prev = agent.knowledge_mode || 'shared';
+    agent.knowledge_mode = mode;  // optimistic
+    paintActive(mode);
+    if (status) status.textContent = t('agents_knowledge_working') || '...';
+    try {
+        const res = await fetch('/api/agents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_knowledge_mode', id: agentId, mode }),
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            agent.knowledge_mode = (data.mode || mode);
+            paintActive(agent.knowledge_mode);
+            if (status) status.textContent = '';
+        } else {
+            agent.knowledge_mode = prev;  // roll back
+            paintActive(prev);
+            if (status) status.textContent = data.message || t('agents_knowledge_failed') || 'Failed';
+        }
+    } catch (e) {
+        agent.knowledge_mode = prev;
+        paintActive(prev);
+        if (status) status.textContent = t('agents_knowledge_failed') || 'Failed';
+    }
+}
+
 function renderAgentSkillsPane() {
     const pane = document.getElementById('agent-detail-skills');
     const agent = findAgent(selectedAdminAgentId);
@@ -1975,6 +2058,40 @@ function renderAgentSkillsPane() {
     });
 }
 
+// Held between opening the create modal and a successful create: the chosen
+// avatar has nowhere to live server-side until the Agent exists, so we keep the
+// File and its preview URL client-side and upload once creation returns.
+let _pendingCreateAvatar = null;
+let _createKnowledgeMode = 'shared';
+
+// The create modal's avatar picker: same look as the edit one, but the upload
+// is staged locally (preview from an object URL) instead of POSTed immediately.
+function renderCreateAvatarPicker() {
+    const box = document.getElementById('agent-create-avatar');
+    if (!box) return;
+    const preview = _pendingCreateAvatar
+        ? `<img class="agent-avatar agent-avatar-56" src="${_pendingCreateAvatar.url}" alt="">`
+        : agentAvatarHTML(null, 56);
+    box.innerHTML = `
+        <div class="agent-avatar-picker-preview">${preview}</div>
+        <div class="agent-avatar-picker-body">
+            <button type="button" class="agent-avatar-upload">
+                <i class="fas fa-arrow-up-from-bracket"></i><span>${escapeHtml(t('agents_avatar_upload'))}</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            </button>
+        </div>`;
+    const upload = box.querySelector('.agent-avatar-upload');
+    const input = upload.querySelector('input');
+    upload.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (_pendingCreateAvatar && _pendingCreateAvatar.url) URL.revokeObjectURL(_pendingCreateAvatar.url);
+        _pendingCreateAvatar = { file, url: URL.createObjectURL(file) };
+        renderCreateAvatarPicker();
+    });
+}
+
 function openAgentCreateForm() {
     const form = document.getElementById('agent-create-form');
     if (!form) return;
@@ -1986,9 +2103,24 @@ function openAgentCreateForm() {
     [name, id, description].forEach(el => { if (el) el.value = ''; });
     document.getElementById('agent-create-status').textContent = '';
 
-    // The Agent does not exist yet, so it wears the product logo; an uploaded
-    // image is offered in the detail panel once it has a home to be stored in.
-    renderAvatarPicker('agent-create-avatar', null, null);
+    // The Agent has no home to store an avatar in yet, so the upload is held in
+    // memory and previewed locally; it is POSTed the moment creation succeeds.
+    _pendingCreateAvatar = null;
+    renderCreateAvatarPicker();
+
+    // Knowledge defaults to shared; reset the segmented control on every open.
+    _createKnowledgeMode = 'shared';
+    document.querySelectorAll('#agent-create-knowledge .agent-seg-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === 'shared');
+        if (!b.dataset.bound) {
+            b.dataset.bound = '1';
+            b.addEventListener('click', () => {
+                _createKnowledgeMode = b.dataset.mode;
+                document.querySelectorAll('#agent-create-knowledge .agent-seg-btn')
+                    .forEach(x => x.classList.toggle('active', x === b));
+            });
+        }
+    });
 
     const clone = document.getElementById('agent-create-clone');
     if (clone) {
@@ -2012,6 +2144,8 @@ function openAgentCreateForm() {
 
 function closeAgentCreateForm() {
     document.getElementById('agent-create-form')?.classList.add('hidden');
+    if (_pendingCreateAvatar && _pendingCreateAvatar.url) URL.revokeObjectURL(_pendingCreateAvatar.url);
+    _pendingCreateAvatar = null;
 }
 
 document.addEventListener('click', (e) => {
@@ -2052,14 +2186,21 @@ function createAgentWorkspace() {
             name,
             description: document.getElementById('agent-create-description')?.value.trim() || '',
             clone_from: getDropdownValue(document.getElementById('agent-create-clone')) || null,
+            knowledge_mode: _createKnowledgeMode,
             revision: rosterRevision,
         }),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') {
             throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Create failed'));
         }
+        if (data.revision) rosterRevision = data.revision;
+        // Now that the workspace exists, push the staged avatar (if any) before
+        // reloading, so the roster arrives already carrying the new image.
+        const avatarStep = _pendingCreateAvatar
+            ? uploadAgentAvatar(id, _pendingCreateAvatar.file).catch(() => {})
+            : Promise.resolve();
         closeAgentCreateForm();
-        return loadAgentCatalog().then(() => openAgentDetail(id));
+        return avatarStep.then(() => loadAgentCatalog()).then(() => openAgentDetail(id));
     }).catch(err => { status.textContent = err.message; });
 }
 
@@ -2609,7 +2750,7 @@ function channelBoundAgentId(channelType) {
     return row ? row.agent_id : '';
 }
 
-let memoryAgentId = '';
+let memoryAgentId = localStorage.getItem('cow_memory_agent') || '';
 
 function viewingMemoryAgentId() {
     return memoryAgentId || activeAgentId || defaultAgentId;
@@ -2626,6 +2767,7 @@ function renderMemoryAgentSelect() {
 
 function selectMemoryAgent(agentId) {
     memoryAgentId = agentId;
+    localStorage.setItem('cow_memory_agent', agentId);
     closeMemoryViewer();
     loadMemoryView(1);
 }
@@ -11587,6 +11729,12 @@ navigateTo = function(viewId) {
     else if (viewId === 'memory') {
         document.getElementById('memory-panel-viewer').classList.add('hidden');
         document.getElementById('memory-panel-list').classList.remove('hidden');
+        // Keep the last viewed Agent across refreshes, but drop it if that
+        // Agent has since been deleted so we don't point at a ghost.
+        if (memoryAgentId && agentCatalog.length && !agentCatalog.some(a => a.id === memoryAgentId)) {
+            memoryAgentId = '';
+            localStorage.removeItem('cow_memory_agent');
+        }
         if (!memoryAgentId) memoryAgentId = activeAgentId || defaultAgentId;
         renderMemoryAgentSelect();
         switchMemoryTab('files');
@@ -11608,13 +11756,51 @@ const KNOWLEDGE_IMPORT_MAX_FILES = 100;
 const KNOWLEDGE_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE = 200 * 1024 * 1024;
 
+// Which Agent's knowledge base the page is viewing. Persisted like the memory
+// page's selector so a refresh keeps the last choice. An Agent on "shared" mode
+// resolves to the shared base on the backend, so this simply scopes the view.
+let knowledgeAgentId = localStorage.getItem('cow_knowledge_agent') || '';
+
+function viewingKnowledgeAgentId() {
+    return knowledgeAgentId || activeAgentId || defaultAgentId;
+}
+
+// Append the viewed Agent to a knowledge URL. The global fetch wrapper only
+// injects activeAgentId when no agent_id is present, so an explicit one wins.
+function _kbUrl(path) {
+    const joiner = path.includes('?') ? '&' : '?';
+    return `${path}${joiner}agent_id=${encodeURIComponent(viewingKnowledgeAgentId())}`;
+}
+
+function renderKnowledgeAgentSelect() {
+    const el = document.getElementById('knowledge-agent-select');
+    if (!el) return;
+    const current = viewingKnowledgeAgentId();
+    const list = agentCatalog.length ? agentCatalog : enabledAgents();
+    const options = list.map(a => ({ value: a.id, label: a.name || a.id, agent: a }));
+    initDropdown(el, options, current, (value) => selectKnowledgeAgent(value), { withAvatar: true });
+}
+
+function selectKnowledgeAgent(agentId) {
+    knowledgeAgentId = agentId;
+    localStorage.setItem('cow_knowledge_agent', agentId);
+    loadKnowledgeView();
+}
+
 function loadKnowledgeView(targetPath) {
     // Reset to docs tab
     switchKnowledgeTab('docs');
     _knowledgeGraphLoaded = false;
     _knowledgeCurrentFile = null;
 
-    fetch('/api/knowledge/list').then(r => r.json()).then(data => {
+    // Drop a deleted Agent selection so we never point at a ghost.
+    if (knowledgeAgentId && agentCatalog.length && !agentCatalog.some(a => a.id === knowledgeAgentId)) {
+        knowledgeAgentId = '';
+        localStorage.removeItem('cow_knowledge_agent');
+    }
+    renderKnowledgeAgentSelect();
+
+    fetch(_kbUrl('/api/knowledge/list')).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         initKnowledgeImportDropZone();
 
@@ -11788,7 +11974,7 @@ async function dispatchKnowledgeAction(action, payload, openPathResolver) {
         const response = await fetch('/api/knowledge/action', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action, payload}),
+            body: JSON.stringify({action, payload, agent_id: viewingKnowledgeAgentId()}),
         });
         const result = await response.json();
         if (result.status !== 'success') {
@@ -12061,7 +12247,7 @@ async function importKnowledgeDocuments(files, targetCategory) {
     supported.forEach(file => formData.append('files', file, file.name));
     _setKnowledgeStatus(currentLang === 'zh' ? '正在导入...' : 'Importing...', false, true);
     try {
-        const response = await fetch('/api/knowledge/import', { method: 'POST', body: formData });
+        const response = await fetch(_kbUrl('/api/knowledge/import'), { method: 'POST', body: formData });
         const result = await response.json();
         if (result.status !== 'success') {
             _setKnowledgeStatus(result.message || (currentLang === 'zh' ? '导入失败' : 'Import failed'), true);
@@ -12257,7 +12443,7 @@ function openKnowledgeFile(path, title) {
     // Immediately hide placeholder
     document.getElementById('knowledge-content-placeholder').classList.add('hidden');
 
-    fetch(`/api/knowledge/read?path=${encodeURIComponent(path)}`).then(r => r.json()).then(data => {
+    fetch(_kbUrl(`/api/knowledge/read?path=${encodeURIComponent(path)}`)).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const viewer = document.getElementById('knowledge-content-viewer');
         document.getElementById('knowledge-viewer-title').textContent = title;
@@ -12323,7 +12509,7 @@ function loadKnowledgeGraph() {
 
     Promise.all([
         ensureD3Loaded(),
-        fetch('/api/knowledge/graph').then(r => r.json()),
+        fetch(_kbUrl('/api/knowledge/graph')).then(r => r.json()),
     ]).then(([, data]) => {
         const nodes = data.nodes || [];
         const links = data.links || [];

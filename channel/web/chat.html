@@ -685,23 +685,29 @@
                     </aside>
 
                     <div id="agent-create-form" class="agent-modal hidden">
-                        <div class="agent-modal-card">
+                        <div class="agent-modal-card agent-modal-card-wide">
                             <h3 class="agent-modal-title" data-i18n="agents_create">创建智能体</h3>
                             <div class="agent-modal-body">
-                                <div class="agent-field">
-                                    <label class="agent-field-label" data-i18n="agents_avatar">头像</label>
-                                    <div id="agent-create-avatar" class="agent-avatar-picker"></div>
-                                </div>
                                 <div class="agent-field">
                                     <label class="agent-field-label" data-i18n="agents_name">名称</label>
                                     <input id="agent-create-name" data-i18n-placeholder="agents_name_placeholder" placeholder="智能体名称" class="agent-input">
                                 </div>
                                 <div class="agent-field">
-                                    <label class="agent-field-label">ID</label>
+                                    <label class="agent-field-label" data-i18n="agents_avatar">头像</label>
+                                    <div id="agent-create-avatar" class="agent-avatar-picker"></div>
+                                </div>
+                                <div class="agent-field">
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label">ID</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_id_tip"><i class="fas fa-circle-info"></i></span>
+                                    </div>
                                     <input id="agent-create-id" data-i18n-placeholder="agents_id_placeholder" placeholder="留空则自动生成" class="agent-input font-mono">
                                 </div>
                                 <div class="agent-field">
-                                    <label class="agent-field-label" data-i18n="agents_description">职责</label>
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label" data-i18n="agents_description">职责</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_description_hint"><i class="fas fa-circle-info"></i></span>
+                                    </div>
                                     <textarea id="agent-create-description" rows="3" data-i18n-placeholder="agents_description_placeholder" placeholder="该智能体负责哪些工作、在什么场景被使用" class="agent-input agent-textarea"></textarea>
                                 </div>
                                 <div class="agent-field">
@@ -712,6 +718,20 @@
                                             <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
                                         </div>
                                         <div class="cfg-dropdown-menu"></div>
+                                    </div>
+                                </div>
+                                <div class="agent-field">
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label" data-i18n="agents_knowledge">知识库</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_knowledge_hint"><i class="fas fa-circle-info"></i></span>
+                                    </div>
+                                    <div id="agent-create-knowledge" class="agent-seg" role="group">
+                                        <button type="button" class="agent-seg-btn active" data-mode="shared">
+                                            <i class="fas fa-users mr-1"></i><span data-i18n="agents_knowledge_shared">共享</span>
+                                        </button>
+                                        <button type="button" class="agent-seg-btn" data-mode="own">
+                                            <i class="fas fa-box-archive mr-1"></i><span data-i18n="agents_knowledge_own">独立</span>
+                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -1212,6 +1232,14 @@
                                 <div class="flex items-center gap-2">
                                     <span id="knowledge-stats" class="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline"></span>
                                     <span id="knowledge-action-status" class="text-xs opacity-0 transition-opacity duration-200"></span>
+                                    <div id="knowledge-agent-select" class="cfg-dropdown cfg-dropdown-avatar cfg-dropdown-sm" tabindex="0" style="width: 150px;">
+                                        <div class="cfg-dropdown-selected">
+                                            <span class="cfg-dropdown-face"></span>
+                                            <span class="cfg-dropdown-text">--</span>
+                                            <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                        </div>
+                                        <div class="cfg-dropdown-menu"></div>
+                                    </div>
                                     <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
                                         <button id="knowledge-tab-docs" onclick="switchKnowledgeTab('docs')"
                                                 class="knowledge-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">

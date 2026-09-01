@@ -3127,6 +3127,7 @@
     backdrop-filter: blur(2px);
 }
 .agent-modal.hidden { display: none; }
+.agent-modal-card-wide { width: min(560px, calc(100% - 32px)) !important; }
 .agent-modal-card {
     width: min(460px, calc(100% - 32px));
     max-height: calc(100vh - 48px);
@@ -3189,6 +3190,61 @@
     font-size: 13px; color: #94a3b8; background: #f8fafc;
 }
 .dark .agent-input-locked { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.03); }
+
+/* Segmented two-way switch (e.g. shared vs own knowledge base). Kept compact
+   so it reads as an inline control rather than a heavy toolbar. */
+.agent-seg {
+    display: inline-flex; gap: 2px; padding: 2px;
+    border-radius: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;
+}
+.dark .agent-seg { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
+.agent-seg-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 4px 12px; height: 26px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 500; color: #64748b; background: transparent;
+    transition: background .15s, color .15s;
+}
+.agent-seg-btn i { font-size: 11px; }
+.dark .agent-seg-btn { color: #94a3b8; }
+.agent-seg-btn:hover { color: #334155; }
+.dark .agent-seg-btn:hover { color: #cbd5e1; }
+.agent-seg-btn.active {
+    background: #fff; color: #16a34a;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.dark .agent-seg-btn.active { background: rgba(255,255,255,.12); color: #86efac; }
+
+/* An info icon that sits after a field label and reveals its help on hover,
+   replacing a permanent paragraph of hint text below the field. */
+.agent-field-label-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.agent-field-label-row .agent-field-label { margin-bottom: 0; }
+.agent-field-tip {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; color: #cbd5e1; cursor: help; font-size: 11px;
+}
+.agent-field-tip:hover { color: #94a3b8; }
+.dark .agent-field-tip { color: #64748b; }
+.dark .agent-field-tip:hover { color: #94a3b8; }
+.agent-field-tip::after {
+    content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px);
+    transform: translateX(-50%) translateY(4px);
+    width: max-content; max-width: 260px; padding: 8px 10px;
+    border-radius: 8px; background: #1e293b; color: #f1f5f9;
+    font-size: 11px; font-weight: 400; line-height: 1.5; text-align: left; white-space: normal;
+    opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 50;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18);
+}
+.agent-field-tip::before {
+    content: ""; position: absolute; left: 50%; bottom: calc(100% + 3px);
+    transform: translateX(-50%) translateY(4px);
+    border: 5px solid transparent; border-top-color: #1e293b;
+    opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 50;
+}
+.agent-field-tip:hover::after, .agent-field-tip:hover::before {
+    opacity: 1; transform: translateX(-50%) translateY(0);
+}
+.dark .agent-field-tip::after { background: #0f172a; }
+.dark .agent-field-tip::before { border-top-color: #0f172a; }
 
 /* Avatar picker: a live preview beside an emoji grid and an upload button,
    all in the page palette. */
