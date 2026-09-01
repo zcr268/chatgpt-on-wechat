@@ -458,6 +458,16 @@ class ToolManager:
         with self._mcp_registry._registry_lock:
             client = self._mcp_registry._clients.pop(server_name, None)
         if client is not None:
+            # This client may be pooled and shared with other Agents on the same
+            # mcp.json. Drop the matching pool entry so a later reload re-boots a
+            # fresh subprocess rather than handing out the one we're stopping.
+            try:
+                pool = self._mcp_registry._shared_pool
+                with self._mcp_registry._shared_pool_lock:
+                    for k in [k for k, v in pool.items() if v is client]:
+                        pool.pop(k, None)
+            except Exception:
+                pass
             try:
                 client.shutdown()
             except Exception as e:
@@ -486,12 +496,29 @@ class ToolManager:
             # Let the OAuth web callback bring a server online once authorized.
             set_reload_callback(self.reload_mcp_server)
 
+            mcp_json_path = self._mcp_json_path()
+
             for cfg in mcp_servers_config:
                 server_name = cfg.get("name", "<unnamed>")
                 try:
-                    client = McpClient(cfg)
-                    if not client.initialize():
-                        if getattr(client, "needs_auth", False):
+                    # Reuse a subprocess already booted from the *same* mcp.json
+                    # with the *same* config, so several Agents sharing one
+                    # mcp.json don't each fork their own copy of every server.
+                    # Booting is serialized per key, so concurrent loader threads
+                    # racing on the same server end up sharing one subprocess.
+                    share_key = registry.shared_key(mcp_json_path, server_name, cfg)
+                    boot_failure = {}
+
+                    def _boot():
+                        c = McpClient(cfg)
+                        if c.initialize():
+                            return c
+                        boot_failure["needs_auth"] = getattr(c, "needs_auth", False)
+                        return None
+
+                    client, reused = registry.get_or_boot_shared(share_key, _boot)
+                    if client is None:
+                        if boot_failure.get("needs_auth"):
                             self._mcp_status[server_name] = "needs_auth"
                             logger.info(
                                 f"[MCP] Server '{server_name}' needs authorization — "
@@ -521,10 +548,18 @@ class ToolManager:
                     with registry._registry_lock:
                         registry._clients[server_name] = client
                     self._mcp_status[server_name] = "ready"
-                    logger.info(
-                        f"[MCP] Server '{server_name}' ready — "
-                        f"{len(added)} tool(s): {added}"
-                    )
+                    if reused:
+                        # A shared subprocess this Agent attached to; log quietly
+                        # so N Agents sharing one mcp.json don't repeat the line.
+                        logger.debug(
+                            f"[MCP] Server '{server_name}' reused — "
+                            f"{len(added)} tool(s) attached"
+                        )
+                    else:
+                        logger.info(
+                            f"[MCP] Server '{server_name}' ready — "
+                            f"{len(added)} tool(s): {added}"
+                        )
                 except Exception as e:
                     self._mcp_status[server_name] = "failed"
                     logger.warning(f"[MCP] Server '{server_name}' load failed: {e}")
