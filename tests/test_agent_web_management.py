@@ -21,10 +21,10 @@ def test_web_backend_exposes_agent_and_core_file_routes():
 def test_console_has_agent_cards_not_a_tenant_switcher():
     html = _read("channel/web/chat.html")
     assert 'id="agent-selector"' not in html
-    # The list lives under Settings rather than in the sidebar: managing the
-    # team is a setup task, not somewhere to spend the day.
-    assert 'id="config-panel-team"' in html
-    assert 'data-view="agents"' not in html
+    # The team is a top-level view of its own now, not a Settings panel: it is
+    # where you compose and manage the Agents you work with.
+    assert 'data-view="agents"' in html
+    assert 'id="view-agents"' in html
     assert 'id="agents-grid"' in html
     assert 'id="agent-core-editor"' in html
     assert 'id="composer-agent-btn"' in html
