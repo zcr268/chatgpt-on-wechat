@@ -264,8 +264,7 @@ class TelegramChannel(ChatChannel):
             from bridge.bridge import Bridge
             agent_bridge = Bridge().get_agent_bridge()
             agent_id = agent_bridge.agent_router.resolve(
-                channel_type=self.channel_type,
-                conversation_ids=(session_id, str(update.effective_chat.id)),
+                explicit_agent_id=getattr(self, "bound_agent_id", "") or None,
             )
             scoped_session_id = agent_bridge._cancel_key(
                 agent_id, session_id, agent_bridge.agent_registry.default_agent_id

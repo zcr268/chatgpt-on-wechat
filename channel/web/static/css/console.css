@@ -1138,9 +1138,65 @@
     font-size: 12px;
     font-weight: 400;
 }
+/* Small trailing pill after an avatar option's name, e.g. a "default" marker. */
+.cfg-dropdown-badge {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+.dark .cfg-dropdown-badge {
+    background: rgba(255,255,255,.08);
+    color: #94a3b8;
+}
 .dark .cfg-dropdown-hint {
     color: #64748b;
 }
+/* Multi-select variant: the trigger shows overlapping avatars of the chosen
+   members instead of a single face, and each row is a checklist item whose
+   tick appears only when selected. Selecting a row does NOT close the menu. */
+.cfg-dropdown-faces {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+.cfg-dropdown-faces:empty { display: none; }
+.cfg-dropdown-faces .agent-avatar {
+    width: 18px; height: 18px; border-radius: 50%;
+    margin-left: -6px;
+    box-shadow: 0 0 0 2px #ffffff;
+}
+.cfg-dropdown-faces .agent-avatar:first-child { margin-left: 0; }
+.dark .cfg-dropdown-faces .agent-avatar { box-shadow: 0 0 0 2px #1e1e1e; }
+.cfg-dropdown-multi .cfg-dropdown-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cfg-dropdown-check.active { font-weight: 500; }
+/* "+N" pill trailing the overlapping avatars when the team has more members
+   than the trigger shows faces for. Sized to sit inline with the 18px faces. */
+.cfg-dropdown-more {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 2px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+}
+.dark .cfg-dropdown-more { background: rgba(255,255,255,.1); color: #94a3b8; }
+.cfg-dropdown-empty {
+    color: #94a3b8;
+    cursor: default;
+    justify-content: center;
+    font-size: 0.8125rem;
+}
+.cfg-dropdown-empty:hover { background: transparent; }
 .cfg-dropdown-item.active .cfg-dropdown-hint {
     /* Tint the hint toward the brand colour on the active row so it doesn't
        fight with the highlighted label tone. */
@@ -3423,6 +3479,8 @@
     border: 1px solid #e2e8f0; background: #fff; font-size: 13px;
 }
 .dark .channel-agent-bind select { background: #222; border-color: rgba(255,255,255,.1); color: #e2e8f0; }
+/* Bind-agent avatar dropdown fills the row like the old <select> did. */
+.channel-agent-bind .cfg-dropdown { flex: 1 1 auto; min-width: 0; width: auto !important; }
 
 @media (max-width: 900px) {
     .agent-detail { width: 100%; position: absolute; inset: 0; z-index: 20; }

@@ -42,6 +42,91 @@ def _parse_channel_type(raw) -> list:
     return []
 
 
+def _has_web_entry(channel_names: list) -> bool:
+    """True if the web console is already in the startup list (string or instance)."""
+    from channel.channel_instances import ChannelInstance
+    for entry in channel_names:
+        if isinstance(entry, ChannelInstance):
+            if entry.channel_type == "web":
+                return True
+        elif entry == "web":
+            return True
+    return False
+
+
+def _resolve_startup_channels(raw_channel):
+    """Startup channel list = config.json's channels plus team.json's instances,
+    de-duplicated by channel *type* for multi-instance-ready types.
+
+    config.json stays the source of truth for anything it configures: its
+    ``channel_type`` list (dingtalk, wecom, ...) always starts, exactly as a
+    legacy install expects. team.json's ``channel_instances`` carries the
+    explicit multi-instance bots (feishu today), each with its own credentials
+    and Agent binding.
+
+    The subtlety is feishu: config.json's flat ``feishu`` entry and a
+    ``channel_instances`` feishu record are the *same kind of connection*. Once
+    team.json manages feishu (at least one feishu instance exists), feishu's
+    single source of truth is ``channel_instances`` — the flat config entry is
+    dropped so the same bot is not started twice on one websocket. This holds no
+    matter which Agent the instances are bound to: rebinding every feishu
+    instance away from the default Agent must NOT resurrect config.json's feishu
+    as a stray default-bound bot. Non-multi-instance types are never managed by
+    instances, so config keeps starting them untouched.
+
+    A legacy single-Agent install has no team.json / no channel_instances and
+    this returns exactly ``_parse_channel_type(raw_channel)`` as before.
+    """
+    from channel.channel_instances import MULTI_INSTANCE_READY, _normalize_type
+
+    names = _parse_channel_type(raw_channel)
+
+    instances = []
+    try:
+        from agent import team
+        from channel.channel_instances import resolve_channel_instances
+
+        settings = team.resolve(conf())
+        raw_instances = settings.get("channel_instances")
+        if isinstance(raw_instances, list) and raw_instances:
+            instances = resolve_channel_instances(settings)
+    except Exception as e:
+        logger.warning(
+            f"[App] Failed to resolve channel_instances, using config.json "
+            f"channel_type only: {e}"
+        )
+        instances = []
+
+    # Types now owned by channel_instances (feishu, ...). Drop config.json's
+    # flat entry for these so the instance records are the only source.
+    managed_types = {
+        inst.channel_type
+        for inst in instances
+        if inst.channel_type in MULTI_INSTANCE_READY
+    }
+
+    entries = []
+    for name in names:
+        if _normalize_type(name) in managed_types:
+            logger.info(
+                f"[App] channel_type '{name}' is managed by channel_instances; "
+                f"skipping the flat config.json entry to avoid a duplicate bot"
+            )
+            continue
+        entries.append(name)
+
+    if instances:
+        logger.info(
+            f"[App] Starting channel_instances: "
+            f"{[(i.instance_id, i.channel_type, i.agent_id) for i in instances]}"
+        )
+        entries.extend(instances)
+
+    if not entries:
+        entries = ["web"]
+    return entries
+
+
 class ChannelManager:
     """
     Manage the lifecycle of multiple channels running concurrently.
@@ -64,24 +149,53 @@ class ChannelManager:
     def get_channel(self, channel_name: str):
         return self._channels.get(channel_name)
 
+    @staticmethod
+    def _normalize_entry(entry):
+        """Accept both a legacy channel-type string and a ChannelInstance.
+
+        Returns (name, channel_type, factory_kwargs). For a plain string this
+        reproduces the old behavior exactly: name == channel_type and no
+        per-instance overrides. For a ChannelInstance, the registry key is the
+        instance_id, and the factory receives credentials + binding so several
+        instances of one type can coexist.
+        """
+        from channel.channel_instances import ChannelInstance
+
+        if isinstance(entry, ChannelInstance):
+            return (
+                entry.instance_id,
+                entry.channel_type,
+                {
+                    "instance_id": entry.instance_id,
+                    "bound_agent_id": entry.agent_id,
+                    "credentials": entry.credentials or None,
+                    "members": entry.members or None,
+                },
+            )
+        return (entry, entry, {})
+
     def start(self, channel_names: list, first_start: bool = False):
         """
         Create and start one or more channels in sub-threads.
         If first_start is True, plugins and linkai client will also be initialized.
+
+        Each entry may be a legacy channel-type string or a ChannelInstance.
         """
+        entries = [self._normalize_entry(e) for e in channel_names]
+
         # A concurrent path may have started this channel already (saving its
         # config restarts it, connecting it starts it). Overwriting the registry
         # entry below would orphan that instance: nothing holds it any more, yet
         # its connection stays up and keeps consuming events, so every inbound
         # message gets handled twice.
-        for name in channel_names:
+        for name, _ctype, _kw in entries:
             if self._channels.get(name) is not None:
                 logger.warning(f"[ChannelManager] Channel '{name}' is already running, stopping it first")
                 self.stop(name)
 
         with self._lock:
             channels = []
-            for name in channel_names:
+            for name, channel_type, factory_kwargs in entries:
                 # One misconfigured channel (e.g. wechatcom_app without its
                 # corp_id/token/aes_key) must not take the whole process down:
                 # instantiating it can raise while parsing config. The web
@@ -89,7 +203,7 @@ class ChannelManager:
                 # surface the error and let the user fix the config. Skip the
                 # broken channel and keep the rest.
                 try:
-                    ch = channel_factory.create_channel(name)
+                    ch = channel_factory.create_channel(channel_type, **factory_kwargs)
                 except Exception as e:
                     logger.error(f"[ChannelManager] Failed to create channel '{name}', skipping it: {e}")
                     logger.exception(e)
@@ -225,23 +339,58 @@ class ChannelManager:
         except Exception as e:
             logger.warning(f"[ChannelManager] Thread interrupt error for '{name}': {e}")
 
-    def restart(self, new_channel_name: str):
+    def restart(self, new_channel):
         """
-        Restart a single channel with a new channel type.
-        Can be called from any thread (e.g. linkai config callback).
-        """
-        logger.info(f"[ChannelManager] Restarting channel to '{new_channel_name}'...")
-        self.stop(new_channel_name)
-        _clear_singleton_cache(new_channel_name)
-        time.sleep(1)
-        self.start([new_channel_name], first_start=False)
-        logger.info(f"[ChannelManager] Channel restarted to '{new_channel_name}' successfully")
+        Restart a single channel.
+        Can be called from any thread (e.g. remote config callback).
 
-    def add_channel(self, channel_name: str):
+        Accepts a channel-type string or a ChannelInstance. When a bare string
+        names a known explicit instance, its record (binding + credentials) is
+        looked up so the restart keeps its identity instead of falling back to
+        the legacy global-config path.
+        """
+        from channel.channel_instances import ChannelInstance
+
+        entry = new_channel
+        if not isinstance(entry, ChannelInstance):
+            entry = self._resolve_instance_entry(new_channel) or new_channel
+        name = entry.instance_id if isinstance(entry, ChannelInstance) else entry
+        logger.info(f"[ChannelManager] Restarting channel '{name}'...")
+        self.stop(name)
+        _clear_singleton_cache(name)
+        time.sleep(1)
+        self.start([entry], first_start=False)
+        logger.info(f"[ChannelManager] Channel '{name}' restarted successfully")
+
+    @staticmethod
+    def _resolve_instance_entry(name: str):
+        """Return the ChannelInstance stored for *name*, or None.
+
+        Lets a restart/add triggered with a bare id recover the instance's
+        binding and credentials from the roster file. Absent (legacy installs),
+        returns None and the caller keeps the plain-string behavior.
+        """
+        try:
+            from config import conf
+            from channel.channel_instances import get_instance
+            return get_instance(conf(), name)
+        except Exception:
+            return None
+
+    def add_channel(self, channel):
         """
         Dynamically add and start a new channel.
         If the channel is already running, restart it instead.
+
+        ``channel`` may be a legacy channel-type string (single-instance,
+        credentials read from global config) or a ChannelInstance carrying its
+        own id, binding and credentials (one of several instances of a type).
         """
+        from channel.channel_instances import ChannelInstance
+
+        channel_name = (
+            channel.instance_id if isinstance(channel, ChannelInstance) else channel
+        )
         with self._lock:
             if channel_name in self._channels:
                 logger.info(f"[ChannelManager] Channel '{channel_name}' already exists, restarting")
@@ -250,7 +399,7 @@ class ChannelManager:
             return
         logger.info(f"[ChannelManager] Adding channel '{channel_name}'...")
         _clear_singleton_cache(channel_name)
-        self.start([channel_name], first_start=False)
+        self.start([channel], first_start=False)
         logger.info(f"[ChannelManager] Channel '{channel_name}' added successfully")
 
     def remove_channel(self, channel_name: str):
@@ -577,13 +726,15 @@ def run():
         if "--cmd" in sys.argv:
             channel_names = ["terminal"]
         else:
-            channel_names = _parse_channel_type(raw_channel)
-            if not channel_names:
-                channel_names = ["web"]
+            # Multi-instance opt-in: when team.json defines channel_instances,
+            # start those (each with its own credentials + Agent binding).
+            # Otherwise fall back to the legacy channel_type list untouched.
+            channel_names = _resolve_startup_channels(raw_channel)
 
-        # Auto-start web console unless explicitly disabled
+        # Auto-start web console unless explicitly disabled. The web entry stays
+        # a legacy string; only IM channels participate in multi-instance.
         web_console_enabled = conf().get("web_console", True)
-        if web_console_enabled and "web" not in channel_names:
+        if web_console_enabled and not _has_web_entry(channel_names):
             channel_names.append("web")
 
         # Sync builtin skills to workspace before channels start

@@ -42,7 +42,7 @@ def admin(tmp_path):
                 "enabled": True,
             }
         ],
-        "agent_bindings": [],
+        "channel_instances": [],
         "unrelated_setting": "preserved",
     }
     config_path = tmp_path / "config.json"
@@ -196,15 +196,27 @@ def test_delete_agent_removes_roster_entry_and_own_workspace(admin):
     assert not workspace.exists()
 
 
-def test_delete_agent_prunes_bindings_pointing_at_it(admin):
-    service, root, _ = admin
+def test_delete_agent_unbinds_channel_instances_pointing_at_it(admin):
+    service, root, config_path = admin
     service.create_agent("research", "Research")
-    service.set_binding("research", "feishu", "chat-1")
+
+    # Seed a channel instance bound to the Agent about to be deleted, writing it
+    # into the roster wherever the app keeps it (team.json once migrated).
+    settings = {"agent_workspace": str(root)}
+    roster = team.read(settings)
+    roster["channel_instances"] = [
+        {"instance_id": "feishu-ops", "channel_type": "feishu", "agent_id": "research"}
+    ]
+    team.write(settings, roster)
+    service._settings = None
 
     service.delete_agent("research")
 
-    bindings = _saved(root).get("agent_bindings") or []
-    assert all(b.get("agent_id") != "research" for b in bindings)
+    instances = _saved(root).get("channel_instances") or []
+    # The instance survives (the channel is still there) but no longer points at
+    # the deleted Agent, so it falls back to the default.
+    assert any(i.get("instance_id") == "feishu-ops" for i in instances)
+    assert all(i.get("agent_id") != "research" for i in instances)
 
 
 def test_default_agent_cannot_be_deleted(admin):
@@ -280,29 +292,6 @@ def test_a_stale_roster_revision_is_refused(admin):
         service.create_agent(
             "second", "Second", str(root / "second"), revision=stale
         )
-
-
-def test_bindings_are_edited_one_row_at_a_time(admin):
-    service, root, _ = admin
-    service.create_agent("research", "Research", str(root / "research"))
-
-    service.set_binding("research", "feishu", "chat-1")
-    service.set_binding("primary", "wechat")
-    rows = service.snapshot()["bindings"]
-
-    assert {
-        (r["agent_id"], r["channel_type"], r.get("conversation_id")) for r in rows
-    } == {("research", "feishu", "chat-1"), ("primary", "wechat", None)}
-
-    service.set_binding("primary", "feishu", "chat-1")
-    retargeted = service.snapshot()["bindings"]
-    assert len(retargeted) == 2
-    assert {
-        (r["agent_id"], r["channel_type"], r.get("conversation_id")) for r in retargeted
-    } == {("primary", "feishu", "chat-1"), ("primary", "wechat", None)}
-
-    service.remove_binding("feishu", "chat-1")
-    assert [r["channel_type"] for r in service.snapshot()["bindings"]] == ["wechat"]
 
 
 def test_per_agent_asset_selection_round_trips(admin):

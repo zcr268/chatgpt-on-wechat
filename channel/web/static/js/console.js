@@ -65,8 +65,11 @@ const I18N = {
         agents_pick_tip: '切换当前智能体',
         team_invite: '添加到当前会话',
         team_remove: '移出这个会话',
-        channel_bound_agent: '回复智能体',
-        channel_bound_default: '跟随默认（{name}）',
+        channel_bound_agent: '绑定智能体',
+        channel_bound_default: '默认',
+        channel_bound_agent_hint: '第一个为默认智能体，负责接收消息并可委派给其他成员',
+        channel_team_none: '未选择',
+        channel_team_no_candidates: '暂无可选的智能体',
         settings_tab_basic: '基础配置',
         settings_tab_models: '模型配置',
         knowledge_shared_hint: '知识库默认全员共享，在侧栏「知识」查看和编辑。',
@@ -442,8 +445,11 @@ const I18N = {
         agents_pick_tip: '切換當前智能體',
         team_invite: '新增到目前會話',
         team_remove: '移出這個會話',
-        channel_bound_agent: '回覆智慧體',
-        channel_bound_default: '跟隨預設（{name}）',
+        channel_bound_agent: '綁定智慧體',
+        channel_bound_default: '預設',
+        channel_bound_agent_hint: '第一個為預設智慧體，負責接收訊息並可委派給其他成員',
+        channel_team_none: '未選擇',
+        channel_team_no_candidates: '暫無可選的智慧體',
         settings_tab_basic: '基礎設定',
         settings_tab_models: '模型設定',
         knowledge_shared_hint: '知識庫預設全員共享，在側欄「知識」查看和編輯。',
@@ -814,8 +820,11 @@ const I18N = {
         agents_pick_tip: 'Switch current Agent',
         team_invite: 'Add to current chat',
         team_remove: 'Remove from this chat',
-        channel_bound_agent: 'Reply as',
-        channel_bound_default: 'Follow default ({name})',
+        channel_bound_agent: 'Bind agent',
+        channel_bound_default: 'default',
+        channel_bound_agent_hint: 'first pick is the default agent: it receives messages and can delegate to the rest',
+        channel_team_none: 'None',
+        channel_team_no_candidates: 'No agents available',
         settings_tab_basic: 'General',
         settings_tab_models: 'Models',
         knowledge_shared_hint: 'Knowledge is shared by every Agent. Open it from the Knowledge page.',
@@ -1678,7 +1687,7 @@ window.addEventListener('resize', () => {
 // Agents
 // =====================================================================
 let agentCatalog = [];
-let agentBindings = [];
+let channelInstances = [];
 let rosterRevision = '';
 let defaultAgentId = localStorage.getItem('cow_default_agent') || 'default';
 let selectedAdminAgentId = '';
@@ -1741,7 +1750,7 @@ function loadAgentCatalog() {
         .then(data => {
             if (data.status !== 'success') throw new Error(data.message || 'Failed to load Agents');
             agentCatalog = data.agents || [];
-            agentBindings = data.bindings || [];
+            channelInstances = data.channel_instances || [];
             rosterRevision = data.revision || '';
             defaultAgentId = data.default_agent_id || (agentCatalog[0] && agentCatalog[0].id) || 'default';
             localStorage.setItem('cow_default_agent', defaultAgentId);
@@ -2914,29 +2923,50 @@ async function syncTeamFromText(text) {
     await setTeamMembers([...currentTeamIds(), ...extra]);
 }
 
-function bindChannelAgent(channelType, agentId) {
+// Point a channel instance at an Agent. Binding lives on the instance itself
+// (channel_instances[].agent_id); an empty agentId means "follow the default
+// Agent". instanceId defaults to the channel type for a single-instance channel.
+function bindChannelAgent(channelType, agentId, instanceId, members) {
     const defaultId = defaultAgentId;
-    const action = (!agentId || agentId === defaultId) ? 'remove_binding' : 'set_binding';
+    const bound = (agentId && agentId !== defaultId) ? agentId : '';
+    const iid = instanceId || channelType;
+    const payload = {
+        action: 'bind_channel_instance',
+        channel_type: channelType,
+        instance_id: iid,
+        agent_id: bound,
+    };
+    // Only send members when we mean to set the team; omitting it leaves the
+    // stored roster untouched (a plain owner-only rebind).
+    if (Array.isArray(members)) payload.members = members;
     return fetch('/api/agents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            action,
-            channel_type: channelType,
-            agent_id: agentId || defaultId,
-            revision: rosterRevision,
-        }),
+        body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
         if (data.status !== 'success') throw new Error(data.message || 'Save failed');
+        // Rebinding is a hot swap on the server (no channel restart), and the
+        // dropdown already reflects the new value locally, so only the roster
+        // catalog needs refreshing. Re-rendering the channels view here would
+        // rebuild the cards and reset the scan/manual tab state for no reason.
+        if (Array.isArray(channelInstancesView)) {
+            const rec = channelInstancesView.find(i => i.instance_id === iid);
+            if (rec) {
+                rec.agent_id = bound;
+                if (data.result && Array.isArray(data.result.members)) {
+                    rec.members = data.result.members.slice();
+                }
+            }
+        }
         return loadAgentCatalog();
     }).catch(err => _wsToast(err.message));
 }
 
 function channelBoundAgentId(channelType) {
-    const row = agentBindings.find(b =>
-        (b.channel_type || '').toLowerCase() === channelType && !b.conversation_id
+    const inst = channelInstances.find(i =>
+        (i.channel_type || '').toLowerCase() === channelType
     );
-    return row ? row.agent_id : '';
+    return inst ? (inst.agent_id || '') : '';
 }
 
 let memoryAgentId = localStorage.getItem('cow_memory_agent') || '';
@@ -8116,6 +8146,14 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
                 labelEl.textContent = opt.label;
                 item.appendChild(face);
                 item.appendChild(labelEl);
+                // Optional trailing pill (e.g. a "default" marker) rendered
+                // dim after the name.
+                if (opt.badge) {
+                    const badgeEl = document.createElement('span');
+                    badgeEl.className = 'cfg-dropdown-badge';
+                    badgeEl.textContent = opt.badge;
+                    item.appendChild(badgeEl);
+                }
             } else if (opt.hint) {
                 const labelEl = document.createElement('span');
                 labelEl.className = 'cfg-dropdown-label';
@@ -10622,20 +10660,52 @@ function deleteCustomProvider(providerId) {
 // Channels View
 // =====================================================================
 let channelsData = [];
+// Multi-Agent mode: the multi-instance-ready types (feishu) render one card per
+// channel_instances record. These mirror the extra fields the API returns.
+let channelInstancesView = [];
+let multiInstanceTypes = [];
+let channelsMultiAgent = false;
+
+function isMultiInstanceType(name) {
+    return channelsMultiAgent && multiInstanceTypes.indexOf(name) !== -1;
+}
 
 function loadChannelsView() {
     const container = document.getElementById('channels-content');
+    if (!container) return Promise.resolve();
     container.innerHTML = `<div class="flex items-center gap-2 py-8 justify-center text-slate-400 dark:text-slate-500 text-sm">
         <i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span></div>`;
 
     const roster = agentCatalog.length ? Promise.resolve() : loadAgentCatalog();
-    roster.then(() => fetch('/api/channels').then(r => r.json()).then(data => {
+    return roster.then(() => fetch('/api/channels').then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         channelsData = data.channels || [];
+        channelsMultiAgent = !!data.multi_agent;
+        multiInstanceTypes = data.multi_instance_types || [];
+        channelInstancesView = data.instances || [];
         renderActiveChannels();
     }).catch(() => {
         container.innerHTML = '<p class="text-sm text-red-400 py-8 text-center">Failed to load channels</p>';
     }));
+}
+
+// Build the list of cards to render. In multi-Agent mode the multi-instance
+// types (feishu) contribute one card per channel_instances record (from
+// data.instances); everything else contributes its single per-type card. Each
+// item carries an `iid` (instance id) that keys its DOM and actions: for legacy
+// per-type cards it is just the channel name.
+function channelRenderList() {
+    const list = [];
+    channelsData.forEach(ch => {
+        if (isMultiInstanceType(ch.name)) return;  // rendered from instances
+        if (ch.active) list.push(Object.assign({}, ch, { iid: ch.name }));
+    });
+    if (channelsMultiAgent) {
+        channelInstancesView.forEach(inst => {
+            list.push(Object.assign({}, inst, { iid: inst.instance_id }));
+        });
+    }
+    return list;
 }
 
 function renderActiveChannels() {
@@ -10645,7 +10715,7 @@ function renderActiveChannels() {
     container.innerHTML = '';
     closeAddChannelPanel();
 
-    const activeChannels = channelsData.filter(ch => ch.active);
+    const activeChannels = channelRenderList();
 
     if (activeChannels.length === 0) {
         container.innerHTML = `
@@ -10660,18 +10730,22 @@ function renderActiveChannels() {
     }
 
     activeChannels.forEach(ch => {
+        const iid = ch.iid;
         const label = (typeof ch.label === 'object') ? (ch.label[currentLang] || ch.label.en) : ch.label;
         const card = document.createElement('div');
         card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
-        card.id = `channel-card-${ch.name}`;
+        card.id = `channel-card-${iid}`;
 
-        const fieldsHtml = buildChannelFieldsHtml(ch.name, ch.fields || []);
+        const fieldsHtml = buildChannelFieldsHtml(iid, ch.fields || []);
         const hasFields = (ch.fields || []).length > 0;
 
         const weixinWaiting = ch.name === 'weixin' && ch.login_status && ch.login_status !== 'logged_in';
         const wecomNeedsCreds = ch.name === 'wecom_bot' && !_wecomBotHasCreds(ch);
         // 飞书 active 卡片渲染带 Tab 的 panel：手动填写 + 扫码重建（覆盖现有配置）
         const isFeishu = ch.name === 'feishu';
+        // An instance card (multi-Agent feishu) shows the bound agent inline and
+        // uses the instance id as its subtitle instead of the bare type name.
+        const isInstance = isMultiInstanceType(ch.name) && !!ch.instance_id;
         let statusDot, statusText;
         if (weixinWaiting) {
             statusDot = 'bg-amber-400 animate-pulse';
@@ -10697,9 +10771,9 @@ function renderActiveChannels() {
                         <span class="w-2 h-2 rounded-full ${statusDot}"></span>
                         ${statusText}
                     </div>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">${escapeHtml(ch.name)}</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">${escapeHtml(iid)}</p>
                 </div>
-                <button onclick="disconnectChannel('${ch.name}')"
+                <button onclick="disconnectChannel('${ch.name}', '${isInstance ? iid : ''}')"
                     class="px-3 py-1.5 rounded-lg text-xs font-medium
                            bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400
                            hover:bg-red-100 dark:hover:bg-red-900/40
@@ -10707,13 +10781,17 @@ function renderActiveChannels() {
                     ${t('channels_disconnect')}
                 </button>
             </div>
-            <div class="channel-agent-bind">
-                <span class="text-xs text-slate-500 whitespace-nowrap">${escapeHtml(t('channel_bound_agent'))}</span>
-                <select onchange="bindChannelAgent('${ch.name}', this.value)">
-                    <option value="">${escapeHtml(t('channel_bound_default').replace('{name}', (findAgent(defaultAgentId) || {}).name || defaultAgentId))}</option>
-                    ${enabledAgents().map(a => `<option value="${escapeHtml(a.id)}" ${channelBoundAgentId(ch.name) === a.id ? 'selected' : ''}>${escapeHtml(a.name)}</option>`).join('')}
-                </select>
-            </div>
+            ${multiAgentMode() ? `<div class="channel-agent-bind">
+                <span class="text-xs text-slate-500 whitespace-nowrap" title="${escapeHtml(t('channel_bound_agent_hint'))}">${escapeHtml(t('channel_bound_agent'))}</span>
+                <div id="ch-members-${iid}" class="cfg-dropdown cfg-dropdown-avatar cfg-dropdown-sm cfg-dropdown-multi" tabindex="0" style="width: 200px;">
+                    <div class="cfg-dropdown-selected">
+                        <span class="cfg-dropdown-faces"></span>
+                        <span class="cfg-dropdown-text">--</span>
+                        <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                    </div>
+                    <div class="cfg-dropdown-menu"></div>
+                </div>
+            </div>` : ''}
             ${weixinWaiting ? `<div id="weixin-active-qr" class="flex flex-col items-center py-2">
                 <button onclick="showWeixinActiveQr()"
                     class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
@@ -10733,21 +10811,114 @@ function renderActiveChannels() {
             ${isFeishu ? buildFeishuPanel(ch, true) : (hasFields ? `<div class="space-y-4">
                 ${fieldsHtml}
                 <div class="flex items-center justify-end gap-3 pt-1">
-                    <span id="ch-status-${ch.name}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
-                    <button onclick="saveChannelConfig('${ch.name}')"
+                    <span id="ch-status-${iid}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                    <button onclick="saveChannelConfig('${ch.name}', '${isInstance ? iid : ''}')"
                         class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
                                cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        id="ch-save-${ch.name}">${t('channels_save')}</button>
+                        id="ch-save-${iid}">${t('channels_save')}</button>
                 </div>
             </div>` : '')}`;
 
         container.appendChild(card);
         bindSecretFieldEvents(card);
+        initChannelTeam(ch);
 
         if (weixinWaiting) {
             startWeixinActiveStatusPoll();
         }
     });
+}
+
+// One multi-select per channel card, same idea as creating a team in the chat
+// history: pick a set of Agents; the first pick is the owner (receives every
+// message and can delegate), the rest are teammates. An ordered list, so the
+// first checked stays the owner. Empty = follow the default Agent, solo.
+let _channelTeam = {};  // iid -> ordered [ownerId, ...memberIds]
+
+function initChannelTeam(ch) {
+    const iid = ch.iid || ch.name;
+    if (!multiAgentMode()) return;
+    const box = document.getElementById(`ch-members-${iid}`);
+    if (!box) return;
+    // Seed the ordered team: owner first, then its members. A legacy per-type
+    // card has no instance fields, so fall back to its channel-type binding.
+    const owner = ch.instance_id ? (ch.agent_id || '') : (channelBoundAgentId(ch.name) || '');
+    const members = Array.isArray(ch.members) ? ch.members : [];
+    _channelTeam[iid] = [owner, ...members].filter((id, i, arr) => id && arr.indexOf(id) === i);
+    box.dataset.channelName = ch.name;
+    renderChannelTeam(iid);
+    if (!box._ddBound) {
+        box.querySelector('.cfg-dropdown-selected').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.cfg-dropdown.open').forEach(d => { if (d !== box) d.classList.remove('open'); });
+            box.classList.toggle('open');
+        });
+        box._ddBound = true;
+    }
+}
+
+function renderChannelTeam(iid) {
+    const box = document.getElementById(`ch-members-${iid}`);
+    if (!box) return;
+    const team = _channelTeam[iid] || [];
+    const ownerId = team[0] || '';
+    const agents = enabledAgents();
+    const chosen = team.map(id => findAgent(id)).filter(Boolean);
+
+    const faces = box.querySelector('.cfg-dropdown-faces');
+    const textEl = box.querySelector('.cfg-dropdown-text');
+    const MAX_FACES = 3;
+    if (chosen.length) {
+        // Trigger: up to MAX_FACES avatars; any beyond that become a "+N" pill
+        // so the count always matches how many are hidden, never the total.
+        const shown = chosen.slice(0, MAX_FACES);
+        const extra = chosen.length - shown.length;
+        faces.innerHTML = shown.map(a => agentAvatarHTML(a, 18)).join('')
+            + (extra > 0 ? `<span class="cfg-dropdown-more">+${extra}</span>` : '');
+        textEl.textContent = chosen[0].name || chosen[0].id;
+        textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
+    } else {
+        // Nothing picked: this channel follows the default Agent. Show it
+        // (dim) rather than an empty "none", so the receiver is always clear.
+        const def = findAgent(defaultAgentId);
+        faces.innerHTML = def ? agentAvatarHTML(def, 18) : '';
+        textEl.textContent = def ? (def.name || def.id) : t('channel_team_none');
+        textEl.classList.add('text-slate-400', 'dark:text-slate-500');
+    }
+
+    // Menu: a checklist. The first-picked carries a small "default" badge so it
+    // is clear which Agent receives and delegates. The selected tick is the
+    // dropdown's global .active::after, so no per-row tick element is needed.
+    const menu = box.querySelector('.cfg-dropdown-menu');
+    if (!agents.length) {
+        menu.innerHTML = `<div class="cfg-dropdown-item cfg-dropdown-empty">${escapeHtml(t('channel_team_no_candidates'))}</div>`;
+        return;
+    }
+    menu.innerHTML = agents.map(a => {
+        const on = team.includes(a.id);
+        const isOwner = a.id === ownerId;
+        return `<div class="cfg-dropdown-item cfg-dropdown-check${on ? ' active' : ''}"
+            onclick="event.stopPropagation(); toggleChannelTeam('${iid}','${a.id}')">
+            <span class="cfg-dropdown-item-face">${agentAvatarHTML(a, 20)}</span>
+            <span class="cfg-dropdown-label">${escapeHtml(a.name || a.id)}</span>
+            ${isOwner ? `<span class="cfg-dropdown-badge">${escapeHtml(t('channel_bound_default'))}</span>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function toggleChannelTeam(iid, agentId) {
+    const box = document.getElementById(`ch-members-${iid}`);
+    const chName = box ? (box.dataset.channelName || '') : '';
+    const team = _channelTeam[iid] || [];
+    const i = team.indexOf(agentId);
+    if (i === -1) team.push(agentId);       // append: order = pick order
+    else team.splice(i, 1);                 // remove; if it was owner, next becomes owner
+    _channelTeam[iid] = team;
+    renderChannelTeam(iid);
+    // Persist: first pick is the owner (empty -> default Agent), rest members.
+    const ownerId = team[0] || '';
+    const members = team.slice(1);
+    bindChannelAgent(chName, ownerId, iid, members);
 }
 
 function buildChannelFieldsHtml(chName, fields) {
@@ -10810,12 +10981,15 @@ function showChannelStatus(chName, msgKey, isError) {
     setTimeout(() => el.classList.add('opacity-0'), 2500);
 }
 
-function saveChannelConfig(chName) {
-    const card = document.getElementById(`channel-card-${chName}`);
+function saveChannelConfig(chName, instanceId) {
+    // instanceId keys the DOM (per-instance cards); falls back to the channel
+    // name for legacy single-instance cards.
+    const iid = instanceId || chName;
+    const card = document.getElementById(`channel-card-${iid}`);
     if (!card) return;
 
     const updates = {};
-    card.querySelectorAll('input[data-ch="' + chName + '"]').forEach(inp => {
+    card.querySelectorAll('input[data-ch="' + iid + '"]').forEach(inp => {
         const key = inp.dataset.field;
         if (inp.type === 'checkbox') {
             updates[key] = inp.checked;
@@ -10825,27 +10999,27 @@ function saveChannelConfig(chName) {
         }
     });
 
-    const btn = document.getElementById(`ch-save-${chName}`);
+    const btn = document.getElementById(`ch-save-${iid}`);
     if (btn) btn.disabled = true;
 
     fetch('/api/channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save', channel: chName, config: updates })
+        body: JSON.stringify({ action: 'save', channel: chName, instance_id: instanceId || '', config: updates })
     })
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
-            showChannelStatus(chName, data.restarted ? 'channels_restarted' : 'channels_saved', false);
+            showChannelStatus(iid, data.restarted ? 'channels_restarted' : 'channels_saved', false);
         } else {
-            showChannelStatus(chName, 'channels_save_error', true);
+            showChannelStatus(iid, 'channels_save_error', true);
         }
     })
-    .catch(() => showChannelStatus(chName, 'channels_save_error', true))
+    .catch(() => showChannelStatus(iid, 'channels_save_error', true))
     .finally(() => { if (btn) btn.disabled = false; });
 }
 
-function disconnectChannel(chName) {
+function disconnectChannel(chName, instanceId) {
     const ch = channelsData.find(c => c.name === chName);
     const label = ch ? ((typeof ch.label === 'object') ? (ch.label[currentLang] || ch.label.en) : ch.label) : chName;
 
@@ -10858,13 +11032,20 @@ function disconnectChannel(chName) {
             fetch('/api/channels', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'disconnect', channel: chName })
+                body: JSON.stringify({ action: 'disconnect', channel: chName, instance_id: instanceId || '' })
             })
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'success') {
-                    if (ch) ch.active = false;
-                    renderActiveChannels();
+                    // An instance removal changes the instances list; reload from
+                    // the server so the card set is authoritative. Legacy per-type
+                    // disconnect can flip the flag locally.
+                    if (instanceId) {
+                        loadChannelsView();
+                    } else {
+                        if (ch) ch.active = false;
+                        renderActiveChannels();
+                    }
                 }
             })
             .catch(() => {});
@@ -10875,11 +11056,16 @@ function disconnectChannel(chName) {
 // --- Add channel panel ---
 function openAddChannelPanel() {
     const panel = document.getElementById('channels-add-panel');
-    const activeNames = new Set(channelsData.filter(c => c.active).map(c => c.name));
+    // A multi-instance-ready type (feishu) can always be added again — each add
+    // creates a new instance. Other types disappear once active.
+    const activeNames = new Set(
+        channelsData.filter(c => c.active && !isMultiInstanceType(c.name)).map(c => c.name)
+    );
     const available = channelsData.filter(c => !activeNames.has(c.name));
 
+    const anyCards = channelRenderList().length > 0;
     const content = document.getElementById('channels-content');
-    if (activeNames.size === 0 && content) content.classList.add('hidden');
+    if (!anyCards && content) content.classList.add('hidden');
 
     if (available.length === 0) {
         panel.innerHTML = `<div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6 text-center">
@@ -11018,6 +11204,13 @@ function submitAddChannel() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // A new multi-instance record only shows up by reloading the
+            // instances list from the server; legacy per-type add can patch
+            // local state and re-render.
+            if (isMultiInstanceType(chName) || data.instance_id) {
+                loadChannelsView();
+                return;
+            }
             const ch = channelsData.find(c => c.name === chName);
             if (ch) {
                 ch.active = true;
@@ -11390,11 +11583,13 @@ document.addEventListener('DOMContentLoaded', function() {
             wecomPanel.dataset.initialized = '1';
             switchWecomBotMode(wecomPanel.dataset.defaultMode || 'scan');
         }
-        const feishuPanel = document.getElementById('feishu-panel');
-        if (feishuPanel && !feishuPanel.dataset.initialized) {
+        // Init every feishu panel on screen, not just the first: multiple
+        // instance cards can be present at once, each with its own id suffix.
+        document.querySelectorAll('.feishu-panel').forEach(feishuPanel => {
+            if (feishuPanel.dataset.initialized) return;
             feishuPanel.dataset.initialized = '1';
-            switchFeishuMode(feishuPanel.dataset.defaultMode || 'scan');
-        }
+            switchFeishuMode(feishuPanel.dataset.iid || 'feishu', feishuPanel.dataset.defaultMode || 'scan');
+        });
     });
     observer.observe(document.body, { childList: true, subtree: true });
 });
@@ -11417,34 +11612,48 @@ function buildFeishuPanel(ch, isActive) {
     // 已有凭据时默认进入手动 Tab，方便修改；否则推荐扫码
     const defaultMode = _feishuHasCreds(ch) ? 'manual' : 'scan';
     const activeAttr = isActive ? 'data-active="1"' : '';
+    // Every DOM id in the panel is suffixed with the instance id so two feishu
+    // cards on screen at once never collide: without this, getElementById()
+    // always resolves to the first card, so the second card is dead and its tab
+    // clicks drive the first one. The Add panel (no instance yet) uses the bare
+    // "feishu" suffix; an active instance card uses its real instance id.
+    const iid = (isActive && ch && ch.iid) ? ch.iid : 'feishu';
     return `
-        <div id="feishu-panel" data-default-mode="${defaultMode}" ${activeAttr}>
+        <div id="feishu-panel-${iid}" class="feishu-panel" data-default-mode="${defaultMode}" data-iid="${escapeHtml(iid)}" ${activeAttr}>
             <div class="flex items-center justify-center gap-1 mb-5 bg-slate-100 dark:bg-white/5 rounded-lg p-1">
-                <button id="feishu-tab-scan" onclick="switchFeishuMode('scan')"
+                <button id="feishu-tab-scan-${iid}" onclick="switchFeishuMode('${iid}', 'scan')"
                     class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
                            bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm">
                     ${scanLabel}
                 </button>
-                <button id="feishu-tab-manual" onclick="switchFeishuMode('manual')"
+                <button id="feishu-tab-manual-${iid}" onclick="switchFeishuMode('${iid}', 'manual')"
                     class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
                            text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                     ${manualLabel}
                 </button>
             </div>
-            <div id="feishu-mode-content"></div>
+            <div id="feishu-mode-content-${iid}"></div>
         </div>`;
 }
 
-function switchFeishuMode(mode) {
-    const panel = document.getElementById('feishu-panel');
-    const scanTab = document.getElementById('feishu-tab-scan');
-    const manualTab = document.getElementById('feishu-tab-manual');
-    const content = document.getElementById('feishu-mode-content');
+function switchFeishuMode(iid, mode) {
+    // Back-compat: old call sites passed only the mode. Treat a bare mode as the
+    // Add panel's "feishu" instance.
+    if (mode === undefined && (iid === 'scan' || iid === 'manual')) {
+        mode = iid;
+        iid = 'feishu';
+    }
+    iid = iid || 'feishu';
+    const panel = document.getElementById(`feishu-panel-${iid}`);
+    const scanTab = document.getElementById(`feishu-tab-scan-${iid}`);
+    const manualTab = document.getElementById(`feishu-tab-manual-${iid}`);
+    const content = document.getElementById(`feishu-mode-content-${iid}`);
     if (!scanTab || !manualTab || !content) return;
 
     // 已激活通道卡片中嵌入此 panel 时，没有 add-channel-actions（保存按钮就近渲染）
     const isActive = panel && panel.dataset.active === '1';
     const actions = isActive ? null : document.getElementById('add-channel-actions');
+    const scanStatusId = `feishu-scan-status-${iid}`;
 
     const activeClasses = 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm';
     const inactiveClasses = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200';
@@ -11460,31 +11669,36 @@ function switchFeishuMode(mode) {
             ? t('feishu_scan_replace_desc')
             : t('feishu_scan_desc');
         content.innerHTML = `
-            <div id="feishu-scan-panel" class="flex flex-col items-center py-4">
+            <div class="flex flex-col items-center py-4">
                 <p class="text-sm text-slate-600 dark:text-slate-300 mb-3 text-center">${desc}</p>
-                <button onclick="startFeishuRegister()"
+                <button onclick="startFeishuRegister('${scanStatusId}')"
                     class="mt-2 px-6 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium
                            cursor-pointer transition-colors duration-150">
                     <i class="fas fa-qrcode mr-2"></i>${t('feishu_scan_btn')}
                 </button>
-                <div id="feishu-scan-status" class="mt-4 w-full"></div>
+                <div id="${scanStatusId}" class="mt-4 w-full"></div>
             </div>`;
     } else {
         manualTab.className = `flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClasses}`;
         scanTab.className = `flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClasses}`;
-        const ch = channelsData.find(c => c.name === 'feishu');
-        const fieldsHtml = buildChannelFieldsHtml('feishu', ch ? ch.fields || [] : []);
+        // An active instance card keys its fields by the instance id (so the
+        // card's data-ch query and the save target line up); the Add panel keys
+        // by the bare type since no instance exists yet.
+        const ch = (isActive && iid !== 'feishu')
+            ? channelInstancesView.find(c => c.instance_id === iid)
+            : channelsData.find(c => c.name === 'feishu');
+        const fieldsHtml = buildChannelFieldsHtml(iid, ch ? ch.fields || [] : []);
         if (isActive) {
             // 已接入卡片：内置保存按钮，复用 saveChannelConfig 走 update 流程
             content.innerHTML = `
                 <div class="space-y-4">
                     ${fieldsHtml}
                     <div class="flex items-center justify-end gap-3 pt-1">
-                        <span id="ch-status-feishu" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
-                        <button onclick="saveChannelConfig('feishu')"
+                        <span id="ch-status-${iid}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                        <button onclick="saveChannelConfig('feishu', '${iid === 'feishu' ? '' : iid}')"
                             class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
                                    cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                            id="ch-save-feishu">${t('channels_save')}</button>
+                            id="ch-save-${iid}">${t('channels_save')}</button>
                     </div>
                 </div>`;
         } else {
@@ -11639,6 +11853,12 @@ function connectFeishuAfterRegister(appId, appSecret) {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // Multi-Agent mode created a new feishu instance server-side; reload
+            // so its card appears. Legacy mode patches local state.
+            if (isMultiInstanceType('feishu') || data.instance_id) {
+                setTimeout(() => loadChannelsView(), 1500);
+                return;
+            }
             const ch = channelsData.find(c => c.name === 'feishu');
             if (ch) {
                 ch.active = true;

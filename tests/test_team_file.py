@@ -27,7 +27,9 @@ def install(tmp_path):
                 "model": "a-setting-owned-by-another-page",
                 "default_agent_id": "primary",
                 "agents": [{"id": "primary", "name": "Primary", "workspace": str(root)}],
-                "agent_bindings": [{"channel_type": "web", "agent_id": "primary"}],
+                "channel_instances": [
+                    {"instance_id": "feishu", "channel_type": "feishu", "agent_id": "primary"}
+                ],
             }
         ),
         encoding="utf-8",
@@ -56,7 +58,9 @@ class TestAnInstallThatPredatesTheFile:
 
         moved = json.loads((root / "agents" / "team.json").read_text(encoding="utf-8"))
         assert [item["id"] for item in moved["agents"]] == ["primary", "research"]
-        assert moved["agent_bindings"] == [{"channel_type": "web", "agent_id": "primary"}]
+        assert moved["channel_instances"] == [
+            {"instance_id": "feishu", "channel_type": "feishu", "agent_id": "primary"}
+        ]
 
     def test_the_old_copy_is_removed_so_nobody_edits_the_wrong_one(self, install):
         service, _, config = install
@@ -149,7 +153,9 @@ class TestMigratingAtStartup:
         moved = json.loads(written.read_text(encoding="utf-8"))
         assert [item["id"] for item in moved["agents"]] == ["primary"]
         assert moved["default_agent_id"] == "primary"
-        assert moved["agent_bindings"] == [{"channel_type": "web", "agent_id": "primary"}]
+        assert moved["channel_instances"] == [
+            {"instance_id": "feishu", "channel_type": "feishu", "agent_id": "primary"}
+        ]
 
     def test_config_keeps_what_is_actually_its_own(self, install):
         _, _, config = install

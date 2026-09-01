@@ -5,7 +5,50 @@ from common import const
 from .channel import Channel
 
 
-def create_channel(channel_type) -> Channel:
+def create_channel(channel_type, instance_id="", bound_agent_id="", credentials=None, members=None) -> Channel:
+    """
+    create a channel instance
+
+    :param channel_type: channel type code
+    :param instance_id: unique id when running several instances of the same
+        channel type. Empty -> legacy single-instance behavior (the channel's
+        own @singleton cache is used, exactly as before).
+    :param bound_agent_id: Agent this instance routes inbound messages to.
+    :param credentials: per-instance credential overrides (app_id/secret/...).
+        When provided, a fresh (non-singleton) instance is built so each
+        instance can carry its own credentials.
+    :param members: teammate Agent ids the owner may delegate to (team bot).
+    :return: channel instance
+    """
+    multi_instance = bool(instance_id or credentials or bound_agent_id or members)
+    ch = _build_channel(channel_type, multi_instance)
+    ch.channel_type = _normalize_type(channel_type)
+    if multi_instance:
+        ch.apply_instance(
+            instance_id=instance_id or ch.channel_type,
+            bound_agent_id=bound_agent_id,
+            credentials=credentials,
+            members=members,
+        )
+    return ch
+
+
+def _normalize_type(channel_type: str) -> str:
+    if channel_type in (const.WEIXIN, "wx"):
+        return const.WEIXIN
+    return channel_type
+
+
+def _fresh(factory):
+    """Return a non-singleton instance when the class is @singleton-wrapped,
+    else just call it. Lets several instances of one channel type coexist."""
+    new_instance = getattr(factory, "new_instance", None)
+    if new_instance is not None:
+        return new_instance()
+    return factory()
+
+
+def _build_channel(channel_type, multi_instance) -> Channel:
     """
     create a channel instance
     :param channel_type: channel type code
@@ -32,7 +75,7 @@ def create_channel(channel_type) -> Channel:
         ch = WechatKfChannel()
     elif channel_type == const.FEISHU:
         from channel.feishu.feishu_channel import FeiShuChanel
-        ch = FeiShuChanel()
+        ch = _fresh(FeiShuChanel) if multi_instance else FeiShuChanel()
     elif channel_type == const.DINGTALK:
         from channel.dingtalk.dingtalk_channel import DingTalkChanel
         ch = DingTalkChanel()

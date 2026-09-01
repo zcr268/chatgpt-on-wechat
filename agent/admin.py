@@ -14,7 +14,6 @@ from typing import Dict, Iterable, List, Mapping, Optional
 
 from agent import team
 from agent.registry import AgentProfile, AgentRegistry
-from agent.routing import AgentRouter
 from common.log import logger
 from common.utils import expand_path
 
@@ -172,7 +171,7 @@ class AgentAdminService:
             return {
                 "default_agent_id": default_id,
                 "agents": agents,
-                "bindings": list(settings.get("agent_bindings") or []),
+                "channel_instances": list(settings.get("channel_instances") or []),
                 "revision": _roster_revision(settings),
             }
 
@@ -408,7 +407,6 @@ class AgentAdminService:
                 candidate["agents"] = profiles
                 candidate["default_agent_id"] = registry.default_agent_id
                 self._registry(candidate)
-                AgentRouter.from_config(candidate, self._registry(candidate))
                 self._commit(
                     {
                         "agents": profiles,
@@ -517,7 +515,6 @@ class AgentAdminService:
             candidate = dict(settings)
             candidate["agents"] = profiles
             candidate["default_agent_id"] = registry.default_agent_id
-            AgentRouter.from_config(candidate, registry)
             self._commit(
                 {"agents": profiles, "default_agent_id": registry.default_agent_id},
                 revision,
@@ -532,9 +529,10 @@ class AgentAdminService:
 
         The default Agent is the instance itself — its workspace is the
         instance root, holding every other Agent and the shared library — so it
-        can never be deleted. For anyone else we drop the roster entry, forget
-        any channel bindings that pointed at them, and delete their own
-        workspace, but only when it is the layout we created
+        can never be deleted. For anyone else we drop the roster entry, unbind
+        any channel instances that pointed at them (so those channels fall back
+        to the default Agent rather than routing into the void), and delete
+        their own workspace, but only when it is the layout we created
         (``<instance root>/agents/<id>``): a hand-picked path could be anywhere,
         and we will not recursively erase a directory we did not make.
         """
@@ -550,24 +548,25 @@ class AgentAdminService:
                 for item in registry.list()
                 if item.id != agent_id
             ]
-            # A binding to a now-missing Agent would route messages into the
-            # void, so prune those alongside the roster entry.
-            bindings = [
-                dict(item)
-                for item in (settings.get("agent_bindings") or [])
-                if (item.get("agent_id") or "") != agent_id
-            ]
+            # A channel instance bound to a now-missing Agent would route
+            # messages into the void, so clear those bindings (the channel keeps
+            # running and falls back to the default Agent).
+            instances = []
+            for item in (settings.get("channel_instances") or []):
+                inst = dict(item)
+                if (inst.get("agent_id") or "") == agent_id:
+                    inst["agent_id"] = ""
+                instances.append(inst)
             candidate = dict(settings)
             candidate["agents"] = profiles
-            candidate["agent_bindings"] = bindings
+            candidate["channel_instances"] = instances
             candidate["default_agent_id"] = registry.default_agent_id
-            # Validate the resulting roster/router before writing anything.
-            new_registry = self._registry(candidate)
-            AgentRouter.from_config(candidate, new_registry)
+            # Validate the resulting roster before writing anything.
+            self._registry(candidate)
             self._commit(
                 {
                     "agents": profiles,
-                    "agent_bindings": bindings,
+                    "channel_instances": instances,
                     "default_agent_id": registry.default_agent_id,
                 },
                 revision,
@@ -722,75 +721,6 @@ class AgentAdminService:
             if changed:
                 self._commit({"agents": new_agents})
             return changed
-
-    # ------------------------------------------------------------------
-    # Channel bindings
-    # ------------------------------------------------------------------
-    def replace_bindings(self, bindings: list, revision: str = None) -> list:
-        with self._lock:
-            return self._store_bindings(bindings, revision)
-
-    def _store_bindings(self, bindings: list, revision: Optional[str]) -> list:
-        settings = self._load()
-        registry = self._registry(settings)
-        candidate = dict(settings)
-        candidate["agent_bindings"] = bindings
-        AgentRouter.from_config(candidate, registry)
-        self._commit({"agent_bindings": bindings}, revision)
-        return list(bindings)
-
-    def set_binding(
-        self,
-        agent_id: str,
-        channel_type: str,
-        conversation_id: str = None,
-        revision: str = None,
-    ) -> list:
-        """Add or retarget one binding, leaving the rest of the list untouched.
-
-        Editing a single row rather than replacing the whole list is what keeps
-        two people binding two different channels from overwriting each other.
-        """
-        with self._lock:
-            settings = self._load()
-            bindings = [dict(item) for item in (settings.get("agent_bindings") or [])]
-            channel_type = (channel_type or "").strip().lower()
-            if not channel_type:
-                raise AgentAdminError("channel_type is required")
-            conversation_id = (conversation_id or "").strip() or None
-            row = {"agent_id": agent_id, "channel_type": channel_type}
-            if conversation_id:
-                row["conversation_id"] = conversation_id
-            kept = [
-                item
-                for item in bindings
-                if not (
-                    (item.get("channel_type") or "").strip().lower() == channel_type
-                    and ((item.get("conversation_id") or "").strip() or None)
-                    == conversation_id
-                )
-            ]
-            kept.append(row)
-            return self._store_bindings(kept, revision)
-
-    def remove_binding(
-        self, channel_type: str, conversation_id: str = None, revision: str = None
-    ) -> list:
-        with self._lock:
-            settings = self._load()
-            bindings = [dict(item) for item in (settings.get("agent_bindings") or [])]
-            channel_type = (channel_type or "").strip().lower()
-            conversation_id = (conversation_id or "").strip() or None
-            kept = [
-                item
-                for item in bindings
-                if not (
-                    (item.get("channel_type") or "").strip().lower() == channel_type
-                    and ((item.get("conversation_id") or "").strip() or None)
-                    == conversation_id
-                )
-            ]
-            return self._store_bindings(kept, revision)
 
     # ------------------------------------------------------------------
     # Core persona files

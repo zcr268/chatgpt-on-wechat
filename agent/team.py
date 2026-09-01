@@ -29,8 +29,12 @@ from common.log import logger
 from common.utils import expand_path
 
 #: The keys that make up the roster. They move as one: a profile list and the
-#: choice of default are meaningless apart, and bindings name the same ids.
-TEAM_KEYS = ("agents", "default_agent_id", "agent_bindings")
+#: choice of default are meaningless apart. ``channel_instances`` carries each
+#: channel's identity, credentials and the Agent it is bound to — the single
+#: source of truth for inbound routing. It is opt-in: absent, channel startup
+#: falls back to ``channel_type`` + flat credentials in config.json, so a legacy
+#: single-Agent install keeps working untouched.
+TEAM_KEYS = ("agents", "default_agent_id", "channel_instances")
 
 FILE_NAME = "team.json"
 
@@ -126,10 +130,24 @@ def compact(
 
 
 def write(settings: Mapping[str, Any], roster: Mapping[str, Any]) -> Path:
-    """Replace the roster file atomically. Returns where it was written."""
+    """Replace the roster file atomically. Returns where it was written.
+
+    Crossing into multi-Agent territory is the moment a legacy channel (its
+    credentials still flat in config.json) has to be carried into
+    ``channel_instances`` or it goes dark, since multi-Agent startup routes
+    entirely off that list. ``bootstrap_legacy_instances`` does this once and is
+    idempotent, so it is safe to run on every write.
+    """
     path = team_file(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {key: roster[key] for key in TEAM_KEYS if key in roster}
+    from channel.channel_instances import bootstrap_legacy_instances
+
+    bootstrapped = bootstrap_legacy_instances(
+        settings, payload, payload.get("default_agent_id") or ""
+    )
+    if bootstrapped:
+        payload["channel_instances"] = bootstrapped
     fd, tmp_name = tempfile.mkstemp(prefix=f".{FILE_NAME}.", suffix=".tmp", dir=str(path.parent))
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:

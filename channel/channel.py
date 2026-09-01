@@ -18,6 +18,53 @@ class Channel(object):
         self._startup_event = threading.Event()
         self._startup_error = None
         self.cloud_mode = False  # set to True by ChannelManager when running with cloud client
+        # Multi-instance support. All optional and empty by default, so a
+        # legacy single-instance channel behaves exactly as before:
+        #   - instance_id: unique id of this channel instance (== channel_type
+        #     for legacy single-instance channels).
+        #   - bound_agent_id: the Agent this instance routes inbound messages
+        #     to; empty means "fall back to config-based routing".
+        #   - _creds: per-instance credential overrides. When empty, cfg()
+        #     reads straight from the global conf(), i.e. legacy behavior.
+        self.instance_id = ""
+        self.bound_agent_id = ""
+        self._creds = {}
+        # Teammates this instance's owner (bound_agent_id) may hand work to.
+        # Empty for a solo bot. Injected into each inbound message's context so
+        # the shared delegate/@mention machinery treats the conversation as a
+        # team, exactly like a Web team conversation.
+        self.members = []
+
+    def cfg(self, key, default=None):
+        """Read a config value, preferring this instance's credential override.
+
+        Channels must read their credentials through this instead of ``conf()``
+        directly so that several instances of the same channel type can each
+        carry their own app_id / secret / token. With no override present
+        (the default), this is exactly ``conf().get(key, default)``.
+        """
+        if self._creds and key in self._creds:
+            value = self._creds.get(key)
+            if value is not None:
+                return value
+        return conf().get(key, default)
+
+    def apply_instance(self, instance_id="", bound_agent_id="", credentials=None, members=None):
+        """Attach multi-instance identity, credentials and team to this channel.
+
+        Called by the factory/manager only on the new multi-instance path;
+        legacy startup never calls it, leaving the instance in its default
+        single-instance state.
+        """
+        if instance_id:
+            self.instance_id = instance_id
+        if bound_agent_id:
+            self.bound_agent_id = bound_agent_id
+        if credentials:
+            self._creds = dict(credentials)
+        if members is not None:
+            self.members = list(members)
+        return self
 
     def startup(self):
         """

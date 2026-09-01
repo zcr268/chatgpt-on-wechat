@@ -273,6 +273,26 @@ class CloudClient(LinkAIClient):
         if not channel_type:
             logger.warning(f"[CloudClient] Channel action '{action}' missing channelType, data={data}")
             return
+
+        # A per-connection id opts this channel into the multi-instance path:
+        # its identity, binding and credentials are stored per instance in the
+        # roster file rather than as one flat set in config.json, so several
+        # connections of one type can coexist. Absent, everything below is the
+        # original single-connection path, byte-for-byte.
+        instance_id = str(data.get("channelId") or "").strip()
+        if instance_id:
+            logger.info(
+                f"[CloudClient] Channel action: {action}, "
+                f"channelType={channel_type}, id={instance_id}"
+            )
+            if action == "channel_create":
+                self._handle_instance_create(instance_id, channel_type, data)
+            elif action == "channel_update":
+                self._handle_instance_update(instance_id, channel_type, data)
+            elif action == "channel_delete":
+                self._handle_instance_delete(instance_id, channel_type, data)
+            return
+
         logger.info(f"[CloudClient] Channel action: {action}, channelType={channel_type}")
 
         if action == "channel_create":
@@ -281,6 +301,115 @@ class CloudClient(LinkAIClient):
             self._handle_channel_update(channel_type, data)
         elif action == "channel_delete":
             self._handle_channel_delete(channel_type, data)
+
+    # ------------------------------------------------------------------
+    # per-instance channel operations (multi-instance path)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _instance_credentials_from(channel_type: str, data: dict) -> dict:
+        """Map the remote appId/appSecret onto this type's credential keys."""
+        cred = CREDENTIAL_MAP.get(channel_type)
+        if not cred:
+            return {}
+        id_key, secret_key = cred
+        out = {}
+        if data.get("appId") is not None:
+            out[id_key] = data.get("appId")
+        if secret_key and data.get("appSecret") is not None:
+            out[secret_key] = data.get("appSecret")
+        return out
+
+    @staticmethod
+    def _instance_agent_id(data: dict):
+        """The bound Agent id if the remote supplied one, else None.
+
+        Accepts a few plausible field names so the binding is honored whichever
+        the control plane uses; None means "leave the current binding as-is".
+        """
+        for key in ("agentId", "agent_id", "boundAgentId"):
+            value = data.get(key)
+            if value is not None and str(value).strip():
+                return str(value).strip()
+        return None
+
+    def _handle_instance_create(self, instance_id: str, channel_type: str, data: dict):
+        from channel.channel_instances import upsert_instance
+        inst = upsert_instance(
+            conf(),
+            channel_type=channel_type,
+            instance_id=instance_id,
+            agent_id=self._instance_agent_id(data),
+            credentials=self._instance_credentials_from(channel_type, data),
+        )
+        if not self.channel_mgr:
+            return
+        threading.Thread(
+            target=self._do_add_instance, args=(inst,), daemon=True
+        ).start()
+
+    def _handle_instance_update(self, instance_id: str, channel_type: str, data: dict):
+        from channel.channel_instances import upsert_instance, remove_instance
+        enabled = data.get("enabled", "Y")
+        if enabled == "N":
+            remove_instance(conf(), instance_id)
+            if self.channel_mgr:
+                threading.Thread(
+                    target=self._do_remove_channel, args=(instance_id,), daemon=True
+                ).start()
+            return
+        inst = upsert_instance(
+            conf(),
+            channel_type=channel_type,
+            instance_id=instance_id,
+            agent_id=self._instance_agent_id(data),
+            credentials=self._instance_credentials_from(channel_type, data),
+        )
+        if not self.channel_mgr:
+            return
+        threading.Thread(
+            target=self._do_add_instance, args=(inst,), daemon=True
+        ).start()
+
+    def _handle_instance_delete(self, instance_id: str, channel_type: str, data: dict):
+        from channel.channel_instances import remove_instance
+        remove_instance(conf(), instance_id)
+        if self.channel_mgr:
+            threading.Thread(
+                target=self._do_remove_channel, args=(instance_id,), daemon=True
+            ).start()
+
+    def _do_add_instance(self, inst):
+        """Start (or restart) one instance and report its type-level status.
+
+        Status is reported at the channel-type level (not the instance id) so it
+        stays compatible with the existing status protocol; instance-level status
+        can be layered on once the control plane tracks it.
+        """
+        try:
+            self.channel_mgr.add_channel(inst)
+            logger.info(f"[CloudClient] Channel instance '{inst.instance_id}' added successfully")
+        except Exception as e:
+            logger.error(
+                f"[CloudClient] Failed to add channel instance '{inst.instance_id}': {e}",
+                exc_info=True,
+            )
+            self.send_channel_status(inst.channel_type, "error", str(e))
+            return
+        ch = self.channel_mgr.get_channel(inst.instance_id)
+        if not ch:
+            self.send_channel_status(inst.channel_type, "error", "channel instance not found")
+            return
+        success, error = ch.wait_startup(timeout=3)
+        if success:
+            logger.info(
+                f"[CloudClient] Channel instance '{inst.instance_id}' connected, reporting status"
+            )
+            self.send_channel_status(inst.channel_type, "connected")
+        else:
+            logger.warning(
+                f"[CloudClient] Channel instance '{inst.instance_id}' startup failed: {error}"
+            )
+            self.send_channel_status(inst.channel_type, "error", error)
 
     def _handle_channel_create(self, channel_type: str, data: dict):
         local_config = conf()

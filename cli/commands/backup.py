@@ -527,7 +527,7 @@ def restore_backup_archive(
                             restored_config["agents"], published, default_agent_id
                         ),
                         "default_agent_id": default_agent_id,
-                        "agent_bindings": restored_config.get("agent_bindings") or [],
+                        "channel_instances": restored_config.get("channel_instances") or [],
                     },
                 )
             config_temp = temp_dir / "restored-config.json"

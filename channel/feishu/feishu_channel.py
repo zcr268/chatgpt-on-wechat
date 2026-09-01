@@ -73,6 +73,30 @@ def _ensure_lark_imported():
     return lark
 
 
+def _new_lark_ws_client_module(loop):
+    """Create a private copy of ``lark_oapi.ws.client`` bound to ``loop``.
+
+    ``lark_oapi.ws.client`` stores its asyncio loop in a module-level global that
+    ``Client.start()`` and its coroutines look up in the module's own globals.
+    A single shared module can only drive one ws client at a time. By loading an
+    isolated copy of the module per ws thread and pointing its ``loop`` global at
+    that thread's own loop, multiple Feishu instances can each run a websocket
+    connection concurrently without stepping on each other.
+    """
+    import importlib.util
+
+    _ensure_lark_imported()
+    spec = importlib.util.find_spec("lark_oapi.ws.client")
+    module = importlib.util.module_from_spec(spec)
+    # Execute under the canonical name so the loader accepts it and relative
+    # imports resolve, then rename the copy so it stays distinct from the cached
+    # module (we intentionally do not register it in sys.modules).
+    spec.loader.exec_module(module)
+    module.__name__ = f"lark_oapi.ws.client._instance_{id(loop):x}"
+    module.loop = loop
+    return module
+
+
 def _print_qr_to_terminal(qr_url: str):
     """Render a QR code as ASCII art and emit it via logger.
 
@@ -237,6 +261,9 @@ def _register_via_qr_in_terminal() -> bool:
 
 @singleton
 class FeiShuChanel(ChatChannel):
+    # Class-level defaults, read once at import for the legacy single-instance
+    # case. The authoritative per-instance values are re-read in startup() via
+    # self.cfg(), which prefers this instance's credential override when set.
     feishu_app_id = conf().get('feishu_app_id')
     feishu_app_secret = conf().get('feishu_app_secret')
     feishu_token = conf().get('feishu_token')
@@ -282,18 +309,18 @@ class FeiShuChanel(ChatChannel):
         # and a message the user sends while waiting for the client to come up is
         # a new message that must be answered — not backlog to discard.
         self._startup_ts = time.time()
-        self.feishu_app_id = conf().get('feishu_app_id')
-        self.feishu_app_secret = conf().get('feishu_app_secret')
-        self.feishu_token = conf().get('feishu_token')
-        self.feishu_event_mode = conf().get('feishu_event_mode', 'websocket')
+        self.feishu_app_id = self.cfg('feishu_app_id')
+        self.feishu_app_secret = self.cfg('feishu_app_secret')
+        self.feishu_token = self.cfg('feishu_token')
+        self.feishu_event_mode = self.cfg('feishu_event_mode', 'websocket')
 
         # 命令行启动场景：缺少凭据时尝试通过 lark.register_app 在终端弹二维码
         # 引导用户扫码创建应用。Web 控制台启动同样会走到这里，但控制台用户通常
         # 已经通过 /api/feishu/register 完成了创建并写回 config.json。
         if not self.feishu_app_id or not self.feishu_app_secret:
             if _register_via_qr_in_terminal():
-                self.feishu_app_id = conf().get('feishu_app_id')
-                self.feishu_app_secret = conf().get('feishu_app_secret')
+                self.feishu_app_id = self.cfg('feishu_app_id')
+                self.feishu_app_secret = self.cfg('feishu_app_secret')
             else:
                 err = "[FeiShu] feishu_app_id 与 feishu_app_secret 缺失，无法启动通道"
                 logger.error(err)
@@ -363,7 +390,7 @@ class FeiShuChanel(ChatChannel):
             '/', 'channel.feishu.feishu_channel.FeishuController'
         )
         app = web.application(urls, globals(), autoreload=False)
-        port = conf().get("feishu_port", 9891)
+        port = self.cfg("feishu_port", 9891)
         func = web.httpserver.StaticMiddleware(app.wsgifunc())
         func = web.httpserver.LogMiddleware(func)
         server = web.httpserver.WSGIServer(("0.0.0.0", port), func)
@@ -449,18 +476,20 @@ class FeiShuChanel(ChatChannel):
                 context.verify_mode = ssl.CERT_NONE
                 return context
 
-            # lark_oapi.ws.client captures the event loop at module-import time as a module-
-            # level global variable.  When a previous ws thread is force-killed via ctypes its
-            # loop may still be marked as "running", which causes the next ws_client.start()
-            # call (in this new thread) to raise "This event loop is already running".
-            # Fix: replace the module-level loop with a brand-new, idle loop before starting.
+            # lark_oapi.ws.client keeps its event loop in a module-level global,
+            # and Client.start() / _select() / _ping_loop() all reference it. A
+            # single shared module therefore cannot host two ws clients at once:
+            # the second instance overwrites the global loop and both clients end
+            # up racing on one loop ("event loop is already running" / "Future
+            # attached to a different loop").
+            #
+            # Give each ws thread its own *private copy* of the ws.client module
+            # with its own loop, so several Feishu instances (one per bound
+            # Agent) can each run a websocket connection independently. A single
+            # instance still works exactly as before.
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            try:
-                import lark_oapi.ws.client as _lark_ws_client_mod
-                _lark_ws_client_mod.loop = loop
-            except Exception:
-                pass
+            ws_client_mod = _new_lark_ws_client_module(loop)
 
             startup_error = None
             for attempt in range(2):
@@ -470,7 +499,7 @@ class FeiShuChanel(ChatChannel):
                         ssl_module.create_default_context = create_unverified_context
                         ssl_module._create_unverified_context = create_unverified_context
 
-                    ws_client = lark.ws.Client(
+                    ws_client = ws_client_mod.Client(
                         self.feishu_app_id,
                         self.feishu_app_secret,
                         event_handler=event_handler,
@@ -523,7 +552,7 @@ class FeiShuChanel(ChatChannel):
                 m.get("id", {}).get("open_id") == self._bot_open_id
                 for m in mentions
             )
-        bot_name = conf().get("feishu_bot_name")
+        bot_name = self.cfg("feishu_bot_name")
         if bot_name:
             return any(m.get("name") == bot_name for m in mentions)
         # Feishu event subscription only delivers messages that @-mention the bot,
@@ -789,6 +818,22 @@ class FeiShuChanel(ChatChannel):
             no_need_at=True
         )
         if context:
+            # Team bot: a leading "@teammate" hands this turn to that member,
+            # exactly like the Web console. Owner + members form the roster; the
+            # owner (bound_agent_id) answers when nobody is named. Resolved from
+            # the instance roster directly so it works on the very first message,
+            # before session_prefs is seeded.
+            members = getattr(self, "members", None)
+            if members:
+                try:
+                    from agent.team_addressing import roster_from_members, addressed_agent_id
+                    owner = getattr(self, "bound_agent_id", "") or ""
+                    roster = roster_from_members(owner, members)
+                    named = addressed_agent_id(feishu_msg.content_with_quote(), roster)
+                    if named and named != owner:
+                        context["speaker_agent_id"] = named
+                except Exception as e:
+                    logger.debug(f"[FeiShu] mention resolve failed: {e}")
             # Feishu recall events only include message_id/chat_id. Keep the
             # accepted route and use message_id as the agent cancellation key.
             context["request_id"] = msg_id
@@ -799,7 +844,7 @@ class FeiShuChanel(ChatChannel):
             # 让 send() 跳过重复发送，避免最终完整回复再被重复投递一次。
             # 默认开启流式打字机回复。需机器人开通 cardkit:card:write 权限且飞书客户端 7.20+，
             # 任意环节失败会自动降级为非流式文本回复。
-            if conf().get("feishu_stream_reply", True):
+            if self.cfg("feishu_stream_reply", True):
                 context["on_event"] = self._make_feishu_stream_callback(context, feishu_msg.access_token)
             self.produce(context)
         logger.debug(f"[FeiShu] query={feishu_msg.content}, type={feishu_msg.ctype}")
@@ -967,7 +1012,7 @@ class FeiShuChanel(ChatChannel):
         思考/工具面板与耗时的详细卡片。关闭后回退到原有的打字机文本卡片
         (_make_feishu_stream_callback_plain)。
         """
-        if conf().get("feishu_detailed_card", True):
+        if self.cfg("feishu_detailed_card", True):
             return self._make_feishu_stream_callback_progress(context, access_token)
         return self._make_feishu_stream_callback_plain(context, access_token)
 
@@ -2111,6 +2156,20 @@ class FeiShuChanel(ChatChannel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
+        # Multi-instance path: carry this instance's Agent binding and id so the
+        # router sends the message to the Agent this Feishu app is bound to,
+        # instead of falling through to config-based channel_type routing. Empty
+        # on legacy single-instance Feishu, keeping the old routing intact.
+        bound = getattr(self, "bound_agent_id", "")
+        if bound and "bound_agent_id" not in context:
+            context["bound_agent_id"] = bound
+        if "instance_id" not in context and getattr(self, "instance_id", ""):
+            context["instance_id"] = self.instance_id
+        # Team bot: carry the owner's teammates so the bridge treats this
+        # conversation as a team (delegate + @mention). Empty on a solo bot.
+        members = getattr(self, "members", None)
+        if members and "members" not in context:
+            context["members"] = list(members)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
 

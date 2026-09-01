@@ -155,8 +155,8 @@ def test_multi_agent_backup_restore_preserves_all_isolated_workspaces(tmp_path):
                     "enabled": True,
                 },
             ],
-            "agent_bindings": [
-                {"channel_type": "web", "agent_id": "research"}
+            "channel_instances": [
+                {"instance_id": "feishu-ops", "channel_type": "feishu", "agent_id": "research"}
             ],
         },
     )
@@ -202,7 +202,7 @@ def test_multi_agent_backup_restore_preserves_all_isolated_workspaces(tmp_path):
     restored_roster = team.read({"agent_workspace": str(destinations["primary"])})
     assert [item["id"] for item in restored_roster["agents"]] == ["primary", "research"]
     assert not any("workspace" in item for item in restored_roster["agents"])
-    assert restored_roster["agent_bindings"][0]["agent_id"] == "research"
+    assert restored_roster["channel_instances"][0]["agent_id"] == "research"
     assert (destinations["primary"] / "MEMORY.md").read_text() == "primary"
     assert (destinations["research"] / "MEMORY.md").read_text() == "research"
     assert (destinations["primary"] / "memory/long-term/index.db").read_bytes() == b"primary"

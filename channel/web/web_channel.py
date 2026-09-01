@@ -1424,8 +1424,6 @@ class WebChannel(ChatChannel):
             from bridge.bridge import Bridge
             agent_bridge = Bridge().get_agent_bridge()
             resolved_agent_id = agent_bridge.agent_router.resolve(
-                channel_type="web",
-                conversation_ids=(session_id,),
                 explicit_agent_id=json_data.get("agent_id"),
             )
             prompt = json_data.get('message', '')
@@ -1808,8 +1806,6 @@ class WebChannel(ChatChannel):
             agent_id = self.request_to_agent.get(request_id)
             if not agent_id:
                 agent_id = agent_bridge.agent_router.resolve(
-                    channel_type="web",
-                    conversation_ids=(session_id,),
                     explicit_agent_id=json_data.get("agent_id"),
                 )
 
@@ -1860,8 +1856,6 @@ class WebChannel(ChatChannel):
             from bridge.bridge import Bridge
             agent_bridge = Bridge().get_agent_bridge()
             agent_id = agent_bridge.agent_router.resolve(
-                channel_type="web",
-                conversation_ids=(session_id,),
                 explicit_agent_id=json_data.get("agent_id"),
             )
             session_queue_key = self._session_queue_key(session_id, agent_id)
@@ -4887,6 +4881,81 @@ class ChannelsHandler:
     def _active_channel_set(cls) -> set:
         return set(cls._parse_channel_list(conf().get("channel_type", "")))
 
+    @staticmethod
+    def _multi_agent_mode() -> bool:
+        """True once the install has crossed into multi-Agent territory.
+
+        The team.json file only exists after a second Agent (or channel
+        instance) is created; until then everything lives in config.json and the
+        channels view stays single-instance, exactly as a legacy install expects.
+        """
+        from agent import team
+        return team.team_file(conf()).exists()
+
+    @classmethod
+    def _feishu_instances(cls) -> list:
+        """Per-instance channel cards for multi-instance-ready types (feishu).
+
+        Expands ``channel_instances`` into one card each, carrying instance_id,
+        the bound agent_id and masked credentials, so the console can show and
+        edit each bot independently.
+        """
+        from common import i18n
+        from channel.channel_instances import (
+            resolve_channel_instances,
+            MULTI_INSTANCE_READY,
+        )
+        from agent import team
+
+        settings = team.resolve(conf())
+        is_hant = i18n.get_language() == i18n.ZH_HANT
+        out = []
+        for inst in resolve_channel_instances(settings):
+            if inst.channel_type not in MULTI_INSTANCE_READY:
+                continue
+            ch_def = cls.CHANNEL_DEFS.get(inst.channel_type)
+            if not ch_def:
+                continue
+            fields_out = []
+            for f in ch_def["fields"]:
+                raw_val = (inst.credentials or {}).get(f["key"], "")
+                if f["type"] == "secret" and raw_val:
+                    display_val = cls._mask_secret(str(raw_val))
+                else:
+                    display_val = raw_val
+                label_val = f["label"]
+                if is_hant and isinstance(label_val, str):
+                    label_val = i18n.to_traditional(label_val)
+                elif is_hant and isinstance(label_val, dict):
+                    label_val = label_val.copy()
+                    label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
+                fields_out.append({
+                    "key": f["key"],
+                    "label": label_val,
+                    "type": f["type"],
+                    "value": display_val,
+                    "default": f.get("default", ""),
+                })
+            label_val = ch_def["label"]
+            if is_hant and isinstance(label_val, str):
+                label_val = i18n.to_traditional(label_val)
+            elif is_hant and isinstance(label_val, dict):
+                label_val = label_val.copy()
+                label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
+            out.append({
+                "name": inst.channel_type,
+                "instance_id": inst.instance_id,
+                "channel_type": inst.channel_type,
+                "agent_id": inst.agent_id or "",
+                "members": list(inst.members or []),
+                "label": label_val,
+                "icon": ch_def["icon"],
+                "color": ch_def["color"],
+                "active": True,
+                "fields": fields_out,
+            })
+        return out
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -4943,7 +5012,20 @@ class ChannelsHandler:
                 if ch_name == "weixin" and ch_name in active_channels:
                     ch_info["login_status"] = self._get_weixin_login_status()
                 channels.append(ch_info)
-            return json.dumps({"status": "success", "channels": channels}, ensure_ascii=False)
+
+            from channel.channel_instances import MULTI_INSTANCE_READY
+            multi_agent = self._multi_agent_mode()
+            payload = {
+                "status": "success",
+                "channels": channels,
+                "multi_agent": multi_agent,
+                "multi_instance_types": sorted(MULTI_INSTANCE_READY),
+            }
+            # In multi-Agent mode the multi-instance-ready types (feishu) render
+            # one card per channel_instances record instead of one per type.
+            if multi_agent:
+                payload["instances"] = self._feishu_instances()
+            return json.dumps(payload, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Channels API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -4961,6 +5043,22 @@ class ChannelsHandler:
 
             if channel_name not in self.CHANNEL_DEFS:
                 return json.dumps({"status": "error", "message": f"unknown channel: {channel_name}"})
+
+            # Multi-Agent + a multi-instance-ready type (feishu) manages each bot
+            # as its own channel_instances record in team.json rather than the
+            # legacy flat config.json path. instance_id empty on connect means
+            # "create a new instance".
+            from channel.channel_instances import MULTI_INSTANCE_READY
+            instance_id = (body.get("instance_id") or "").strip()
+            if self._multi_agent_mode() and channel_name in MULTI_INSTANCE_READY:
+                if action == "save":
+                    return self._handle_instance_save(channel_name, instance_id, body.get("config", {}))
+                elif action == "connect":
+                    return self._handle_instance_connect(channel_name, instance_id, body.get("config", {}))
+                elif action == "disconnect":
+                    return self._handle_instance_disconnect(channel_name, instance_id)
+                else:
+                    return json.dumps({"status": "error", "message": f"unknown action: {action}"})
 
             if action == "save":
                 return self._handle_save(channel_name, body.get("config", {}))
@@ -4981,6 +5079,11 @@ class ChannelsHandler:
 
         local_config = conf()
         applied = {}
+        # Track which applied keys actually changed value, so a save that leaves
+        # every credential untouched (e.g. the user re-saved the form, or only
+        # an unrelated setting moved) does not needlessly tear down and
+        # reconnect a live channel.
+        changed = {}
         for key, value in updates.items():
             if key not in valid_keys:
                 continue
@@ -4993,6 +5096,8 @@ class ChannelsHandler:
                     value = int(value)
                 elif field_def["type"] == "bool":
                     value = bool(value)
+            if local_config.get(key) != value:
+                changed[key] = value
             local_config[key] = value
             applied[key] = value
 
@@ -5005,11 +5110,16 @@ class ChannelsHandler:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
-        logger.info(f"[WebChannel] Channel '{channel_name}' config updated: {list(applied.keys())}")
+        logger.info(
+            f"[WebChannel] Channel '{channel_name}' config saved: {list(applied.keys())}, "
+            f"changed: {list(changed.keys())}"
+        )
 
+        # Only a real change to this channel's config warrants a restart. An
+        # idempotent save must not interrupt a connected channel.
         should_restart = False
         active_channels = self._active_channel_set()
-        if channel_name in active_channels:
+        if channel_name in active_channels and changed:
             should_restart = True
             try:
                 import sys
@@ -5157,6 +5267,139 @@ class ChannelsHandler:
             "status": "success",
             "channel_type": new_channel_type,
         }, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # Multi-instance channel management (team.json driven, e.g. feishu)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _channel_mgr():
+        import sys
+        app_module = sys.modules.get('__main__') or sys.modules.get('app')
+        return getattr(app_module, '_channel_mgr', None) if app_module else None
+
+    def _clean_credentials(self, channel_name: str, updates: dict) -> dict:
+        """Keep only real, unmasked credential values for this channel type."""
+        ch_def = self.CHANNEL_DEFS[channel_name]
+        valid_keys = {f["key"] for f in ch_def["fields"]}
+        secret_keys = {f["key"] for f in ch_def["fields"] if f["type"] == "secret"}
+        creds = {}
+        for key, value in (updates or {}).items():
+            if key not in valid_keys:
+                continue
+            if key in secret_keys:
+                # Skip empty or still-masked secrets so a save that leaves the
+                # secret untouched does not overwrite it with the mask.
+                if not value or (len(str(value)) > 8 and "*" * 4 in str(value)):
+                    continue
+            creds[key] = value
+        return creds
+
+    def _handle_instance_connect(self, channel_name: str, instance_id: str, updates: dict):
+        """Create (empty id) or reconnect a channel instance, stored in team.json."""
+        from channel.channel_instances import upsert_instance
+
+        creds = self._clean_credentials(channel_name, updates)
+        inst = upsert_instance(
+            conf(),
+            channel_type=channel_name,
+            instance_id=instance_id,
+            credentials=creds,
+        )
+
+        downloading = False
+        if channel_name == "feishu":
+            try:
+                from channel.feishu import lark_install
+                downloading = lark_install.needs_download()
+            except Exception as e:
+                logger.warning(f"[WebChannel] Could not check Feishu SDK state: {e}")
+
+        def _do_start():
+            try:
+                mgr = self._channel_mgr()
+                if mgr is None:
+                    logger.warning(
+                        f"[WebChannel] ChannelManager unavailable, cannot start '{inst.instance_id}'"
+                    )
+                    return
+                mgr.add_channel(inst)
+                logger.info(f"[WebChannel] Channel instance '{inst.instance_id}' start completed")
+            except Exception as e:
+                logger.error(
+                    f"[WebChannel] Failed to start channel instance '{inst.instance_id}': {e}",
+                    exc_info=True,
+                )
+
+        threading.Thread(target=_do_start, daemon=True).start()
+        return json.dumps({
+            "status": "success",
+            "instance_id": inst.instance_id,
+            "downloading": downloading,
+        }, ensure_ascii=False)
+
+    def _handle_instance_save(self, channel_name: str, instance_id: str, updates: dict):
+        """Update one instance's credentials in team.json and restart it."""
+        from channel.channel_instances import get_instance, upsert_instance
+
+        if not instance_id:
+            return json.dumps({"status": "error", "message": "instance_id is required"})
+        before = get_instance(conf(), instance_id)
+        creds = self._clean_credentials(channel_name, updates)
+        inst = upsert_instance(
+            conf(),
+            channel_type=channel_name,
+            instance_id=instance_id,
+            credentials=creds,
+        )
+        # Only restart when a credential actually changed, so re-saving an
+        # unchanged form does not tear down a live connection.
+        changed = not before or (dict(before.credentials or {}) != dict(inst.credentials or {}))
+        if changed:
+            def _do_restart():
+                try:
+                    mgr = self._channel_mgr()
+                    if mgr is None:
+                        return
+                    mgr.restart(inst)
+                except Exception as e:
+                    logger.error(
+                        f"[WebChannel] Failed to restart instance '{inst.instance_id}': {e}",
+                        exc_info=True,
+                    )
+            threading.Thread(target=_do_restart, daemon=True).start()
+        logger.info(
+            f"[WebChannel] Channel instance '{inst.instance_id}' saved, "
+            f"restart={'yes' if changed else 'no'}"
+        )
+        return json.dumps({"status": "success", "instance_id": inst.instance_id}, ensure_ascii=False)
+
+    def _handle_instance_disconnect(self, channel_name: str, instance_id: str):
+        """Remove one instance record from team.json and stop its channel."""
+        from channel.channel_instances import remove_instance
+
+        if not instance_id:
+            return json.dumps({"status": "error", "message": "instance_id is required"})
+        remove_instance(conf(), instance_id)
+
+        def _do_stop():
+            try:
+                mgr = self._channel_mgr()
+                if mgr is None:
+                    return
+                remover = getattr(mgr, "remove_channel", None)
+                if callable(remover):
+                    remover(instance_id)
+                else:
+                    mgr.stop(instance_id)
+                logger.info(f"[WebChannel] Channel instance '{instance_id}' disconnected")
+            except Exception as e:
+                logger.warning(
+                    f"[WebChannel] Failed to stop instance '{instance_id}': {e}",
+                    exc_info=True,
+                )
+
+        threading.Thread(target=_do_stop, daemon=True).start()
+        return json.dumps({"status": "success", "instance_id": instance_id}, ensure_ascii=False)
 
 
 class WeixinQrHandler:
@@ -5884,6 +6127,64 @@ def _agent_admin_service():
     return AgentAdminService(os.path.join(get_data_root(), "config.json"))
 
 
+def _bind_channel_instance(channel_type: str, instance_id: str = "", agent_id: str = "", members=None):
+    """Point one channel instance at an Agent (and team), hot-swapping without a restart.
+
+    The binding lives on the channel instance itself (channel_instances[].agent_id
+    in team.json), the single source of truth for routing. For a single-instance
+    channel the instance id is just the channel type. An empty agent_id unbinds it
+    (falls back to the default Agent).
+
+    Rebinding only changes *which* Agent inbound messages route to — the
+    credentials and connection are untouched — so there is no reason to tear
+    down and re-establish the IM link. We persist the new binding and then set
+    ``bound_agent_id`` live on the running channel; the next inbound message
+    reads the updated value. This avoids the reconnect storm a restart caused
+    when the user flipped the picker a few times.
+    """
+    from channel.channel_instances import upsert_instance
+
+    ctype = (channel_type or "").strip().lower()
+    if not ctype:
+        raise ValueError("channel_type is required")
+    target_id = (instance_id or "").strip() or ctype
+    agent_id = (agent_id or "").strip()
+
+    inst = upsert_instance(
+        conf(),
+        channel_type=ctype,
+        instance_id=target_id,
+        agent_id=agent_id,
+        members=members,
+    )
+
+    try:
+        import sys
+        app_module = sys.modules.get("__main__") or sys.modules.get("app")
+        mgr = getattr(app_module, "_channel_mgr", None) if app_module else None
+        channel = mgr.get_channel(target_id) if mgr else None
+        if channel is not None:
+            # Live-update owner + team on the running instance. Empty owner means
+            # "follow the default Agent". No restart: this only changes routing.
+            channel.bound_agent_id = agent_id
+            channel.members = list(inst.members or [])
+            logger.info(
+                f"[WebChannel] Channel '{target_id}' rebound to "
+                f"'{agent_id or 'default'}' with team {inst.members or []} (no restart)"
+            )
+    except Exception as e:
+        logger.error(
+            f"[WebChannel] Failed to hot-rebind channel '{target_id}': {e}",
+            exc_info=True,
+        )
+
+    return {
+        "instance_id": inst.instance_id,
+        "agent_id": inst.agent_id,
+        "members": list(inst.members or []),
+    }
+
+
 def _reload_agent_runtime(service, changed_agent_ids=None) -> None:
     """Re-point the live runtime at a freshly loaded roster.
 
@@ -6015,30 +6316,29 @@ class AgentsHandler:
                 result = service.set_knowledge_mode(
                     body.get("id", ""), body.get("mode", "")
                 )
-            elif action == "set_binding":
-                result = service.set_binding(
-                    body.get("agent_id", ""),
-                    body.get("channel_type", ""),
-                    body.get("conversation_id"),
-                    revision=revision,
-                )
-            elif action == "remove_binding":
-                result = service.remove_binding(
-                    body.get("channel_type", ""),
-                    body.get("conversation_id"),
-                    revision=revision,
-                )
-            elif action == "replace_bindings":
-                result = service.replace_bindings(
-                    body.get("bindings") or [], revision=revision
+            elif action == "bind_channel_instance":
+                # members: list => set team; omitted/None => leave team untouched
+                raw_members = body.get("members", None)
+                members = raw_members if isinstance(raw_members, list) else None
+                result = _bind_channel_instance(
+                    channel_type=body.get("channel_type", ""),
+                    instance_id=body.get("instance_id", ""),
+                    agent_id=body.get("agent_id", ""),
+                    members=members,
                 )
             else:
                 return json.dumps({
                     "status": "error", "message": f"unknown action: {action}"
                 })
             # Only the edited Agent needs its cached runtime dropped; a create
-            # has no live sessions yet, and binding edits are handled by the
-            # router swap alone.
+            # has no live sessions yet. bind_channel_instance hot-updates the
+            # running channel's binding in place (see _bind_channel_instance),
+            # so it neither restarts a channel nor touches the roster runtime.
+            if action == "bind_channel_instance":
+                return json.dumps(
+                    {"status": "success", "result": result},
+                    ensure_ascii=False,
+                )
             changed = None
             if action in ("update", "archive", "delete", "set_knowledge_mode"):
                 changed = [body.get("id", "")] if body.get("id") else None
