@@ -333,7 +333,9 @@ class ToolManager:
                 with open(mcp_json_path, "r", encoding="utf-8") as f:
                     data = _json.load(f)
                 raw = data.get("mcpServers") or data.get("mcp_servers") or data
-                logger.info(f"[ToolManager] Loading MCP config from {mcp_json_path}")
+                # DEBUG: with N agents this fires N times for the same shared
+                # mcp.json; the real boot is logged once at INFO further below.
+                logger.debug(f"[ToolManager] Loading MCP config from {mcp_json_path}")
                 return _normalize_mcp_configs(raw)
             except Exception as e:
                 logger.warning(f"[ToolManager] Failed to read {mcp_json_path}: {e}, falling back to config.json")
@@ -382,7 +384,9 @@ class ToolManager:
                 daemon=True,
                 name="mcp-loader",
             ).start()
-            logger.info(
+            # DEBUG: fires once per agent; with many agents sharing one mcp.json
+            # this is just noise. The actual server boot is logged at INFO.
+            logger.debug(
                 f"[ToolManager] MCP loading started in background "
                 f"({len(mcp_servers_config)} server(s) configured)"
             )
@@ -498,6 +502,7 @@ class ToolManager:
 
             mcp_json_path = self._mcp_json_path()
 
+            booted_any = False
             for cfg in mcp_servers_config:
                 server_name = cfg.get("name", "<unnamed>")
                 try:
@@ -556,6 +561,7 @@ class ToolManager:
                             f"{len(added)} tool(s) attached"
                         )
                     else:
+                        booted_any = True
                         logger.info(
                             f"[MCP] Server '{server_name}' ready — "
                             f"{len(added)} tool(s): {added}"
@@ -566,7 +572,12 @@ class ToolManager:
 
             ready = sum(1 for s in self._mcp_status.values() if s == "ready")
             total = len(self._mcp_status)
-            logger.info(
+            # Only surface the summary at INFO when this loader actually booted a
+            # server. When every server was reused from the shared pool (the
+            # common case for the 2nd..Nth agent sharing one mcp.json) keep it at
+            # DEBUG to avoid N identical "loading complete" lines.
+            _complete_log = logger.info if booted_any else logger.debug
+            _complete_log(
                 f"[ToolManager] MCP loading complete: "
                 f"{ready}/{total} server(s) ready, "
                 f"{len(self._mcp_tool_instances)} tool(s) available"
