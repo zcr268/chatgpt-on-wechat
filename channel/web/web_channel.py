@@ -2530,7 +2530,7 @@ class ConfigHandler:
             "api_base_key": "deepseek_api_base",
             "api_base_default": "https://api.deepseek.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
+            "models": [const.DEEPSEEK_V4_FLASH_VISION_EXP, const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
         }),
         ("claudeAPI", {
             "label": "Claude",
@@ -3230,6 +3230,8 @@ class ModelsHandler:
         "minimax":   [const.MINIMAX_TEXT_01],
         # MiMo 原生全模态模型：v2.5-pro / v2.5 支持图像/音频/视频输入
         "mimo":      [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
+        # DeepSeek 视觉模型：V4 Flash vision（experimental, multimodal）
+        "deepseek":  [const.DEEPSEEK_V4_FLASH_VISION_EXP],
         # LinkAI proxies the underlying vendor; surface a curated set of
         # multimodal models. Order: gpt-4.1-mini → gpt-5.4-mini as the
         # cross-vendor baselines, then each vendor's recommended default.
@@ -3590,7 +3592,7 @@ class ModelsHandler:
         # 2. Main bot — only when it natively supports vision. We approximate
         #    "natively supports" by membership in _VISION_PROVIDER_MODELS,
         #    which is the same set vision.py's _DISCOVERABLE_MODELS covers
-        #    (minus the chat-only DeepSeek family).
+        #    (the DeepSeek family is included since V4 Flash vision).
         if main_provider in cls._VISION_PROVIDER_MODELS:
             hit = _try(main_provider, main_model)
             if hit:
