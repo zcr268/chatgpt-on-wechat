@@ -17,9 +17,10 @@ import { t } from '../i18n'
 import apiClient from '../api/client'
 import type { Attachment, ChatMessage } from '../types'
 import { useChatStore } from '../store/chatStore'
-import { useSessionStore } from '../store/sessionStore'
-import { useUIStore } from '../store/uiStore'
+import { useSessionStore, sessionOwner } from '../store/sessionStore'
+import { useAgentStore } from '../store/agentStore'
 import { useWorkspaceStore } from '../store/workspaceStore'
+import { startNewChat } from '../lib/newChat'
 
 interface ChatPageProps {
   baseUrl: string
@@ -46,8 +47,8 @@ const SUGGESTIONS: {
 
 const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const activeId = useSessionStore((s) => s.activeId)
-  const newSession = useSessionStore((s) => s.newSession)
   const loadSessions = useSessionStore((s) => s.loadSessions)
+  const activeAgentId = useAgentStore((s) => s.activeAgentId)
 
   const session = useChatStore((s) => s.sessions[activeId])
   const send = useChatStore((s) => s.send)
@@ -58,7 +59,6 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const loadHistory = useChatStore((s) => s.loadHistory)
   const ensureSession = useChatStore((s) => s.ensureSession)
   const clearContext = useChatStore((s) => s.clearContext)
-  const setSessionsCollapsed = useUIStore((s) => s.setSessionsCollapsed)
   const wsOnSessionSwitch = useWorkspaceStore((s) => s.onSessionSwitch)
 
   const messages = session?.messages ?? []
@@ -82,6 +82,24 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
       loadHistory(activeId, 1)
     }
   }, [activeId, ensureSession, loadHistory])
+
+  // History lives in the owner Agent's store. If the owner of the open
+  // conversation changes under us (the roster resolved after the first load,
+  // or the backend list corrected who owns it), what we loaded came from the
+  // wrong store — fetch it again from the right one. Idle sessions only.
+  const loadedOwnerRef = useRef<{ sid: string; owner: string } | null>(null)
+  useEffect(() => {
+    const owner = sessionOwner(activeId)
+    const prev = loadedOwnerRef.current
+    loadedOwnerRef.current = { sid: activeId, owner }
+    // A session switch is handled by the effect above; only a same-session
+    // owner change means the loaded history came from the wrong store.
+    if (!prev || prev.sid !== activeId || prev.owner === owner) return
+    // Unscoped (pre-roster) requests already read the default Agent's store.
+    if (prev.owner === '' && owner === useAgentStore.getState().defaultAgentId) return
+    const s = useChatStore.getState().sessions[activeId]
+    if (s && !s.isStreaming) loadHistory(activeId, 1)
+  }, [activeId, activeAgentId, loadHistory])
 
   // Keep the workspace panel scoped to the active session (project vs default).
   useEffect(() => {
@@ -162,11 +180,14 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
       const sid = activeId
       const isFirst = (useChatStore.getState().sessions[sid]?.messages.length ?? 0) === 0
       titlePendingRef.current = isFirst
+      // Resolve the owner before the await: the title request must land in the
+      // same store the message did, even if the user switches meanwhile.
+      const owner = sessionOwner(sid) || undefined
       await send(sid, text, attachments)
       // After the first message, refresh the list and ask backend to title it.
       if (isFirst) {
         try {
-          await apiClient.generateSessionTitle(sid, text)
+          await apiClient.generateSessionTitle(sid, text, undefined, owner)
         } catch {
           /* ignore */
         }
@@ -178,18 +199,8 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   )
 
   const handleNewChat = useCallback(() => {
-    // Inherit the current session's project so a new chat stays in the same
-    // space; fall back to the default workspace when none is bound.
-    const inherited = useSessionStore.getState().currentProject()
-    const id = newSession()
-    ensureSession(id)
-    loadHistory(id, 1)
-    // Show the fresh chat in the list immediately (under the inherited space),
-    // and expand the session list so the user sees the new session.
-    useSessionStore.getState().addOptimistic(id, inherited)
-    setSessionsCollapsed(false)
-    if (inherited) apiClient.selectProject(id, inherited.path).catch(() => {})
-  }, [newSession, ensureSession, loadHistory, setSessionsCollapsed])
+    startNewChat()
+  }, [])
 
   const handleClearContext = useCallback(async () => {
     await clearContext(activeId)
