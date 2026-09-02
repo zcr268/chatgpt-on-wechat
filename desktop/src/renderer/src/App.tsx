@@ -27,6 +27,8 @@ import MemoryPage from './pages/MemoryPage'
 import ChannelsPage from './pages/ChannelsPage'
 import TasksPage from './pages/TasksPage'
 import LogsPage from './pages/LogsPage'
+import AgentsPage from './pages/AgentsPage'
+import { useAgentStore } from './store/agentStore'
 import { product } from '@product'
 
 const App: React.FC = () => {
@@ -125,6 +127,15 @@ const App: React.FC = () => {
       cancelled = true
     }
   }, [backend.status, authState, maybeOpenOnboarding])
+
+  // Load the team roster once the backend and auth are settled. This is
+  // best-effort: the store swallows every error and degrades to single-Agent,
+  // so a legacy backend (no /api/agents) or a transient failure never blocks
+  // the app — the team affordances simply stay hidden.
+  const refreshRoster = useAgentStore((s) => s.refresh)
+  useEffect(() => {
+    if (backend.status === 'ready' && authState === 'ok') void refreshRoster()
+  }, [backend.status, authState, backend.baseUrl, refreshRoster])
 
   // Poll for scheduler/push messages once the backend and auth are settled.
   usePushPoll(backend.status === 'ready' && authState === 'ok')
@@ -247,6 +258,7 @@ const App: React.FC = () => {
             <Route path="/memory" element={<MemoryPage baseUrl={backend.baseUrl} />} />
             <Route path="/skills" element={<SkillsPage baseUrl={backend.baseUrl} />} />
             <Route path="/channels" element={<ChannelsPage baseUrl={backend.baseUrl} />} />
+            <Route path="/agents" element={<AgentsPage baseUrl={backend.baseUrl} />} />
             <Route path="/tasks" element={<TasksPage baseUrl={backend.baseUrl} />} />
             <Route path="/settings" element={<SettingsPage baseUrl={backend.baseUrl} onLangChange={handleLangChange} />} />
             {/* Legacy /models route now lives as a tab inside settings */}
