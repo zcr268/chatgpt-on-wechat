@@ -82,19 +82,18 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const [mentionIndex, setMentionIndex] = useState(0)
   const mentionStartRef = useRef(-1)
   const mentionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  // The roster of the current group chat (owner + members), for @-mentions.
-  const agents = useAgentStore((s) => s.agents)
+  // The teammates addressable with @ in the current group chat. The owner (the
+  // one already replying) is left out — @ hands the turn to someone else.
   const activeAgentId = useAgentStore((s) => s.activeAgentId)
   const team = useSessionSettingsStore((s) => (s.sessionId === sessionId ? s.cfg?.team : undefined))
   const mentionRoster = useMemo<AgentBadge[]>(() => {
     if (!sharedConversation) return []
-    const owner = agents.find((a) => a.id === activeAgentId)
-    const roster: AgentBadge[] = owner ? [{ id: owner.id, name: owner.name || owner.id, avatar: owner.avatar }] : []
+    const roster: AgentBadge[] = []
     for (const m of team?.members || []) {
-      if (!roster.some((a) => a.id === m.id)) roster.push(m)
+      if (m.id !== activeAgentId && !roster.some((a) => a.id === m.id)) roster.push(m)
     }
     return roster
-  }, [sharedConversation, agents, activeAgentId, team])
+  }, [sharedConversation, activeAgentId, team])
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -710,14 +709,10 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           </div>
         )}
 
-        {/* @ picker: group-chat Agents first, then workspace files. */}
+        {/* @ picker: group-chat Agents first, then workspace files — one flat
+            list so an Agent reads like any other pick. */}
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-72 overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
-            {mentionAgents.length > 0 && (
-              <div className="px-2 pt-1 pb-1 text-[11px] font-medium text-content-tertiary uppercase tracking-wide">
-                {t('mention_agents')}
-              </div>
-            )}
             {mentionAgents.map((a, i) => (
               <button
                 key={`agent:${a.id}`}
@@ -731,15 +726,10 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                 }`}
               >
                 <AgentAvatar agent={a} size={20} />
-                <span className="text-[13px] text-content flex-1 min-w-0 truncate">{a.name || a.id}</span>
-                {a.id === activeAgentId && (
-                  <span className="text-[10px] text-content-tertiary shrink-0">{t('composer_agent_owner')}</span>
-                )}
+                <span className="text-[13px] text-content shrink-0 max-w-[55%] truncate">{a.name || a.id}</span>
+                <span className="flex-1 min-w-0 text-[11px] text-content-tertiary text-right truncate">{a.id}</span>
               </button>
             ))}
-            {mentionAgents.length > 0 && mentionItems.length > 0 && (
-              <div className="my-1 h-px bg-default" />
-            )}
             {mentionItems.map((item, j) => {
               const i = mentionAgents.length + j
               const Icon = iconFor(item.kind)

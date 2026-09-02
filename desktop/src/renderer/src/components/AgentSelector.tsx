@@ -125,20 +125,11 @@ const AgentSelector: React.FC<AgentSelectorProps> = ({ sessionId }) => {
           plain row (a ✓ marks "in the chat"), not a standing highlight, which
           read as everything being selected. Hover a teammate to remove it; the
           owner can't be removed. */}
-      {shared && (
+      {shared && members.length > 0 && (
         <>
           <div className="px-2 py-1.5 text-[11px] font-medium text-content-tertiary uppercase tracking-wide">
             {t('team_members')}
           </div>
-          {active && (
-            <div className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-content-secondary">
-              <AgentAvatar agent={active} size={20} />
-              <span className="flex-1 min-w-0 text-left truncate">{active.name || active.id}</span>
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-surface-2 text-content-tertiary flex-shrink-0">
-                {t('composer_agent_owner')}
-              </span>
-            </div>
-          )}
           {members.map((m) => (
             <button
               key={m.id}

@@ -21,7 +21,7 @@ import type { LucideIcon } from 'lucide-react'
 import { t, localizedLabel, getLang } from '../i18n'
 import apiClient from '../api/client'
 import type { ChannelInfo, ChannelField } from '../types'
-import { Toggle, Btn } from './settings/primitives'
+import { Toggle, Btn, FieldTip } from './settings/primitives'
 import QrScanPanel from '../components/QrScanPanel'
 import { PaperPlaneIcon } from '../components/icons'
 import ChannelTeamSelect from '../components/ChannelTeamSelect'
@@ -701,7 +701,10 @@ const ChannelBinding: React.FC<{ channel: ChannelInfo }> = ({ channel }) => {
 
   return (
     <div className="mt-4 pt-4 border-t border-subtle">
-      <label className="block text-xs font-medium text-content-secondary mb-1.5">{t('channel_bind_agent')}</label>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <label className="block text-xs font-medium text-content-secondary">{t('channel_bind_agent')}</label>
+        <FieldTip tip={t('channel_bound_agent_hint')} />
+      </div>
       <ChannelTeamSelect
         agents={agents}
         defaultAgentId={defaultAgentId}
@@ -709,7 +712,6 @@ const ChannelBinding: React.FC<{ channel: ChannelInfo }> = ({ channel }) => {
         onChange={persist}
         disabled={busy}
       />
-      <p className="text-xs text-content-tertiary mt-1.5">{t('channel_bound_agent_hint')}</p>
     </div>
   )
 }

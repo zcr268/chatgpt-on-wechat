@@ -89,7 +89,7 @@ const ChannelTeamSelect: React.FC<ChannelTeamSelectProps> = ({
         type="button"
         disabled={disabled}
         onClick={openMenu}
-        className={`w-full flex items-center gap-2 h-10 px-3 rounded-btn border bg-inset text-sm transition-colors ${
+        className={`w-full flex items-center gap-2 h-9 px-3 rounded-btn border bg-inset text-sm transition-colors ${
           disabled
             ? 'border-default text-content-tertiary cursor-not-allowed opacity-70'
             : open
@@ -136,11 +136,11 @@ const ChannelTeamSelect: React.FC<ChannelTeamSelectProps> = ({
                   key={a.id}
                   type="button"
                   onClick={() => toggle(a.id)}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-sm cursor-pointer transition-colors ${
-                    on ? 'text-content font-medium' : 'text-content-secondary hover:bg-surface-2'
+                  className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] cursor-pointer transition-colors ${
+                    on ? 'text-content font-medium' : 'text-content-secondary hover:bg-inset'
                   }`}
                 >
-                  <AgentAvatar agent={a} size={22} />
+                  <AgentAvatar agent={a} size={20} />
                   <span className="truncate flex-1 text-left">{a.name || a.id}</span>
                   {isOwner && (
                     <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-600 flex-shrink-0">

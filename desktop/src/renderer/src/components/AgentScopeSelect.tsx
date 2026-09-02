@@ -46,18 +46,18 @@ const AgentScopeSelect: React.FC<AgentScopeSelectProps> = ({ value, onChange }) 
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`inline-flex items-center gap-2 h-9 pl-1.5 pr-2.5 rounded-btn border text-sm cursor-pointer transition-colors ${
+        className={`inline-flex items-center gap-1.5 h-8 pl-1 pr-2 rounded-btn border text-[13px] cursor-pointer transition-colors ${
           open ? 'border-accent bg-accent-soft text-accent' : 'border-strong text-content-secondary hover:bg-inset-2'
         }`}
         title={t('scope_agent_tip')}
       >
-        {current ? <AgentAvatar agent={current} size={22} /> : null}
-        <span className="max-w-[140px] truncate">{current?.name || current?.id || t('scope_agent_all')}</span>
-        <ChevronDown size={13} className={`opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+        {current ? <AgentAvatar agent={current} size={18} /> : null}
+        <span className="max-w-[128px] truncate">{current?.name || current?.id || t('scope_agent_all')}</span>
+        <ChevronDown size={12} className={`opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-60 max-h-[360px] overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
+        <div className="absolute right-0 top-full mt-1.5 w-56 max-h-[360px] overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1">
           {ordered.map((a) => {
             const active = a.id === value
             return (
@@ -68,18 +68,18 @@ const AgentScopeSelect: React.FC<AgentScopeSelectProps> = ({ value, onChange }) 
                   onChange(a.id)
                   setOpen(false)
                 }}
-                className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-left cursor-pointer transition-colors ${
-                  active ? 'bg-accent-soft text-accent' : 'hover:bg-surface-2 text-content'
+                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${
+                  active ? 'bg-accent-soft text-accent' : 'hover:bg-inset text-content'
                 }`}
               >
-                <AgentAvatar agent={a} size={24} />
+                <AgentAvatar agent={a} size={20} />
                 <span className="flex-1 min-w-0 truncate text-[13px]">{a.name || a.id}</span>
                 {a.id === defaultAgentId && (
                   <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-600 flex-shrink-0">
                     {t('agents_default_badge')}
                   </span>
                 )}
-                {active && <Check size={14} className="shrink-0" />}
+                {active && <Check size={13} className="shrink-0" />}
               </button>
             )
           })}
