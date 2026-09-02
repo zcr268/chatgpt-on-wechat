@@ -9,6 +9,7 @@ import re
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional
 
@@ -598,13 +599,15 @@ class AgentAdminService:
     def set_knowledge_mode(self, agent_id: str, mode: str) -> Dict:
         """Switch an Agent between the shared knowledge base and its own.
 
-        ``own``   → give the Agent a real ``knowledge/`` directory (seeded with
-                    an empty index) so its reads and writes stay private.
+        ``own``   → give the Agent a real ``knowledge/`` directory so its reads
+                    and writes stay private: the base it set aside earlier if
+                    there is one, else a fresh one seeded with an empty index.
         ``shared``→ point ``knowledge/`` at the shared copy via a symlink so the
-                    Agent both sees and contributes to the common base. An Agent
-                    that already has its own non-empty directory is left in place
-                    (we never delete a knowledge base implicitly); the caller is
-                    told nothing changed.
+                    Agent both sees and contributes to the common base. Shared is
+                    only a reference, so the switch is always allowed: an own
+                    base that holds content is set aside (``knowledge.own``)
+                    rather than deleted, and comes back on the next switch to
+                    ``own``. We never delete a knowledge base implicitly.
 
         Returns ``{"id", "mode", "changed"}``.
         """
@@ -622,6 +625,8 @@ class AgentAdminService:
                 )
             workspace = profile.workspace_path
             kdir = workspace / "knowledge"
+            # Where an own base waits while the Agent reads the shared one.
+            stash = workspace / "knowledge.own"
             # The shared base is the default Agent's knowledge/. Resolve it
             # directly rather than through this Agent's own base, which in "own"
             # mode would point back at the directory we're about to remove.
@@ -632,6 +637,11 @@ class AgentAdminService:
                     return {"id": agent_id, "mode": "own", "changed": False}
                 if kdir.is_symlink():
                     kdir.unlink()
+                if stash.is_dir():
+                    # The base this Agent set aside when it went shared: bring it
+                    # back exactly as it was instead of starting empty.
+                    stash.rename(kdir)
+                    return {"id": agent_id, "mode": "own", "changed": True}
                 kdir.mkdir(parents=True, exist_ok=True)
                 index = kdir / "index.md"
                 if not index.exists():
@@ -645,16 +655,20 @@ class AgentAdminService:
                     kdir.unlink()
                 self._link_shared_knowledge(kdir, shared)
                 return {"id": agent_id, "mode": "shared", "changed": bool(kdir.exists())}
-            # A real directory holds the Agent's own base. Refuse to delete it
-            # implicitly unless it holds nothing the user put there — an empty
-            # dir, or just the index we seeded on the way in — so an accidental
-            # own→shared flip is reversible without a data-loss prompt.
-            if not self._own_knowledge_is_discardable(kdir):
-                raise AgentAdminError(
-                    "this Agent has its own knowledge base; export or clear it "
-                    "before switching to shared"
-                )
-            shutil.rmtree(kdir)
+            # A real directory holds the Agent's own base. Shared is just a
+            # reference, so the flip is always allowed — but we never delete a
+            # base implicitly. Drop it only when it holds nothing the user put
+            # there (empty, or just the index we seeded on the way in);
+            # otherwise set it aside so switching back to "own" restores it.
+            if self._own_knowledge_is_discardable(kdir):
+                shutil.rmtree(kdir)
+            else:
+                if stash.exists():
+                    # A stash that was never restored (someone recreated
+                    # knowledge/ by hand). Keep both: the older one moves to a
+                    # timestamped name rather than being thrown away.
+                    stash.rename(workspace / f"knowledge.own.{int(time.time())}")
+                kdir.rename(stash)
             self._link_shared_knowledge(kdir, shared)
             return {"id": agent_id, "mode": "shared", "changed": True}
 

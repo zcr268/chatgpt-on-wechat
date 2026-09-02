@@ -428,16 +428,26 @@ def test_switching_back_to_shared_links_the_shared_base(admin):
     assert service.knowledge_mode("research") == "shared"
 
 
-def test_shared_refuses_to_discard_a_non_empty_own_base(admin):
+def test_shared_sets_aside_a_non_empty_own_base_and_own_restores_it(admin):
     service, root, _ = admin
     service.create_agent("research", "Research", str(root / "research"))
     service.set_knowledge_mode("research", "own")
-    (root / "research" / "knowledge" / "note.md").write_text("keep me", encoding="utf-8")
+    kdir = root / "research" / "knowledge"
+    (kdir / "note.md").write_text("keep me", encoding="utf-8")
 
-    with pytest.raises(AgentAdminError):
-        service.set_knowledge_mode("research", "shared")
-    # The Agent's data is left untouched.
-    assert (root / "research" / "knowledge" / "note.md").read_text(encoding="utf-8") == "keep me"
+    # Shared is only a reference: the switch is allowed, the data is kept aside.
+    result = service.set_knowledge_mode("research", "shared")
+    assert result["mode"] == "shared" and result["changed"] is True
+    assert kdir.is_symlink()
+    stash = root / "research" / "knowledge.own"
+    assert (stash / "note.md").read_text(encoding="utf-8") == "keep me"
+
+    # Going back to own brings the very same base back, nothing recreated.
+    result = service.set_knowledge_mode("research", "own")
+    assert result["mode"] == "own" and result["changed"] is True
+    assert kdir.is_dir() and not kdir.is_symlink()
+    assert (kdir / "note.md").read_text(encoding="utf-8") == "keep me"
+    assert not stash.exists()
 
 
 def test_default_agent_cannot_switch_knowledge_mode(admin):
