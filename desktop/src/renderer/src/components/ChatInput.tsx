@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect, forwardRef, useImperativeHandle } from 'react'
+import React, { useState, useRef, useCallback, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react'
 import {
   Plus,
   Paperclip,
@@ -12,7 +12,8 @@ import {
   Mic
 } from 'lucide-react'
 import { t } from '../i18n'
-import type { Attachment, WorkspaceEntry } from '../types'
+import type { Attachment, WorkspaceEntry, AgentBadge } from '../types'
+import AgentAvatar from './AgentAvatar'
 import { chatDraft } from '../store/draftStore'
 import apiClient from '../api/client'
 import { PaperPlaneIcon } from './icons'
@@ -21,8 +22,10 @@ import { iconFor, colorFor } from '../lib/fileKind'
 import WorkspaceSelector from './WorkspaceSelector'
 import PermissionSelector from './PermissionSelector'
 import ModelSelector from './ModelSelector'
+import AgentSelector from './AgentSelector'
+import { useAgentStore, selectMultiAgent } from '../store/agentStore'
 import Tooltip from './Tooltip'
-import { useSessionSettingsStore } from '../store/sessionSettingsStore'
+import { useSessionSettingsStore, selectSharedConversation } from '../store/sessionSettingsStore'
 
 export type ChatInputHandle = (text: string, attachments: Attachment[]) => void
 
@@ -58,16 +61,40 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   // overwrite the saved draft with the initial empty state).
   const [text, setText] = useState(() => chatDraft.text)
   const [attachments, setAttachments] = useState(() => chatDraft.attachments)
+  // Show the Agent picker only when the install runs a team. Single-Agent
+  // clients never see it, keeping the composer row identical to before.
+  const multiAgent = useAgentStore(selectMultiAgent)
+  // A group conversation has several Agents, each answering on its own model, so
+  // there's no single per-session model to pin — hide the chip, like the web.
+  const sharedConversation = useSessionSettingsStore(
+    (s) => (s.sessionId === sessionId ? selectSharedConversation(s) : false)
+  )
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [dragOver, setDragOver] = useState(false)
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
-  // `@` workspace-file picker
+  // `@` picker: Agent mentions (group chats only) come first, then workspace
+  // files. Agents are matched locally against the session roster; files are
+  // fetched from the backend as the user types.
   const [mentionItems, setMentionItems] = useState<WorkspaceEntry[]>([])
+  const [mentionAgents, setMentionAgents] = useState<AgentBadge[]>([])
   const [mentionIndex, setMentionIndex] = useState(0)
   const mentionStartRef = useRef(-1)
   const mentionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The roster of the current group chat (owner + members), for @-mentions.
+  const agents = useAgentStore((s) => s.agents)
+  const activeAgentId = useAgentStore((s) => s.activeAgentId)
+  const team = useSessionSettingsStore((s) => (s.sessionId === sessionId ? s.cfg?.team : undefined))
+  const mentionRoster = useMemo<AgentBadge[]>(() => {
+    if (!sharedConversation) return []
+    const owner = agents.find((a) => a.id === activeAgentId)
+    const roster: AgentBadge[] = owner ? [{ id: owner.id, name: owner.name || owner.id, avatar: owner.avatar }] : []
+    for (const m of team?.members || []) {
+      if (!roster.some((a) => a.id === m.id)) roster.push(m)
+    }
+    return roster
+  }, [sharedConversation, agents, activeAgentId, team])
   const composingRef = useRef(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -319,12 +346,41 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     resetHeight()
   }, [text, attachments, isStreaming, onSend])
 
-  const mentionOpen = mentionStartRef.current >= 0 && mentionItems.length > 0
+  // The picker shows agents (group chats) then files; either being non-empty
+  // keeps it open. `mentionCount` is the combined length for keyboard nav.
+  const mentionCount = mentionAgents.length + mentionItems.length
+  const mentionOpen = mentionStartRef.current >= 0 && mentionCount > 0
 
   const closeMention = () => {
     mentionStartRef.current = -1
     setMentionItems([])
+    setMentionAgents([])
     setMentionIndex(0)
+  }
+
+  // Insert "@name " where the mention was typed, so the backend's leading-@
+  // rule routes the turn to that Agent (matches the web console).
+  const acceptAgentMention = (index: number) => {
+    const agent = mentionAgents[index]
+    const el = textareaRef.current
+    if (!agent || !el) return
+    const caret = el.selectionStart
+    const insert = `@${agent.name || agent.id} `
+    const next = text.slice(0, mentionStartRef.current) + insert + text.slice(caret)
+    const caretAfter = mentionStartRef.current + insert.length
+    setText(next)
+    closeMention()
+    requestAnimationFrame(() => {
+      el.focus()
+      el.selectionStart = el.selectionEnd = caretAfter
+      autoSize(el)
+    })
+  }
+
+  // One list, agents first. Accept whichever row the combined index lands on.
+  const acceptMentionAt = (index: number) => {
+    if (index < mentionAgents.length) acceptAgentMention(index)
+    else acceptMention(index - mentionAgents.length)
   }
 
   /** Reference an existing workspace file or folder in place, not as an upload. */
@@ -367,17 +423,17 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
     if (mentionOpen) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
-        setMentionIndex((i) => (i + 1) % mentionItems.length)
+        setMentionIndex((i) => (i + 1) % mentionCount)
         return
       }
       if (e.key === 'ArrowUp') {
         e.preventDefault()
-        setMentionIndex((i) => (i - 1 + mentionItems.length) % mentionItems.length)
+        setMentionIndex((i) => (i - 1 + mentionCount) % mentionCount)
         return
       }
       if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
         e.preventDefault()
-        acceptMention(mentionIndex)
+        acceptMentionAt(mentionIndex)
         return
       }
       if (e.key === 'Escape') {
@@ -431,14 +487,22 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
       return
     }
     mentionStartRef.current = e.target.selectionStart - match[1].length - 1
+    const query = match[1]
+    // Agents match locally and update instantly (no request), so the group
+    // roster shows the moment "@" is typed.
+    const q = query.toLowerCase()
+    const matchedAgents = mentionRoster.filter(
+      (a) => !q || (a.name || a.id).toLowerCase().includes(q) || a.id.toLowerCase().includes(q)
+    )
+    setMentionAgents(matchedAgents)
+    setMentionIndex(0)
     mentionTimerRef.current = setTimeout(async () => {
       try {
-        const res = await apiClient.workspaceSearch(match[1], 12, sessionId)
+        const res = await apiClient.workspaceSearch(query, 12, sessionId)
         if (mentionStartRef.current < 0) return
         setMentionItems(res.results || [])
-        setMentionIndex(0)
       } catch {
-        closeMention()
+        setMentionItems([])
       }
     }, 160)
   }
@@ -646,10 +710,38 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           </div>
         )}
 
-        {/* Workspace file picker (@) */}
+        {/* @ picker: group-chat Agents first, then workspace files. */}
         {mentionOpen && (
           <div className="absolute bottom-full left-0 right-0 mb-1.5 max-h-72 overflow-y-auto rounded-xl border border-default bg-elevated shadow-xl z-30 p-1.5">
-            {mentionItems.map((item, i) => {
+            {mentionAgents.length > 0 && (
+              <div className="px-2 pt-1 pb-1 text-[11px] font-medium text-content-tertiary uppercase tracking-wide">
+                {t('mention_agents')}
+              </div>
+            )}
+            {mentionAgents.map((a, i) => (
+              <button
+                key={`agent:${a.id}`}
+                onMouseEnter={() => setMentionIndex(i)}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  acceptAgentMention(i)
+                }}
+                className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${
+                  i === mentionIndex ? 'bg-accent-soft' : 'hover:bg-surface-2'
+                }`}
+              >
+                <AgentAvatar agent={a} size={20} />
+                <span className="text-[13px] text-content flex-1 min-w-0 truncate">{a.name || a.id}</span>
+                {a.id === activeAgentId && (
+                  <span className="text-[10px] text-content-tertiary shrink-0">{t('composer_agent_owner')}</span>
+                )}
+              </button>
+            ))}
+            {mentionAgents.length > 0 && mentionItems.length > 0 && (
+              <div className="my-1 h-px bg-default" />
+            )}
+            {mentionItems.map((item, j) => {
+              const i = mentionAgents.length + j
               const Icon = iconFor(item.kind)
               return (
                 <button
@@ -657,7 +749,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                   onMouseEnter={() => setMentionIndex(i)}
                   onMouseDown={(e) => {
                     e.preventDefault()
-                    acceptMention(i)
+                    acceptMention(j)
                   }}
                   className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left cursor-pointer transition-colors ${
                     i === mentionIndex ? 'bg-accent-soft' : 'hover:bg-surface-2'
@@ -695,7 +787,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 bg-inset border border-default rounded-lg text-[11px] text-content-secondary max-w-[160px]">
+                    <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 bg-surface border border-default rounded-lg text-[11px] text-content-secondary max-w-[160px]">
                       {att.file_type === 'workspace_ref' ? (
                         att.is_dir ? (
                           <Folder size={11} className="text-accent shrink-0" />
@@ -760,10 +852,14 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             The middle chip group shrinks/truncates so a narrow composer (right
             panel open) never overflows the card. */}
         <div className="composer-toolbar flex items-center gap-1 px-2 pb-1 pt-2 min-w-0">
+          {/* The composer's "+" is a quick new chat: it opens a fresh
+              conversation owned by the current Agent right away, no picker
+              (matches the web console). Choosing a different Agent or starting a
+              group lives in the session-list "+" menu instead. */}
           <Tooltip label={t('session_new')}>
             <button
               onClick={onNewChat}
-              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn text-content-secondary hover:text-accent hover:bg-accent-soft cursor-pointer transition-colors"
+              className="shrink-0 w-8 h-8 flex items-center justify-center rounded-btn cursor-pointer transition-colors text-content-secondary hover:text-accent hover:bg-accent-soft"
             >
               <Plus size={17} />
             </button>
@@ -795,9 +891,14 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
           </div>
 
           <div className="flex items-center gap-1 shrink-0 pl-1">
-            <div className="max-w-[200px] min-w-0">
-              <ModelSelector sessionId={sessionId} />
-            </div>
+            {!sharedConversation && (
+              <div className="max-w-[200px] min-w-0">
+                <ModelSelector sessionId={sessionId} />
+              </div>
+            )}
+            {/* Agent picker sits on the far right, avatar-only, as the identity
+                the reply comes from. Only in multi-Agent mode. */}
+            {multiAgent && <AgentSelector sessionId={sessionId} />}
             {micSupported && (
               <Tooltip
                 label={
@@ -833,7 +934,7 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
               <Tooltip label={t('msg_stop')}>
                 <button
                   onClick={onStop}
-                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-btn bg-surface-2 text-content hover:bg-inset cursor-pointer transition-colors"
+                  className="flex-shrink-0 w-9 h-9 flex items-center justify-center rounded-btn bg-surface-2 text-content hover:bg-inset-2 cursor-pointer transition-colors"
                 >
                   <Square size={14} className="fill-current" />
                 </button>

@@ -5,9 +5,13 @@ import { t } from '../i18n'
 import apiClient from '../api/client'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import Markdown from './Markdown'
+import MentionText from './MentionText'
 import MessageSteps, { ThinkingStep } from './MessageSteps'
 import FileCard from './FileCard'
 import { useLightboxStore } from './Lightbox'
+import AgentAvatar from './AgentAvatar'
+import { useAgentStore, selectMultiAgent, findAgent } from '../store/agentStore'
+import { useSessionSettingsStore, selectSharedConversation } from '../store/sessionSettingsStore'
 import { product } from '@product'
 
 interface MessageBubbleProps {
@@ -48,6 +52,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
   const [copied, setCopied] = useState(false)
   const preview = useWorkspaceStore((s) => s.preview)
   const openLightbox = useLightboxStore((s) => s.open)
+  // In multi-Agent mode, show the speaking Agent's face on assistant bubbles.
+  // A teammate's turn is tagged with its author (`extras.agent_id`); untagged
+  // replies are the conversation owner's, and the owner is always the active
+  // Agent (opening a chat activates its owner; switching Agents on a chat that
+  // has messages starts a new one), so falling back to it never rewrites who
+  // spoke in past turns.
+  const multiAgent = useAgentStore(selectMultiAgent)
+  const activeAgentId = useAgentStore((s) => s.activeAgentId)
+  const speakerId = (message.extras?.agent_id as string) || activeAgentId
+  const speaker = multiAgent && speakerId ? findAgent(speakerId) : undefined
+  // In a group conversation several Agents answer, so each reply is labelled
+  // with its speaker's name (as in the web console). A solo chat keeps the
+  // plain bubble — the face alone says who it is.
+  const shared = useSessionSettingsStore(selectSharedConversation)
+  const speakerName = shared && speaker ? speaker.name || speaker.id : ''
 
   const copy = () => {
     navigator.clipboard.writeText(message.content)
@@ -110,7 +129,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
           </div>
         )}
         <div className="max-w-[75%] rounded-2xl rounded-br-md px-4 py-2.5 bg-bubble-user text-bubble-user-text">
-          <div className="text-sm whitespace-pre-wrap break-words">{message.content}</div>
+          <div className="text-sm whitespace-pre-wrap break-words">
+            <MentionText text={message.content} onAccent />
+          </div>
         </div>
         <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <span className="text-[11px] text-content-tertiary mr-1">{fmtTime(message.timestamp)}</span>
@@ -139,10 +160,17 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
         <div className="w-7 h-7 rounded-lg flex-shrink-0 mt-1 overflow-hidden">
           <product.slots.AssistantAvatar />
         </div>
+      ) : speaker ? (
+        <div className="mt-1">
+          <AgentAvatar agent={speaker} size={28} shape="square" />
+        </div>
       ) : (
         <img src="./logo.jpg" alt="Agent" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />
       )}
       <div className="flex-1 min-w-0 max-w-[calc(100%-2.5rem)]">
+        {speakerName && (
+          <div className="text-[11px] font-medium text-content-tertiary mb-1 ml-1 truncate">{speakerName}</div>
+        )}
         <div className="inline-block w-full rounded-2xl border border-default bg-surface px-4 py-3">
           {message.kind === 'evolution' && (
             <div className="inline-flex items-center gap-1 mb-1.5 text-[11px] text-content-tertiary">
