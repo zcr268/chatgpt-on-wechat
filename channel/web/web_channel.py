@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from queue import Queue, Empty
-from typing import List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 from urllib.parse import quote
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
@@ -6695,6 +6695,23 @@ def _list_sessions_across_agents(page: int, page_size: int) -> dict:
             else:
                 uses_default = True
 
+    # One row per conversation. A session id can exist in more than one Agent's
+    # store (an older client once let a conversation change hands mid-way, and
+    # each side kept the turns it saw); showing it twice makes both rows light
+    # up as "selected". Keep the copy holding the bulk of the conversation —
+    # that's the one the user recognises — and let the newest break a tie.
+    by_id: Dict[str, dict] = {}
+    for session in merged:
+        sid = session.get("session_id")
+        kept = by_id.get(sid)
+        if kept is None or (
+            (int(session.get("msg_count") or 0), int(session.get("last_active") or 0))
+            > (int(kept.get("msg_count") or 0), int(kept.get("last_active") or 0))
+        ):
+            by_id[sid] = session
+    total -= len(merged) - len(by_id)
+    merged = list(by_id.values())
+
     # Same ordering the per-Agent query applies, so a merged page looks exactly
     # like a single Agent's page does.
     merged.sort(
@@ -6932,6 +6949,12 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     ``source`` tells the UI whether a value is this conversation's own choice or
     inherited, so it can show "follow global" as a real, selectable state instead
     of silently duplicating the global value onto every session.
+
+    The model resolves the same way the runtime does (see AgentLLMModel.model):
+    the conversation's pin, else the owning Agent's own default model, else the
+    global config. ``source`` is ``session`` / ``agent`` / ``global`` accordingly,
+    and ``agent`` carries the Agent's default when it has one, so a fresh chat
+    with a specialist Agent shows the model it will really answer with.
     """
     from agent.workspace import session_prefs
 
@@ -6945,12 +6968,34 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     global_model = local_config.get("model") or ""
     global_permission = permission_global_mode()
 
+    # The default Agent never has a model of its own: it *is* the global choice.
+    agent_default = None
+    try:
+        from agent.registry import get_agent_registry
+        registry = get_agent_registry()
+        profile = registry.get(agent_id or None, require_enabled=False)
+        if profile.id != registry.default_agent_id and profile.model:
+            agent_default = {
+                "model": profile.model,
+                "provider": profile.bot_type or global_provider,
+            }
+    except Exception as e:
+        logger.debug(f"[WebChannel] agent default model unavailable: {e}")
+
+    if prefs.get("model"):
+        effective_model, effective_provider, source = prefs["model"], prefs.get("provider"), "session"
+    elif agent_default:
+        effective_model, effective_provider, source = agent_default["model"], agent_default["provider"], "agent"
+    else:
+        effective_model, effective_provider, source = global_model, global_provider, "global"
+
     return {
         "model": {
-            "model": prefs.get("model") or global_model,
-            "provider": prefs.get("provider") or global_provider,
-            "source": "session" if prefs.get("model") else "global",
+            "model": effective_model,
+            "provider": effective_provider or global_provider,
+            "source": source,
             "global": {"model": global_model, "provider": global_provider},
+            "agent": agent_default,
             "providers": _session_model_catalog(),
         },
         "permission": {

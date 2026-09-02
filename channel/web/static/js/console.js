@@ -39,17 +39,18 @@ const I18N = {
         agents_delete_title: '删除智能体',
         agents_delete_confirm: '确定删除智能体「{name}」吗？其工作空间和会话将一并移除，且无法恢复。',
         agents_pick_hint: '选择智能体',
-        agents_clone_label: '人格模板',
+        agents_clone_label: '从已有智能体复制',
+        agents_clone_hint: '复制其配置、技能与知识作为起点',
         agents_avatar_upload: '上传图片',
-        agents_clone_none: '默认人格',
-        agents_clone_from: '复制 {name} 的人格',
+        agents_clone_none: '空白',
+        agents_clone_from: '{name}',
         agents_name: '名称',
         agents_saved: '已保存',
         agents_save_failed: '保存失败',
         agents_no_desc: '暂无职责',
         agents_description: '职责',
         agents_description_placeholder: '该智能体负责哪些工作、在什么场景被使用',
-        agents_description_hint: '用于多智能体协作时判断由谁来处理任务。',
+        agents_description_hint: '用于多智能体协作时的任务分配',
         agents_model: '默认模型',
         agents_model_follows_global: '跟随全局配置',
         agents_model_default_hint: '默认使用主模型，在「模型配置」中修改。',
@@ -58,13 +59,16 @@ const I18N = {
         agents_knowledge: '知识库',
         agents_knowledge_shared: '共享',
         agents_knowledge_own: '独立',
-        agents_knowledge_hint: '共享：与团队读写同一个知识库。\n独立：拥有专属知识库，互不影响。',
+        agents_knowledge_hint: '共享：与团队读写同一个知识库\n独立：拥有专属知识库，互不影响',
         agents_knowledge_working: '处理中…',
         agents_knowledge_failed: '切换失败',
         agents_empty: '还没有智能体。创建一个，开始组团队。',
+        agents_select_hint: '从左侧选择一个智能体进行配置',
         agents_pick_tip: '切换当前智能体',
+        team_members: '当前会话成员',
         team_invite: '添加到当前会话',
         team_remove: '移出这个会话',
+        composer_agent_owner: '主',
         channel_bound_agent: '绑定智能体',
         channel_bound_default: '默认',
         channel_bound_agent_hint: '第一个为默认智能体，负责接收消息并可委派给其他成员',
@@ -346,6 +350,7 @@ const I18N = {
         perm_denied_action: '调整权限',
         model_menu_title: '本次会话模型',
         model_follow_global: '跟随全局设置',
+        model_follow_agent: '跟随智能体默认模型',
         model_tip: '模型：{name}',
         model_unset: '未配置',
         session_settings_failed: '设置失败，请重试',
@@ -419,17 +424,18 @@ const I18N = {
         agents_delete_title: '刪除智慧體',
         agents_delete_confirm: '確定刪除智慧體「{name}」嗎？其工作空間與會話將一併移除，且無法復原。',
         agents_pick_hint: '選擇智慧體',
-        agents_clone_label: '人格範本',
+        agents_clone_label: '從已有智慧體複製',
+        agents_clone_hint: '複製其設定、技能與知識作為起點',
         agents_avatar_upload: '上傳圖片',
-        agents_clone_none: '預設人格',
-        agents_clone_from: '複製 {name} 的人格',
+        agents_clone_none: '空白',
+        agents_clone_from: '{name}',
         agents_name: '名稱',
         agents_saved: '已儲存',
         agents_save_failed: '儲存失敗',
         agents_no_desc: '暫無職責',
         agents_description: '職責',
         agents_description_placeholder: '該智慧體負責哪些工作、在什麼場景被使用',
-        agents_description_hint: '用於多智慧體協作時判斷由誰來處理任務。',
+        agents_description_hint: '用於多智慧體協作時的任務分配',
         agents_model: '預設模型',
         agents_model_follows_global: '跟隨全域設定',
         agents_model_default_hint: '預設使用主模型，於「模型設定」中修改。',
@@ -438,13 +444,16 @@ const I18N = {
         agents_knowledge: '知識庫',
         agents_knowledge_shared: '共享',
         agents_knowledge_own: '獨立',
-        agents_knowledge_hint: '共享：與團隊讀寫同一個知識庫。\n獨立：擁有專屬知識庫，互不影響。',
+        agents_knowledge_hint: '共享：與團隊讀寫同一個知識庫\n獨立：擁有專屬知識庫，互不影響',
         agents_knowledge_working: '處理中…',
         agents_knowledge_failed: '切換失敗',
         agents_empty: '還沒有智慧體。建立一個，開始組團隊。',
+        agents_select_hint: '從左側選擇一個智能體進行設定',
         agents_pick_tip: '切換當前智能體',
+        team_members: '當前會話成員',
         team_invite: '新增到目前會話',
         team_remove: '移出這個會話',
+        composer_agent_owner: '主',
         channel_bound_agent: '綁定智慧體',
         channel_bound_default: '預設',
         channel_bound_agent_hint: '第一個為預設智慧體，負責接收訊息並可委派給其他成員',
@@ -726,6 +735,7 @@ const I18N = {
         perm_denied_action: '調整權限',
         model_menu_title: '本次會話模型',
         model_follow_global: '跟隨全域設定',
+        model_follow_agent: '跟隨智慧體預設模型',
         model_tip: '模型：{name}',
         model_unset: '未設定',
         session_settings_failed: '設定失敗，請重試',
@@ -794,17 +804,18 @@ const I18N = {
         agents_delete_title: 'Delete Agent',
         agents_delete_confirm: 'Delete Agent "{name}"? Its workspace and conversations will be removed for good.',
         agents_pick_hint: 'Pick Agents',
-        agents_clone_label: 'Persona template',
+        agents_clone_label: 'Copy from an existing agent',
+        agents_clone_hint: 'Copy its config, skills and knowledge as a starting point',
         agents_avatar_upload: 'Upload image',
-        agents_clone_none: 'Default persona',
-        agents_clone_from: 'Copy {name}\'s persona',
+        agents_clone_none: 'Blank',
+        agents_clone_from: '{name}',
         agents_name: 'Name',
         agents_saved: 'Saved',
         agents_save_failed: 'Save failed',
         agents_no_desc: 'No responsibilities yet',
         agents_description: 'Responsibilities',
         agents_description_placeholder: 'What this Agent handles and when it should be used',
-        agents_description_hint: 'Used to decide who handles a task when Agents collaborate.',
+        agents_description_hint: 'Used for task assignment when Agents collaborate',
         agents_model: 'Default model',
         agents_model_follows_global: 'Follow the configured model',
         agents_model_default_hint: 'Uses the primary model. Change it under Model config.',
@@ -812,14 +823,17 @@ const I18N = {
         agents_knowledge: 'Knowledge base',
         agents_knowledge_shared: 'Shared',
         agents_knowledge_own: 'Own',
-        agents_knowledge_hint: 'Shared: read and write the same knowledge base as the team.\nOwn: a private base, isolated from others.',
+        agents_knowledge_hint: 'Shared: read and write the same knowledge base as the team\nOwn: a private base, isolated from others',
         agents_knowledge_working: 'Working…',
         agents_knowledge_failed: 'Switch failed',
         agents_skills_pick: 'Only the skills checked below',
         agents_empty: 'No Agents yet. Create one to start a team.',
+        agents_select_hint: 'Pick an Agent on the left to configure it',
         agents_pick_tip: 'Switch current Agent',
+        team_members: 'In this conversation',
         team_invite: 'Add to current chat',
         team_remove: 'Remove from this chat',
+        composer_agent_owner: 'Owner',
         channel_bound_agent: 'Bind agent',
         channel_bound_default: 'default',
         channel_bound_agent_hint: 'first pick is the default agent: it receives messages and can delegate to the rest',
@@ -1101,6 +1115,7 @@ const I18N = {
         perm_denied_action: 'Adjust permissions',
         model_menu_title: 'Model for this chat',
         model_follow_global: 'Follow global setting',
+        model_follow_agent: 'Follow the agent\u2019s default model',
         model_tip: 'Model: {name}',
         model_unset: 'Not set',
         session_settings_failed: 'Could not apply, please retry',
@@ -1212,19 +1227,7 @@ function applyI18n() {
         el.classList.add('opacity-0');
     });
     
-    const langLabel = document.getElementById('lang-label');
-    if (langLabel) {
-        if (currentLang === 'zh-Hant') langLabel.textContent = '繁体';
-        else if (currentLang === 'zh') langLabel.textContent = '简体';
-        else langLabel.textContent = 'EN';
-    }
-    // Highlight the active option in the header language dropdown menu.
-    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
-        const active = item.dataset.lang === currentLang;
-        item.classList.toggle('text-blue-600', active);
-        item.classList.toggle('dark:text-blue-400', active);
-        item.classList.toggle('font-medium', active);
-    });
+    _syncLangControls();
     // Point the docs link to the locale-specific documentation site.
     const docsLink = document.getElementById('docs-link');
     if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
@@ -1275,19 +1278,7 @@ function syncLanguageToBackend(lang, callback) {
 // Reflect the current language on both the top-right toggle and the config
 // selector (if present), so the two entry points stay synchronized.
 function updateLangControls() {
-    const langLabel = document.getElementById('lang-label');
-    if (langLabel) {
-        if (currentLang === 'zh-Hant') langLabel.textContent = '繁体';
-        else if (currentLang === 'zh') langLabel.textContent = '简体';
-        else langLabel.textContent = 'EN';
-    }
-    // Highlight the active option in the header language dropdown menu.
-    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
-        const active = item.dataset.lang === currentLang;
-        item.classList.toggle('text-blue-600', active);
-        item.classList.toggle('dark:text-blue-400', active);
-        item.classList.toggle('font-medium', active);
-    });
+    _syncLangControls();
     // The config language picker is the custom .cfg-dropdown component. Only
     // sync it once it has been initialized (i.e. the config panel was opened).
     const sel = document.getElementById('cfg-lang-select');
@@ -1303,6 +1294,23 @@ function updateLangControls() {
             i.classList.toggle('active', i.dataset.value === currentLang);
         });
     }
+}
+
+// Reflect the current language on the header dropdown: short label on the
+// toggle (简 / 繁 / EN) plus the active item highlighted in the menu.
+function _syncLangControls() {
+    const langLabel = document.getElementById('lang-label');
+    if (langLabel) {
+        if (currentLang === 'zh-Hant') langLabel.textContent = '繁';
+        else if (currentLang === 'zh') langLabel.textContent = '简';
+        else langLabel.textContent = 'EN';
+    }
+    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
+        const active = item.dataset.lang === currentLang;
+        item.classList.toggle('text-blue-600', active);
+        item.classList.toggle('dark:text-blue-400', active);
+        item.classList.toggle('font-medium', active);
+    });
 }
 
 // Toggle the header language dropdown menu open/closed.
@@ -1631,11 +1639,23 @@ function navigateTo(viewId) {
     document.getElementById('breadcrumb-group').dataset.i18n = meta.group;
     document.getElementById('breadcrumb-page').textContent = t(meta.page);
     document.getElementById('breadcrumb-page').dataset.i18n = meta.page;
+    const leavingAgents = currentView === 'agents' && viewId !== 'agents';
     currentView = viewId;
     // The Agent detail is a fixed drawer, so it would otherwise hang over
     // whatever view you navigate to. It only belongs to the Agent Team page.
     if (viewId !== 'agents') closeAgentDetail();
-    if (viewId === 'agents') loadAgentCatalog();
+    if (viewId === 'agents') {
+        // The team page is a wide two-pane workbench; the history panel on top
+        // of it would leave the detail cramped. Tuck it away on entry and put it
+        // back the way it was when the user leaves (only if they hadn't already
+        // toggled it themselves in the meantime).
+        _sessionPanelWasOpen = sessionPanelOpen;
+        if (sessionPanelOpen) closeSessionPanel(true);
+        loadAgentCatalog();
+    } else if (leavingAgents && _sessionPanelWasOpen) {
+        _sessionPanelWasOpen = false;
+        openSessionPanel();
+    }
     
     // Clear status messages when navigating away
     document.querySelectorAll('[id$="-status"]').forEach(el => {
@@ -1765,8 +1785,17 @@ function loadAgentCatalog() {
             if (!selectedAdminAgentId || !agentCatalog.some(a => a.id === selectedAdminAgentId)) {
                 selectedAdminAgentId = '';
             }
+            // Two-pane workbench: on a wide screen, land on the first Agent so the
+            // right pane is never a blank placeholder. On a phone the list shows
+            // first (the detail is a sheet), so leave nothing selected there.
+            if (!selectedAdminAgentId && currentView === 'agents'
+                    && agentCatalog.length && window.innerWidth > 900) {
+                openAgentDetail((enabledAgents()[0] || agentCatalog[0]).id);
+                return data;
+            }
             renderAgentsGrid();
             if (selectedAdminAgentId) renderAgentDetail();
+            else closeAgentDetail();
             renderComposerIdentity();
             renderMemoryAgentSelect();
             // The new-chat button only sprouts a menu (and its caret) once there
@@ -1801,13 +1830,12 @@ function renderAgentsGrid() {
         return `<div class="agent-card${selected ? ' selected' : ''}${agent.enabled ? '' : ' archived'}" onclick="openAgentDetail('${escapeHtml(agent.id)}')">
             ${corner}
             <div class="agent-card-top">
-                ${agentAvatarHTML(agent, 40)}
-                <div class="min-w-0">
+                ${agentAvatarHTML(agent, 32)}
+                <div class="min-w-0 flex-1">
                     <div class="agent-card-name truncate">${escapeHtml(agent.name)}</div>
-                    <div class="agent-card-id truncate">${escapeHtml(agent.id)}</div>
+                    <div class="agent-card-desc">${desc ? escapeHtml(desc) : `<span class="agent-card-desc-empty">${escapeHtml(t('agents_no_desc'))}</span>`}</div>
                 </div>
             </div>
-            <div class="agent-card-desc">${desc ? escapeHtml(desc) : `<span class="agent-card-desc-empty">${escapeHtml(t('agents_no_desc'))}</span>`}</div>
         </div>`;
     }).join('');
 }
@@ -1833,7 +1861,12 @@ function openAgentDetail(agentId) {
 
 function closeAgentDetail() {
     selectedAdminAgentId = '';
-    document.getElementById('agent-detail')?.classList.add('hidden');
+    const detail = document.getElementById('agent-detail');
+    if (detail) {
+        detail.classList.add('hidden');
+        // The empty pane's placeholder text (desktop two-pane layout).
+        detail.setAttribute('data-empty-label', t('agents_select_hint'));
+    }
     renderAgentsGrid();
 }
 
@@ -2227,10 +2260,13 @@ function openAgentCreateForm() {
 
     const clone = document.getElementById('agent-create-clone');
     if (clone) {
+        // Options carry the agent so both the row and the trigger show its
+        // avatar + name; "blank" (no clone) has no face.
         const opts = [{ value: '', label: t('agents_clone_none') }].concat(
             enabledAgents().map(a => ({
                 value: a.id,
-                label: t('agents_clone_from').replace('{name}', a.name),
+                label: a.name || a.id,
+                agent: a,
             }))
         );
         initDropdown(clone, opts, '', () => {});
@@ -2729,7 +2765,7 @@ function renderComposerIdentity() {
     wrap.classList.remove('hidden');
     const agent = findAgent(activeAgentId) || { id: activeAgentId || defaultAgentId, name: activeAgentId || 'Agent' };
     const others = currentTeamIds().length;
-    btn.innerHTML = agentAvatarHTML(agent, 32)
+    btn.innerHTML = agentAvatarHTML(agent, 22)
         + (others ? `<span class="composer-agent-count">${others + 1}</span>` : '');
     const face = btn.querySelector('.agent-avatar');
     if (face) face.id = 'composer-agent-avatar';
@@ -2781,13 +2817,32 @@ function renderComposerAgentMenu() {
     }
 
     const candidates = enabledAgents().filter(a => a.id !== activeAgentId && !taken.has(a.id));
-    const joined = members.filter(m => m.id !== activeAgentId).map(m => `
-        <button type="button" class="composer-menu-item agent-row joined"
-                onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
-            ${agentAvatarHTML(m, 24)}
-            <span>${escapeHtml(m.name || m.id)}</span>
-            <i class="fas fa-xmark ml-auto text-[11px]"></i>
-        </button>`).join('');
+
+    // A group chat first lists who is already in the conversation - the owner
+    // and each teammate, all in green so "present" reads at a glance - then, in
+    // a separate section below, who can still be pulled in. Splitting the two
+    // makes it obvious the highlighted rows are members, not options.
+    if (sharedConversation()) {
+        const owner = findAgent(activeAgentId);
+        const ownerRow = owner ? `
+            <div class="composer-menu-item agent-row joined is-owner">
+                ${agentAvatarHTML(owner, 24)}
+                <span>${escapeHtml(owner.name || owner.id)}</span>
+                <span class="composer-menu-badge ml-auto">${escapeHtml(t('composer_agent_owner'))}</span>
+            </div>` : '';
+        const joined = members.filter(m => m.id !== activeAgentId).map(m => `
+            <button type="button" class="composer-menu-item agent-row joined"
+                    onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
+                ${agentAvatarHTML(m, 24)}
+                <span>${escapeHtml(m.name || m.id)}</span>
+                <i class="fas fa-check ml-auto text-[11px] joined-check"></i>
+                <i class="fas fa-xmark ml-auto text-[11px] joined-remove"></i>
+            </button>`).join('');
+        sections.push(
+            `<div class="composer-menu-title">${escapeHtml(t('team_members'))}</div>${ownerRow}${joined}`
+        );
+    }
+
     const invitable = candidates.map(agent => `
         <button type="button" class="composer-menu-item agent-row"
                 onclick="inviteTeamMember('${escapeHtml(agent.id)}')">
@@ -2795,9 +2850,9 @@ function renderComposerAgentMenu() {
             <span>${escapeHtml(agent.name)}</span>
             <i class="fas fa-plus ml-auto text-[11px] text-slate-400"></i>
         </button>`).join('');
-    if (joined || invitable) {
+    if (invitable) {
         sections.push(
-            `<div class="composer-menu-title">${escapeHtml(t('team_invite'))}</div>${joined}${invitable}`
+            `<div class="composer-menu-title">${escapeHtml(t('team_invite'))}</div>${invitable}`
         );
     }
 
@@ -3103,6 +3158,21 @@ function createMd() {
             token.attrPush(['rel', 'noopener noreferrer']);
         }
         return defaultLinkOpen(tokens, idx, options, env, self);
+    };
+    // A table can't shrink below its columns' minimum content width, so a wide
+    // comparison table would run past the bubble. Wrap it in a scroller: it
+    // still fills the bubble when it fits and scrolls sideways when it doesn't.
+    const defaultTableOpen = md.renderer.rules.table_open || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+    };
+    const defaultTableClose = md.renderer.rules.table_close || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+    };
+    md.renderer.rules.table_open = function(tokens, idx, options, env, self) {
+        return '<div class="table-wrap">' + defaultTableOpen(tokens, idx, options, env, self);
+    };
+    md.renderer.rules.table_close = function(tokens, idx, options, env, self) {
+        return defaultTableClose(tokens, idx, options, env, self) + '</div>';
     };
     return md;
 }
@@ -4210,6 +4280,10 @@ function _wsSelUpdateLabel() {
     }
     const btn = _wsSelBtn();
     if (btn) {
+        // The default workspace is the resting state, so it collapses to just
+        // the folder icon (matching the desktop composer); a picked workspace
+        // shows its name so the user knows they've moved off the default.
+        btn.classList.toggle('composer-chip-icon-only', !_wsSelState.current);
         const full = _wsSelState.current
             ? _wsSelState.current.path
             : _wsSelState.defaultWorkspace;
@@ -4552,7 +4626,8 @@ function _renderModelChip() {
     if (label) label.textContent = model || t('model_unset');
 
     const tip = t('model_tip').replace('{name}', model || t('model_unset'))
-        + (state.source === 'global' ? ` · ${t('model_follow_global')}` : '');
+        + (state.source === 'global' ? ` · ${t('model_follow_global')}` : '')
+        + (state.source === 'agent' ? ` · ${t('model_follow_agent')}` : '');
     btn.setAttribute('data-tooltip', tip);
     btn.setAttribute('data-tooltip-pos', 'top');
     btn.setAttribute('data-tip-float', '');
@@ -7106,6 +7181,9 @@ function newChat(optimistic = true) {
 
 const SESSION_PANEL_KEY = 'cow_session_panel_open';
 let sessionPanelOpen = localStorage.getItem(SESSION_PANEL_KEY) === '1';
+// Whether the history panel was open before entering the team page, so it can
+// be restored on the way out (the team page force-closes it for room).
+let _sessionPanelWasOpen = false;
 
 function _persistPanelState() {
     localStorage.setItem(SESSION_PANEL_KEY, sessionPanelOpen ? '1' : '0');
@@ -7126,13 +7204,15 @@ function _hideSessionOverlay() {
     if (overlay) overlay.classList.add('hidden');
 }
 
-function closeSessionPanel() {
+function closeSessionPanel(skipPersist) {
     const panel = document.getElementById('session-panel');
     if (!panel || !sessionPanelOpen) return;
     sessionPanelOpen = false;
     panel.classList.add('hidden');
     _hideSessionOverlay();
-    _persistPanelState();
+    // When the team page tucks the panel away it shouldn't overwrite the user's
+    // own preference; only real user closes persist.
+    if (!skipPersist) _persistPanelState();
 }
 
 function toggleSessionPanel() {
@@ -8204,6 +8284,16 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
         selEl.addEventListener('click', (e) => {
             e.stopPropagation();
             document.querySelectorAll('.cfg-dropdown.open').forEach(d => { if (d !== el) d.classList.remove('open'); });
+            const willOpen = !el.classList.contains('open');
+            if (willOpen) {
+                // Flip the menu above the control when it would otherwise be
+                // clipped against the viewport bottom (e.g. the last channel's
+                // config dropdown sitting near the window edge).
+                const rect = el.getBoundingClientRect();
+                const below = window.innerHeight - rect.bottom;
+                const menuH = Math.min(menuEl.scrollHeight || 240, 280) + 8;
+                el.classList.toggle('drop-up', below < menuH && rect.top > below);
+            }
             el.classList.toggle('open');
         });
         el._ddBound = true;

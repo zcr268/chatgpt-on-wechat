@@ -468,14 +468,6 @@
                                 <div id="attachment-preview" class="attachment-preview hidden"></div>
 
                                 <div class="composer-identity-row">
-                                    <div id="composer-identity" class="composer-identity hidden">
-                                        <button id="composer-agent-btn" type="button" class="composer-agent-btn"
-                                                onclick="toggleComposerAgentMenu(event)"
-                                                data-tip-float data-tooltip-pos="top">
-                                            <span id="composer-agent-avatar" class="agent-avatar agent-avatar-32"></span>
-                                        </button>
-                                        <div id="composer-agent-menu" class="composer-menu hidden"></div>
-                                    </div>
                                     <textarea id="chat-input"
                                               class="composer-textarea"
                                               rows="1"
@@ -508,7 +500,7 @@
                                             <i class="fas fa-chevron-down composer-chip-caret"></i>
                                         </button>
 
-                                        <button id="permission-selector-btn" type="button" class="composer-chip"
+                                        <button id="permission-selector-btn" type="button" class="composer-chip composer-chip-icon-only"
                                                 onclick="togglePermissionSelector(event)"
                                                 data-tip-float data-tooltip-pos="top">
                                             <i id="permission-selector-icon" class="fas fa-shield-halved"></i>
@@ -525,6 +517,18 @@
                                             <span id="model-selector-label" class="composer-chip-label">—</span>
                                             <i class="fas fa-chevron-down composer-chip-caret"></i>
                                         </button>
+
+                                        <!-- The Agent identity chip sits right of the model, avatar-only,
+                                             as the face the reply comes from (matches the desktop composer).
+                                             Only shown in multi-Agent mode. -->
+                                        <div id="composer-identity" class="composer-identity hidden">
+                                            <button id="composer-agent-btn" type="button" class="composer-agent-btn"
+                                                    onclick="toggleComposerAgentMenu(event)"
+                                                    data-tip-float data-tooltip-pos="top">
+                                                <span id="composer-agent-avatar" class="agent-avatar agent-avatar-32"></span>
+                                            </button>
+                                            <div id="composer-agent-menu" class="composer-menu composer-menu-up hidden"></div>
+                                        </div>
                                         <button id="optimize-btn" type="button" class="composer-icon-btn"
                                                 data-tooltip="智能优化输入">
                                             <i class="fas fa-magic text-[13px]"></i>
@@ -635,22 +639,19 @@
                 <!-- ====================================================== -->
                 <!-- VIEW: Agent Team                                        -->
                 <!-- ====================================================== -->
-                <div id="view-agents" class="view">
-                    <div class="flex-1 overflow-y-auto p-6">
-                        <div class="max-w-4xl mx-auto">
-                            <div class="flex items-center justify-between mb-6">
-                                <div>
-                                    <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="agents_page_title">智能体团队</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="agents_page_desc">管理团队中的智能体成员</p>
-                                </div>
-                                <button onclick="openAgentCreateForm()"
-                                        class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium whitespace-nowrap">
-                                    <i class="fas fa-plus mr-1.5"></i><span data-i18n="agents_create">创建智能体</span>
-                                </button>
+                <div id="view-agents" class="view agents-view">
+                    <div class="agents-list-pane">
+                        <div class="agents-list-head">
+                            <div class="min-w-0">
+                                <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="agents_page_title">智能体团队</h2>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="agents_page_desc">管理团队中的智能体成员</p>
                             </div>
-
-                            <div id="agents-grid" class="agents-grid"></div>
+                            <button onclick="openAgentCreateForm()"
+                                    class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium whitespace-nowrap shrink-0">
+                                <i class="fas fa-plus mr-1.5"></i><span data-i18n="agents_create">创建智能体</span>
+                            </button>
                         </div>
+                        <div id="agents-grid" class="agents-grid"></div>
                     </div>
 
                     <aside id="agent-detail" class="agent-detail hidden">
@@ -720,10 +721,13 @@
                                     <textarea id="agent-create-description" rows="3" data-i18n-placeholder="agents_description_placeholder" placeholder="该智能体负责哪些工作、在什么场景被使用" class="agent-input agent-textarea"></textarea>
                                 </div>
                                 <div class="agent-field">
-                                    <label class="agent-field-label" data-i18n="agents_clone_label">人格模板</label>
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label" data-i18n="agents_clone_label">从已有智能体复制</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_clone_hint"><i class="fas fa-circle-info"></i></span>
+                                    </div>
                                     <div id="agent-create-clone" class="cfg-dropdown" tabindex="0">
                                         <div class="cfg-dropdown-selected">
-                                            <span class="cfg-dropdown-text">--</span>
+                                            <span class="cfg-dropdown-value"><span class="cfg-dropdown-face"></span><span class="cfg-dropdown-text">--</span></span>
                                             <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
                                         </div>
                                         <div class="cfg-dropdown-menu"></div>
