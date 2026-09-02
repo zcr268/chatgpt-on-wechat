@@ -224,15 +224,17 @@ class AgentInitializer:
                 transcript_workspace or agent.workspace_dir
             )
             max_turns = conf().get("agent_max_context_turns", 20)
-            # Scheduler tasks run on a stable isolated session per task and
-            # can fire many times a day; a smaller restore window keeps prompt
-            # cost bounded while still letting the agent see "last few" runs
-            # for trend / dedup style logic. Regular chat sessions keep the
-            # original heuristic so user dialogues feel continuous.
+            # Restore honours the session's context boundary (cleared history is
+            # never brought back), so we can afford a fairly generous window and
+            # still keep it under the runtime cap. Regular chats restore ~half of
+            # the runtime budget so a dialogue feels continuous after a restart.
+            # Scheduler tasks run on a stable isolated session and can fire many
+            # times a day, so they keep a smaller window: enough to see the last
+            # few runs for trend / dedup logic while keeping prompt cost bounded.
             if session_id.startswith("scheduler_"):
-                restore_turns = max(1, max_turns // 5)
+                restore_turns = max(1, max_turns // 4)
             else:
-                restore_turns = max(3, max_turns // 6)
+                restore_turns = max(3, max_turns // 2)
             saved = store.load_messages(
                 session_id, max_turns=restore_turns, with_authors=shared
             )
