@@ -36,7 +36,12 @@ from typing import Dict, Optional
 
 from common.log import logger
 
-_FIELDS = ("provider", "model", "permission")
+# ``members`` is the roster of a team conversation: the Agent ids the session's
+# owner may hand work to. Here rather than in a table of its own for the same
+# reason the model override is — it can be set before the conversation has a
+# single message, so there is no row to hang it off yet. An empty roster is
+# stored as absent, which is exactly "not a team conversation".
+_FIELDS = ("provider", "model", "permission", "members")
 
 _lock = threading.Lock()
 
@@ -89,6 +94,26 @@ def get_prefs(session_id: str, agent_id: Optional[str] = None) -> Dict:
     if not isinstance(entry, dict):
         return {}
     return {k: entry[k] for k in _FIELDS if entry.get(k)}
+
+
+def members_index() -> Dict[tuple, list]:
+    """Every team conversation's roster, keyed by ``(agent_id, session_id)``.
+
+    Listing conversations needs the roster for a whole page at once, and asking
+    per row would re-read and re-parse the file once per conversation. Only
+    team conversations appear here, so an empty result means nobody has ever
+    invited anybody.
+    """
+    with _lock:
+        data = _load()
+    index: Dict[tuple, list] = {}
+    for key, entry in data["sessions"].items():
+        if not isinstance(entry, dict) or not entry.get("members"):
+            continue
+        agent_id, _, session_id = str(key).partition("::")
+        if session_id:
+            index[(agent_id, session_id)] = list(entry["members"])
+    return index
 
 
 def set_prefs(

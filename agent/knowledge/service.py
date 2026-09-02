@@ -39,8 +39,12 @@ class KnowledgeService:
     MAX_IMPORT_TOTAL_SIZE = 200 * 1024 * 1024
 
     def __init__(self, workspace_root: str, memory_manager=None):
+        from common import state_dir
+
         self.workspace_root = os.path.abspath(workspace_root)
-        self.knowledge_dir = os.path.join(self.workspace_root, "knowledge")
+        # Resolved rather than joined, so an Agent without a knowledge/ of its
+        # own reads the shared one instead of an empty tree.
+        self.knowledge_dir = str(state_dir.knowledge_dir(base=self.workspace_root))
         self._memory_manager = memory_manager
 
     def _resolve_path(self, rel_path: str, *, kind: Optional[str] = None,

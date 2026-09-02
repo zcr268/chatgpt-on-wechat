@@ -3,6 +3,7 @@ Agent Bridge - Integrates Agent system with existing COW bridge
 """
 
 import os
+import re
 import threading
 import uuid
 from typing import Dict, Iterator, Optional, List, Tuple
@@ -89,25 +90,53 @@ class AgentLLMModel(LLMModel):
         ("mimo-", const.MIMO),
     ]
 
+    # Which model answers, most specific first. All default to None, meaning
+    # "follow the next one down" and ultimately the global config. Declared on
+    # the class so that resolving a model never depends on __init__ having run:
+    # these are read on every call, including from doubles built with __new__.
+    #
+    # Per-conversation, set from agent.workspace.session_prefs when the user
+    # picks a model for one conversation.
+    _session_model = None
+    _session_provider = None
+    # Per Agent, from its profile. Under the conversation's choice but above
+    # the global one: an Agent picked for its judgement should not answer on
+    # whatever the console was last set to. The default Agent never has one —
+    # it *is* the global choice.
+    _agent_model = None
+    _agent_provider = None
+
     def __init__(self, bridge: Bridge, bot_type: str = "chat"):
         super().__init__(model=conf().get("model") or const.DEFAULT_MODEL)
         self.bridge = bridge
         self.bot_type = bot_type
         self._bot = None
         self._bot_model = None
-        # Per-session model override (see agent.workspace.session_prefs). None
-        # on both means "follow the global config", which is what every session
-        # does until the user picks a model for that conversation.
-        self._session_model = None
-        self._session_provider = None
 
     @property
     def model(self):
-        return self._session_model or conf().get("model") or const.DEFAULT_MODEL
+        return (
+            self._session_model
+            or self._agent_model
+            or conf().get("model")
+            or const.DEFAULT_MODEL
+        )
 
     @model.setter
     def model(self, value):
         pass
+
+    def set_agent_default(self, provider: Optional[str], model: Optional[str]) -> None:
+        """Pin the Agent's own model, under any per-conversation choice."""
+        provider = (provider or "").strip() or None
+        model = (model or "").strip() or None
+        if provider == self._agent_provider and model == self._agent_model:
+            return
+        self._agent_provider = provider
+        self._agent_model = model
+        self._bot = None
+        self._bot_model = None
+        self._bot_type = None
 
     def set_session_override(self, provider: Optional[str], model: Optional[str]) -> None:
         """Pin this session to one model/provider, or clear it with None/None.
@@ -144,6 +173,8 @@ class AgentLLMModel(LLMModel):
         # use_linkai: the user picked this provider for this conversation.
         if self._session_provider:
             return self.provider_to_bot_type(self._session_provider)
+        if self._agent_provider:
+            return self.provider_to_bot_type(self._agent_provider)
 
         if conf().get("use_linkai", False) and conf().get("linkai_api_key"):
             return const.LINKAI
@@ -485,6 +516,124 @@ class AgentBridge:
         from agent.memory import get_conversation_store
         return get_conversation_store(profile.workspace)
 
+    def _seed_team_members(self, session_id: str, host_agent_id: str, context: Context = None) -> None:
+        """Project a team bot's fixed roster onto the session, once.
+
+        A channel instance configured with ``members`` is a fixed team: its
+        owner (``host_agent_id``) plus teammates it may delegate to. The rest of
+        the stack learns a conversation is a team from
+        ``session_prefs.members``, so the instance roster is copied there the
+        first time a message arrives on a session that has none yet.
+
+        Only seeds when the session has no roster of its own, so a per-session
+        edit (Web) is never clobbered; and only for enabled teammates other than
+        the owner, matching how a Web team is stored.
+        """
+        if not session_id or not context:
+            return
+        members = context.get("members") or context.kwargs.get("members")
+        if not members:
+            return
+        try:
+            from agent.workspace import session_prefs
+
+            if session_prefs.get_prefs(session_id, host_agent_id).get("members"):
+                return  # session already has its own roster; leave it be
+            cleaned = []
+            for mid in members:
+                mid = str(mid or "").strip()
+                if not mid or mid == host_agent_id or mid in cleaned:
+                    continue
+                try:
+                    self.agent_registry.get(mid, require_enabled=True)
+                except Exception:
+                    continue  # skip unknown/disabled teammates
+                cleaned.append(mid)
+            if cleaned:
+                session_prefs.set_prefs(session_id, host_agent_id, members=cleaned)
+                logger.info(
+                    f"[AgentBridge] Seeded team roster {cleaned} onto session "
+                    f"'{session_id}' owned by {host_agent_id}"
+                )
+        except Exception as e:
+            logger.debug(f"[AgentBridge] _seed_team_members failed: {e}")
+
+    def _resolve_speaker(self, host_agent_id: str, context: Context = None) -> str:
+        """Pick who answers this turn: the conversation's owner, or a teammate
+        the user addressed by name.
+
+        Naming someone is an instruction about who should answer, so it is
+        honoured literally. Anything unrecognised, disabled, or already the
+        owner falls back to the owner, which is the single-Agent behaviour.
+        """
+        named = (context.get("speaker_agent_id") if context else "") or ""
+        if not named or named == host_agent_id:
+            return host_agent_id
+        try:
+            profile = self.agent_registry.get(named, require_enabled=True)
+        except Exception:
+            logger.warning(
+                f"[AgentBridge] Ignoring unknown addressee '{named}', "
+                f"answering as {host_agent_id}"
+            )
+            return host_agent_id
+        logger.info(
+            f"[AgentBridge] Turn addressed to {profile.id}; "
+            f"answering in {host_agent_id}'s conversation"
+        )
+        return profile.id
+
+    def _strip_address(self, query: str, speaker_agent_id: str) -> str:
+        """Drop the leading "@name" now that it has been acted on.
+
+        Routing already answered the question the mention was asking, so
+        leaving it in makes the Agent read its own name as someone else's and
+        reply about that person instead of as itself. It only ever comes off
+        the front, and only for the Agent it named.
+
+        The transcript keeps the original: the mention is what the user wrote,
+        and it records who the turn was aimed at.
+        """
+        if not query:
+            return query
+        try:
+            profile = self.agent_registry.get(speaker_agent_id, require_enabled=False)
+        except Exception:
+            return query
+        labels = [label for label in (profile.name, profile.id) if label]
+        pattern = (
+            r"^\s*@(?:"
+            + "|".join(re.escape(label) for label in sorted(labels, key=len, reverse=True))
+            + r")[\s,，:：、]*"
+        )
+        stripped = re.sub(pattern, "", query, count=1, flags=re.IGNORECASE)
+        # An address with nothing after it is still a question — "@Ops" alone
+        # means "you, speak" — so it keeps the mention rather than reaching the
+        # Agent as an empty turn.
+        return stripped if stripped.strip() else query
+
+    @staticmethod
+    def _attribute_to_speaker(messages: list, speaker_agent_id: str) -> list:
+        """Tag a guest's turns with who wrote them, for the transcript.
+
+        A shared conversation that records no author replays as one voice, so a
+        reload loses track of who said what.
+
+        Returns copies. The dicts handed in are the Agent's live context, and
+        ``extras`` is a column of ours: annotating them in place would put an
+        unknown key on every later request and the model rejects the call.
+        """
+        return [
+            {
+                **message,
+                "extras": {
+                    **(message.get("extras") or {}),
+                    "agent_id": speaker_agent_id,
+                },
+            }
+            for message in messages or []
+        ]
+
     def _begin_run(self, session_id: str, agent_id: str, context: Context = None):
         """Open a run for this turn and make its id the ambient one.
 
@@ -555,7 +704,12 @@ class AgentBridge:
         """Keep legacy token keys for the default agent, namespace the rest."""
         return token if agent_id == default_agent_id else f"{agent_id}::{token}"
 
-    def get_agent(self, session_id: str = None, agent_id: str = None) -> Optional[Agent]:
+    def get_agent(
+        self,
+        session_id: str = None,
+        agent_id: str = None,
+        host_agent_id: str = None,
+    ) -> Optional[Agent]:
         """
         Get agent instance for the given session
         
@@ -563,6 +717,10 @@ class AgentBridge:
             session_id: Session identifier (e.g., user_id). If None, returns
                 the workspace's default runtime instance.
             agent_id: Agent profile identifier. Omit for the configured default.
+            host_agent_id: Agent that owns this conversation, when it is not
+                ``agent_id``. Set when the user addressed a teammate directly:
+                the teammate answers as itself, but reads and continues the
+                host's transcript instead of starting a private one.
         
         Returns:
             Agent instance for this session
@@ -580,11 +738,14 @@ class AgentBridge:
                     self.default_agent = agent
                 return agent
 
+            host_id = self._resolve_agent_id(host_agent_id or resolved_agent_id)
             key = self._runtime_key(resolved_agent_id, session_id)
             agent = self._agent_instances.get(key)
             if agent is None:
                 agent = self.initializer.initialize_agent(
-                    session_id=session_id, agent_id=resolved_agent_id
+                    session_id=session_id,
+                    agent_id=resolved_agent_id,
+                    host_agent_id=host_id,
                 )
                 self._agent_instances[key] = agent
                 if resolved_agent_id == self.agent_registry.default_agent_id:
@@ -593,10 +754,18 @@ class AgentBridge:
             # Applied on every fetch, so switching projects — or back to the
             # default — takes effect on the next message without rebuilding the
             # agent. Memory/skills stay anchored to the workspace regardless.
-            self._apply_session_project(agent, session_id, resolved_agent_id)
-            # Same idea for the session's model and permission mode: both are
-            # per-conversation overrides that fall back to the global config.
-            self.apply_session_prefs(agent, session_id, resolved_agent_id)
+            # Project and per-session settings belong to the conversation, so a
+            # guest follows the host's, not its own unrelated ones.
+            self._apply_session_project(agent, session_id, host_id)
+            # Same idea for the session's permission mode, a per-conversation
+            # override that falls back to the global config. The model is not
+            # shared with a guest — see apply_session_prefs.
+            self.apply_session_prefs(
+                agent,
+                session_id,
+                host_id,
+                owns_conversation=resolved_agent_id == host_id,
+            )
             return agent
 
     def _apply_session_project(self, agent, session_id: str, agent_id: str) -> None:
@@ -614,13 +783,21 @@ class AgentBridge:
         except Exception as e:
             logger.debug(f"[AgentBridge] apply_session_project failed: {e}")
 
-    def apply_session_prefs(self, agent, session_id: str, agent_id: str = None) -> None:
+    def apply_session_prefs(
+        self, agent, session_id: str, agent_id: str = None, owns_conversation: bool = True
+    ) -> None:
         """Apply a session's model / permission overrides to its agent.
 
         Called on every agent fetch and right after the user changes a setting,
         so a switch takes effect on the next message without rebuilding the
         agent. An empty override resets the agent to the global config, which is
         what makes "follow global" work after a session had pinned something.
+
+        The model is the exception: a conversation's pinned model belongs to
+        the Agent that owns it, and forcing an invited teammate onto it throws
+        away the model it was configured with — often the reason it was
+        invited. Permission stays shared, because it bounds what this
+        conversation may change regardless of who is speaking.
         """
         if agent is None or not session_id:
             return
@@ -630,7 +807,10 @@ class AgentBridge:
             prefs = session_prefs.get_prefs(session_id, agent_id)
             model = getattr(agent, "model", None)
             if model is not None and hasattr(model, "set_session_override"):
-                model.set_session_override(prefs.get("provider"), prefs.get("model"))
+                if owns_conversation:
+                    model.set_session_override(prefs.get("provider"), prefs.get("model"))
+                else:
+                    model.set_session_override(None, None)
             if hasattr(agent, "apply_permission_mode"):
                 agent.apply_permission_mode(prefs.get("permission"))
         except Exception as e:
@@ -744,6 +924,57 @@ class AgentBridge:
                 else self.agent_registry.default_agent_id
             )
 
+            # A team channel bot (e.g. a Feishu instance with members) carries
+            # its roster on every inbound message. Materialize it into the
+            # session the first time we see the conversation so the shared
+            # delegate/@mention machinery — which reads session_prefs.members —
+            # treats it as a team, exactly like a Web team conversation.
+            self._seed_team_members(session_id, resolved_agent_id, context)
+
+            # Addressing a teammate by name hands the turn to that teammate
+            # directly. The conversation still belongs to `resolved_agent_id`,
+            # so the transcript, the run and the queue all stay in one place —
+            # only the voice answering this turn changes.
+            speaker_agent_id = self._resolve_speaker(resolved_agent_id, context)
+            # With multiple Agents (and especially several bound channel
+            # instances) it isn't obvious from the logs which Agent a message
+            # was routed to. Emit one line naming the target Agent and, when
+            # present, the channel instance it arrived on. Skipped for
+            # single-Agent setups to avoid noise.
+            try:
+                if len(self.agent_registry.list()) > 1:
+                    instance_id = (
+                        context.get("instance_id")
+                        or context.kwargs.get("instance_id")
+                        if context is not None else ""
+                    )
+                    via = f" | {instance_id}" if instance_id else ""
+                    # The Agent that actually answers this turn is the speaker,
+                    # which differs from the owner when the user addressed a
+                    # teammate by name. Log the speaker so the line matches who
+                    # replies; note the owner's conversation it runs in when
+                    # they differ, so routing + addressing read consistently.
+                    speaker = self.agent_registry.get(speaker_agent_id)
+                    if speaker_agent_id != resolved_agent_id:
+                        owner = self.agent_registry.get(resolved_agent_id)
+                        logger.info(
+                            f"[Routing] → 🤖 {speaker.name}({speaker.id}) "
+                            f"in {owner.name}({owner.id})'s conversation{via}"
+                        )
+                    else:
+                        logger.info(
+                            f"[Routing] → 🤖 {speaker.name}({speaker.id}){via}"
+                        )
+            except Exception:
+                pass
+            # What the Agent is asked, once the addressing has been acted on.
+            # Kept apart from `query`, which stays verbatim for the transcript.
+            model_query = (
+                self._strip_address(query, speaker_agent_id)
+                if speaker_agent_id != resolved_agent_id
+                else query
+            )
+
             # Register a cancel token. Prefer per-turn request_id (web),
             # fall back to session_id (IM channels). The Event is polled by
             # AgentStreamExecutor at safe checkpoints.
@@ -766,7 +997,9 @@ class AgentBridge:
 
             # Get agent for this session (will auto-initialize if needed)
             agent = self.get_agent(
-                session_id=session_id, agent_id=resolved_agent_id
+                session_id=session_id,
+                agent_id=speaker_agent_id,
+                host_agent_id=resolved_agent_id,
             )
             if not agent:
                 return Reply(ReplyType.ERROR, "Failed to initialize super agent")
@@ -803,9 +1036,11 @@ class AgentBridge:
             if context and hasattr(agent, 'model'):
                 agent.model.channel_type = context.get("channel_type", "")
                 agent.model.session_id = session_id or ""
-                agent.model.agent_id = resolved_agent_id
+                agent.model.agent_id = speaker_agent_id
 
-            # Store session_id on agent so executor can clear DB on fatal errors
+            # Store session_id on agent so executor can clear DB on fatal errors.
+            # The conversation's owner is what identifies the transcript, so a
+            # guest speaker still reads and writes the shared one.
             agent._current_session_id = session_id
             agent._current_agent_id = resolved_agent_id
 
@@ -851,7 +1086,7 @@ class AgentBridge:
                     steer_inbox = get_steer_registry().register(session_id)
                 # Use agent's run_stream method with event handler
                 response = agent.run_stream(
-                    user_message=query,
+                    user_message=model_query,
                     on_event=event_handler.handle_event,
                     clear_history=clear_history,
                     cancel_event=cancel_event,
@@ -900,6 +1135,14 @@ class AgentBridge:
                 # drop it here so it isn't stored twice.
                 if pre_persisted and new_messages and new_messages[0].get("role") == "user":
                     new_messages = new_messages[1:]
+                # Stamp every reply with its author, the owner's included. In a
+                # shared conversation a guest reconstructs "who said what" from
+                # this stamp; if the owner's turns went unstamped they would read
+                # as unattributed, and a guest would mistake the owner's persona
+                # ("I am Gray…") for its own and answer in that voice.
+                new_messages = self._attribute_to_speaker(
+                    new_messages, speaker_agent_id
+                )
                 if new_messages:
                     self._persist_messages(
                         session_id,

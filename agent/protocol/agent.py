@@ -81,9 +81,8 @@ class Agent:
             else:
                 # Auto-create skill manager
                 try:
-                    from agent.skills import SkillManager
-                    custom_dir = os.path.join(workspace_dir, "skills") if workspace_dir else None
-                    self.skill_manager = SkillManager(custom_dir=custom_dir)
+                    from agent.skills import build_skill_manager
+                    self.skill_manager = build_skill_manager(workspace_dir=workspace_dir)
                     logger.debug(f"Initialized SkillManager with {len(self.skill_manager.skills)} skills")
                 except Exception as e:
                     logger.warning(f"Failed to initialize SkillManager: {e}")

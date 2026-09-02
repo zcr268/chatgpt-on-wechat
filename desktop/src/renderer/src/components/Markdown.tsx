@@ -153,6 +153,26 @@ md.renderer.rules.image = function (tokens, idx, options, env, self) {
   return defaultImage(tokens, idx, options, env, self)
 }
 
+// A table can't shrink below its columns' minimum content width, so a wide
+// comparison table would run past the bubble. Wrap it in a scroller: the table
+// keeps filling the bubble when it fits and scrolls sideways when it doesn't.
+const defaultTableOpen =
+  md.renderer.rules.table_open ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options)
+  }
+const defaultTableClose =
+  md.renderer.rules.table_close ||
+  function (tokens, idx, options, _env, self) {
+    return self.renderToken(tokens, idx, options)
+  }
+md.renderer.rules.table_open = function (tokens, idx, options, env, self) {
+  return `<div class="table-wrap">` + defaultTableOpen(tokens, idx, options, env, self)
+}
+md.renderer.rules.table_close = function (tokens, idx, options, env, self) {
+  return defaultTableClose(tokens, idx, options, env, self) + `</div>`
+}
+
 // Wrap fenced code blocks so we can render a header (lang + copy button).
 const defaultFence =
   md.renderer.rules.fence ||

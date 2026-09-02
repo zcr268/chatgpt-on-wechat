@@ -49,7 +49,8 @@ const CatalogModelSelector: React.FC<ModelSelectorProps> = ({ sessionId }) => {
 
   const tip =
     t('model_tip').replace('{name}', model || t('model_unset')) +
-    (state?.source === 'global' ? ` · ${t('model_follow_global')}` : '')
+    (state?.source === 'global' ? ` · ${t('model_follow_global')}` : '') +
+    (state?.source === 'agent' ? ` · ${t('model_follow_agent')}` : '')
 
   return (
     <ComposerChip

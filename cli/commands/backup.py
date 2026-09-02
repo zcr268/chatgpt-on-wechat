@@ -13,7 +13,20 @@ from typing import Iterable, Optional, Set
 
 import click
 
-from cli.utils import get_project_root
+from cli.utils import _ensure_project_on_path, get_project_root
+
+
+def _team():
+    """The team file module.
+
+    Imported on use, not at module load: the CLI is installed as its own
+    package and only puts the project root on ``sys.path`` when it needs
+    something from it.
+    """
+    _ensure_project_on_path()
+    from agent import team
+
+    return team
 
 
 BACKUP_FORMAT = "cowagent-backup"
@@ -117,6 +130,10 @@ def create_backup_archive(
 
     config_path = data_root / "config.json"
     config = _read_config(data_root)
+    if config:
+        # The roster lives beside the workspaces, so read it from the tree
+        # being archived rather than from wherever config.json happens to point.
+        config = _team().resolve({**config, "agent_workspace": str(workspace)})
     legacy_path = _legacy_user_data_path(data_root, config)
     profiles, explicit_registry = _configured_workspaces(config, workspace)
     sources = {
@@ -200,7 +217,19 @@ def create_backup_archive(
                 json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
             )
             if config_path.is_file():
-                archive.write(str(config_path), "data/config.json")
+                # The archive keeps the roster inside config.json even though a
+                # live install stores it separately. An archive is a snapshot,
+                # not a layout, and folding it in here keeps one format that
+                # every version can both write and read.
+                if config:
+                    archive.writestr(
+                        "data/config.json",
+                        json.dumps(config, ensure_ascii=False, indent=2) + "\n",
+                    )
+                else:
+                    # Unparseable, so there is nothing to fold in and no way to
+                    # rewrite it without losing whatever it does hold.
+                    archive.write(str(config_path), "data/config.json")
             if legacy_path.is_file():
                 archive.write(str(legacy_path), "data/user_datas.pkl")
             for _, source, archive_root, files, _ in workspace_entries:
@@ -481,9 +510,29 @@ def restore_backup_archive(
         # and copied. A copy failure cannot leave config pointing at a partial
         # multi-agent restore.
         if restored_config:
+            # Split the archive's single blob back into the two files a live
+            # install keeps: the roster travels inside config.json, but it is
+            # not read from there any more.
+            team = _team()
+            published = {
+                key: value
+                for key, value in restored_config.items()
+                if key not in team.TEAM_KEYS
+            }
+            if multi_agent:
+                team.write(
+                    published,
+                    {
+                        "agents": team.compact(
+                            restored_config["agents"], published, default_agent_id
+                        ),
+                        "default_agent_id": default_agent_id,
+                        "channel_instances": restored_config.get("channel_instances") or [],
+                    },
+                )
             config_temp = temp_dir / "restored-config.json"
             with config_temp.open("w", encoding="utf-8") as handle:
-                json.dump(restored_config, handle, ensure_ascii=False, indent=2)
+                json.dump(published, handle, ensure_ascii=False, indent=2)
                 handle.write("\n")
             _atomic_copy(config_temp, data_root / "config.json", private=True)
 

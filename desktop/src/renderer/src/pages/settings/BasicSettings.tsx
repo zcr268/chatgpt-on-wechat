@@ -469,7 +469,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               className={`w-full flex items-center justify-between gap-2 rounded-btn border px-3 py-2.5 cursor-pointer transition-colors text-left ${
                 currentUnconfigured
                   ? 'border-danger-border bg-danger-soft hover:border-danger'
-                  : 'border-default bg-inset hover:border-accent'
+                  : 'border-default bg-inset-2 hover:border-accent'
               }`}
             >
               <span className={`text-xs ${currentUnconfigured ? 'text-danger' : 'text-content-tertiary'}`}>

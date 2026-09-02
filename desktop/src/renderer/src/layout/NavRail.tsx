@@ -7,6 +7,7 @@ import {
   Zap,
   Radio,
   Clock,
+  Users,
   Settings,
   PanelLeftClose,
   PanelLeftOpen,
@@ -34,6 +35,8 @@ import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
 import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/updateStore'
 import UpdateBanner from '../components/UpdateBanner'
+import { selectMultiAgent } from '../store/agentStore'
+import { useAgentStore } from '../store/agentStore'
 import { product } from '@product'
 
 // Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
@@ -72,6 +75,10 @@ const NAV_ITEMS: NavItem[] = [
   { path: '/settings', labelKey: 'menu_settings', icon: Settings },
 ]
 
+// The Team entry only exists once the install runs more than one Agent, so a
+// single-Agent client shows exactly the original menu. Inserted after Chat.
+const AGENTS_ITEM: NavItem = { path: '/agents', labelKey: 'menu_agents', icon: Users }
+
 interface NavRailProps {
   onLangChange: () => void
 }
@@ -88,6 +95,12 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
 
   const collapsed = navCollapsed
   const width = collapsed ? 'w-[56px]' : 'w-[208px]'
+
+  // Surface the Team page only in multi-Agent mode (derived from the roster).
+  const multiAgent = useAgentStore(selectMultiAgent)
+  const navItems = multiAgent
+    ? [NAV_ITEMS[0], AGENTS_ITEM, ...NAV_ITEMS.slice(1)]
+    : NAV_ITEMS
 
   const updateState = useUpdateStore()
   // Footer dot: hidden once dismissed for this version (user asked for this).
@@ -196,7 +209,7 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
       <div className="flex-1 flex flex-col min-h-0 border-r border-default">
       {/* Nav items */}
       <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon
           const isActive = location.pathname === item.path
           return (

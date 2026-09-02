@@ -14,7 +14,7 @@ import threading
 import time
 import uuid
 from queue import Queue, Empty
-from typing import List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional
 from urllib.parse import quote
 from collections import OrderedDict, deque
 from dataclasses import dataclass, field
@@ -289,9 +289,13 @@ def _steer_reply_text(status, lang: str) -> str:
     return english if en else chinese
 
 
-def _get_upload_dir() -> str:
-    from common.state_dir import tmp_dir
-    return str(tmp_dir())
+def _get_upload_dir(agent_id: str = None) -> str:
+    from agent.registry import get_agent_registry
+
+    workspace = get_agent_registry().get(agent_id).workspace
+    upload_dir = os.path.join(workspace, "tmp")
+    os.makedirs(upload_dir, exist_ok=True)
+    return upload_dir
 
 
 def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
@@ -310,8 +314,9 @@ def _get_workspace_root(session_id: str = None, agent_id: str = None) -> str:
                 return project_dir
         except Exception as e:
             logger.debug(f"[WebChannel] project_dir resolve failed: {e}")
-    from common.state_dir import state_root_str
-    return state_root_str()
+    from agent.registry import get_agent_registry
+
+    return get_agent_registry().get(agent_id).workspace
 
 
 _PREVIEW_SECRET = None
@@ -1201,7 +1206,7 @@ class WebChannel(ChatChannel):
                     f"reply={reply}"
                 )
                 return
-            url = self._publish_tts_audio(reply.content)
+            url = self._publish_tts_audio(reply.content, agent_id)
             if not url:
                 logger.warning(f"[WebChannel] TTS publish failed for request {request_id}")
                 return
@@ -1235,21 +1240,22 @@ class WebChannel(ChatChannel):
             self._publish_sse_event(request_id, {"type": "stream_end"})
 
     @staticmethod
-    def _publish_tts_audio(src_path: str) -> str:
+    def _publish_tts_audio(src_path: str, agent_id: str = None) -> str:
         """Move a TTS file into uploads/ and return its public URL."""
         try:
             if not src_path or not os.path.isfile(src_path):
                 logger.warning(f"[WebChannel] publish_tts_audio missing source: {src_path!r}")
                 return ""
             ext = os.path.splitext(src_path)[1].lower() or ".mp3"
-            upload_dir = _get_upload_dir()
+            upload_dir = _get_upload_dir(agent_id)
             os.makedirs(upload_dir, exist_ok=True)
             ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             dst_name = f"voice_reply_{ts}_{random.randint(0, 9999)}{ext}"
             dst_path = os.path.join(upload_dir, dst_name)
             shutil.move(src_path, dst_path)
             logger.debug(f"[WebChannel] publish_tts_audio moved {src_path} -> {dst_path}")
-            return f"/uploads/{dst_name}"
+            suffix = f"?agent_id={agent_id}" if agent_id else ""
+            return f"/uploads/{dst_name}{suffix}"
         except Exception as e:
             logger.warning(f"[WebChannel] publish_tts_audio failed: {e}")
             return ""
@@ -1318,7 +1324,7 @@ class WebChannel(ChatChannel):
 
             is_directory_upload = bool(directory_files) or bool(directory_rel_paths) or bool(relative_path) or bool(upload_id)
 
-            upload_dir = _get_upload_dir()
+            upload_dir = _get_upload_dir(_request_agent_id(params))
             if is_directory_upload:
                 if not upload_id:
                     return _reject("Missing upload_id for directory upload")
@@ -1418,11 +1424,12 @@ class WebChannel(ChatChannel):
             from bridge.bridge import Bridge
             agent_bridge = Bridge().get_agent_bridge()
             resolved_agent_id = agent_bridge.agent_router.resolve(
-                channel_type="web",
-                conversation_ids=(session_id,),
                 explicit_agent_id=json_data.get("agent_id"),
             )
             prompt = json_data.get('message', '')
+            # Kept before any prefixing or attachment lines, so mention parsing
+            # still sees what the user actually typed.
+            typed_prompt = prompt
             use_sse = json_data.get('stream', True)
             attachments = json_data.get('attachments', [])
             # Tag the message as originating from voice input so the post-reply
@@ -1555,6 +1562,16 @@ class WebChannel(ChatChannel):
             context["receiver"] = session_id
             context["request_id"] = request_id
             context["agent_id"] = resolved_agent_id
+            # Addressing a teammate hands them the turn. The conversation still
+            # belongs to `resolved_agent_id`, so this only changes who answers.
+            # The composer already knows who it wrote; parsing the text is the
+            # fallback for a mention typed by hand or replayed from history.
+            roster = _session_roster(session_id, resolved_agent_id)
+            addressed = (json_data.get("speaker_agent_id") or "").strip()
+            if not addressed or not any(item["id"] == addressed for item in roster):
+                addressed = _addressed_agent_id(typed_prompt, roster)
+            if addressed and addressed != resolved_agent_id:
+                context["speaker_agent_id"] = addressed
             if is_voice_input:
                 # Web channel runs its own TTS post-pipeline via
                 # _maybe_dispatch_auto_tts; don't set desire_rtype here or
@@ -1566,7 +1583,14 @@ class WebChannel(ChatChannel):
 
             threading.Thread(target=self.produce, args=(context,)).start()
 
-            return json.dumps({"status": "success", "request_id": request_id, "stream": use_sse})
+            return json.dumps({
+                "status": "success",
+                "request_id": request_id,
+                "stream": use_sse,
+                # Lets the live bubble carry the right name and face while the
+                # reply streams, before any of it has been persisted.
+                "speaker": context.get("speaker_agent_id") or "",
+            })
 
         except Exception as e:
             logger.error(f"Error processing message: {e}")
@@ -1782,8 +1806,6 @@ class WebChannel(ChatChannel):
             agent_id = self.request_to_agent.get(request_id)
             if not agent_id:
                 agent_id = agent_bridge.agent_router.resolve(
-                    channel_type="web",
-                    conversation_ids=(session_id,),
                     explicit_agent_id=json_data.get("agent_id"),
                 )
 
@@ -1834,8 +1856,6 @@ class WebChannel(ChatChannel):
             from bridge.bridge import Bridge
             agent_bridge = Bridge().get_agent_bridge()
             agent_id = agent_bridge.agent_router.resolve(
-                channel_type="web",
-                conversation_ids=(session_id,),
                 explicit_agent_id=json_data.get("agent_id"),
             )
             session_queue_key = self._session_queue_key(session_id, agent_id)
@@ -2002,6 +2022,9 @@ class WebChannel(ChatChannel):
             '/api/scheduler/toggle', 'SchedulerToggleHandler',
             '/api/scheduler/update', 'SchedulerUpdateHandler',
             '/api/scheduler/delete', 'SchedulerDeleteHandler',
+            '/api/agents', 'AgentsHandler',
+            '/api/agents/([^/]+)/avatar', 'AgentAvatarHandler',
+            '/api/agents/([^/]+)/files/([^/]+)', 'AgentCoreFileHandler',
             '/api/sessions', 'SessionsHandler',
             '/api/sessions/(.*)/generate_title', 'SessionTitleHandler',
             '/api/prompt/optimize', 'PromptOptimizeHandler',
@@ -2209,6 +2232,7 @@ class VoiceAsrHandler:
         saved_path = None
         try:
             params = _raw_web_input()
+            agent_id = _request_agent_id(params)
             file_obj = params.get("file")
             if file_obj is None:
                 return json.dumps({"status": "error", "message": "no audio file"})
@@ -2218,7 +2242,7 @@ class VoiceAsrHandler:
             if ext not in (".webm", ".ogg", ".opus", ".mp4", ".m4a", ".mp3", ".wav"):
                 ext = ".webm"
 
-            upload_dir = _get_upload_dir()
+            upload_dir = _get_upload_dir(agent_id)
             os.makedirs(upload_dir, exist_ok=True)
             ts = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
             saved_name = f"voice_input_{ts}_{random.randint(0, 9999)}{ext}"
@@ -2226,7 +2250,8 @@ class VoiceAsrHandler:
             with open(saved_path, "wb") as f:
                 f.write(file_obj.file.read() if hasattr(file_obj, "file") else file_obj.value)
 
-            audio_url = f"/uploads/{saved_name}"
+            suffix = f"?agent_id={agent_id}" if agent_id else ""
+            audio_url = f"/uploads/{saved_name}{suffix}"
 
             from bridge.bridge import Bridge
             reply = Bridge().fetch_voice_to_text(saved_path)
@@ -2278,7 +2303,7 @@ class VoiceTtsHandler:
                 msg = getattr(reply, "content", "") or "tts failed"
                 return json.dumps({"status": "error", "message": str(msg)})
 
-            url = channel._publish_tts_audio(reply.content)
+            url = channel._publish_tts_audio(reply.content, agent_id)
             if not url:
                 return json.dumps({"status": "error", "message": "publish failed"})
 
@@ -2303,7 +2328,8 @@ class UploadsHandler:
     def GET(self, file_name):
         _require_auth()
         try:
-            upload_dir = _get_upload_dir()
+            params = web.input(agent_id='')
+            upload_dir = _get_upload_dir(_request_agent_id(params))
             full_path = os.path.normpath(os.path.join(upload_dir, file_name))
             if not os.path.abspath(full_path).startswith(os.path.abspath(upload_dir)):
                 raise web.notfound()
@@ -2489,6 +2515,7 @@ class ChatHandler:
             html = f.read()
         cache_bust = str(int(time.time()))
         html = html.replace('assets/js/console.js', f'assets/js/console.js?v={cache_bust}')
+        html = html.replace('assets/js/workspace.js', f'assets/js/workspace.js?v={cache_bust}')
         html = html.replace('assets/css/console.css', f'assets/css/console.css?v={cache_bust}')
         # Inject the backend-resolved default language for first-load fallback.
         html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
@@ -4864,6 +4891,82 @@ class ChannelsHandler:
     def _active_channel_set(cls) -> set:
         return set(cls._parse_channel_list(conf().get("channel_type", "")))
 
+    @staticmethod
+    def _multi_agent_mode() -> bool:
+        """True once the install has crossed into multi-Agent territory.
+
+        The team.json file only exists after a second Agent (or channel
+        instance) is created; until then everything lives in config.json and the
+        channels view stays single-instance, exactly as a legacy install expects.
+        """
+        from agent import team
+        return team.team_file(conf()).exists()
+
+    @classmethod
+    def _channel_instances_view(cls) -> list:
+        """Per-instance channel cards for every multi-instance-ready type.
+
+        Expands ``channel_instances`` into one card each, carrying instance_id,
+        the bound agent_id and masked credentials, so the console can show and
+        edit each bot independently. Covers all MULTI_INSTANCE_READY types
+        (feishu, dingtalk, qq, telegram, slack, discord), not just feishu.
+        """
+        from common import i18n
+        from channel.channel_instances import (
+            resolve_channel_instances,
+            MULTI_INSTANCE_READY,
+        )
+        from agent import team
+
+        settings = team.resolve(conf())
+        is_hant = i18n.get_language() == i18n.ZH_HANT
+        out = []
+        for inst in resolve_channel_instances(settings):
+            if inst.channel_type not in MULTI_INSTANCE_READY:
+                continue
+            ch_def = cls.CHANNEL_DEFS.get(inst.channel_type)
+            if not ch_def:
+                continue
+            fields_out = []
+            for f in ch_def["fields"]:
+                raw_val = (inst.credentials or {}).get(f["key"], "")
+                if f["type"] == "secret" and raw_val:
+                    display_val = cls._mask_secret(str(raw_val))
+                else:
+                    display_val = raw_val
+                label_val = f["label"]
+                if is_hant and isinstance(label_val, str):
+                    label_val = i18n.to_traditional(label_val)
+                elif is_hant and isinstance(label_val, dict):
+                    label_val = label_val.copy()
+                    label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
+                fields_out.append({
+                    "key": f["key"],
+                    "label": label_val,
+                    "type": f["type"],
+                    "value": display_val,
+                    "default": f.get("default", ""),
+                })
+            label_val = ch_def["label"]
+            if is_hant and isinstance(label_val, str):
+                label_val = i18n.to_traditional(label_val)
+            elif is_hant and isinstance(label_val, dict):
+                label_val = label_val.copy()
+                label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
+            out.append({
+                "name": inst.channel_type,
+                "instance_id": inst.instance_id,
+                "channel_type": inst.channel_type,
+                "agent_id": inst.agent_id or "",
+                "members": list(inst.members or []),
+                "label": label_val,
+                "icon": ch_def["icon"],
+                "color": ch_def["color"],
+                "active": True,
+                "fields": fields_out,
+            })
+        return out
+
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -4920,7 +5023,20 @@ class ChannelsHandler:
                 if ch_name == "weixin" and ch_name in active_channels:
                     ch_info["login_status"] = self._get_weixin_login_status()
                 channels.append(ch_info)
-            return json.dumps({"status": "success", "channels": channels}, ensure_ascii=False)
+
+            from channel.channel_instances import MULTI_INSTANCE_READY
+            multi_agent = self._multi_agent_mode()
+            payload = {
+                "status": "success",
+                "channels": channels,
+                "multi_agent": multi_agent,
+                "multi_instance_types": sorted(MULTI_INSTANCE_READY),
+            }
+            # In multi-Agent mode the multi-instance-ready types (feishu) render
+            # one card per channel_instances record instead of one per type.
+            if multi_agent:
+                payload["instances"] = self._channel_instances_view()
+            return json.dumps(payload, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Channels API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
@@ -4938,6 +5054,22 @@ class ChannelsHandler:
 
             if channel_name not in self.CHANNEL_DEFS:
                 return json.dumps({"status": "error", "message": f"unknown channel: {channel_name}"})
+
+            # Multi-Agent + a multi-instance-ready type (feishu) manages each bot
+            # as its own channel_instances record in team.json rather than the
+            # legacy flat config.json path. instance_id empty on connect means
+            # "create a new instance".
+            from channel.channel_instances import MULTI_INSTANCE_READY
+            instance_id = (body.get("instance_id") or "").strip()
+            if self._multi_agent_mode() and channel_name in MULTI_INSTANCE_READY:
+                if action == "save":
+                    return self._handle_instance_save(channel_name, instance_id, body.get("config", {}))
+                elif action == "connect":
+                    return self._handle_instance_connect(channel_name, instance_id, body.get("config", {}))
+                elif action == "disconnect":
+                    return self._handle_instance_disconnect(channel_name, instance_id)
+                else:
+                    return json.dumps({"status": "error", "message": f"unknown action: {action}"})
 
             if action == "save":
                 return self._handle_save(channel_name, body.get("config", {}))
@@ -4958,6 +5090,11 @@ class ChannelsHandler:
 
         local_config = conf()
         applied = {}
+        # Track which applied keys actually changed value, so a save that leaves
+        # every credential untouched (e.g. the user re-saved the form, or only
+        # an unrelated setting moved) does not needlessly tear down and
+        # reconnect a live channel.
+        changed = {}
         for key, value in updates.items():
             if key not in valid_keys:
                 continue
@@ -4970,6 +5107,8 @@ class ChannelsHandler:
                     value = int(value)
                 elif field_def["type"] == "bool":
                     value = bool(value)
+            if local_config.get(key) != value:
+                changed[key] = value
             local_config[key] = value
             applied[key] = value
 
@@ -4982,11 +5121,16 @@ class ChannelsHandler:
         with open(config_path, "w", encoding="utf-8") as f:
             json.dump(file_cfg, f, indent=4, ensure_ascii=False)
 
-        logger.info(f"[WebChannel] Channel '{channel_name}' config updated: {list(applied.keys())}")
+        logger.info(
+            f"[WebChannel] Channel '{channel_name}' config saved: {list(applied.keys())}, "
+            f"changed: {list(changed.keys())}"
+        )
 
+        # Only a real change to this channel's config warrants a restart. An
+        # idempotent save must not interrupt a connected channel.
         should_restart = False
         active_channels = self._active_channel_set()
-        if channel_name in active_channels:
+        if channel_name in active_channels and changed:
             should_restart = True
             try:
                 import sys
@@ -5134,6 +5278,154 @@ class ChannelsHandler:
             "status": "success",
             "channel_type": new_channel_type,
         }, ensure_ascii=False)
+
+    # ------------------------------------------------------------------
+    # Multi-instance channel management (team.json driven, e.g. feishu)
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _channel_mgr():
+        import sys
+        app_module = sys.modules.get('__main__') or sys.modules.get('app')
+        return getattr(app_module, '_channel_mgr', None) if app_module else None
+
+    def _clean_credentials(self, channel_name: str, updates: dict) -> dict:
+        """Keep only real, unmasked credential values for this channel type."""
+        ch_def = self.CHANNEL_DEFS[channel_name]
+        valid_keys = {f["key"] for f in ch_def["fields"]}
+        secret_keys = {f["key"] for f in ch_def["fields"] if f["type"] == "secret"}
+        creds = {}
+        for key, value in (updates or {}).items():
+            if key not in valid_keys:
+                continue
+            if key in secret_keys:
+                # Skip empty or still-masked secrets so a save that leaves the
+                # secret untouched does not overwrite it with the mask.
+                if not value or (len(str(value)) > 8 and "*" * 4 in str(value)):
+                    continue
+            creds[key] = value
+        return creds
+
+    def _handle_instance_connect(self, channel_name: str, instance_id: str, updates: dict):
+        """Create (empty id) or reconnect a channel instance, stored in team.json."""
+        from channel.channel_instances import upsert_instance
+
+        creds = self._clean_credentials(channel_name, updates)
+        # Weixin scans its token during the QR flow (before the instance exists),
+        # which lands in the global config. Fold it into this instance's own
+        # credentials so the instance is self-contained: it stays logged in
+        # across restarts and never depends on the transient global value.
+        if channel_name == "weixin" and not creds.get("weixin_token"):
+            token = conf().get("weixin_token", "")
+            if token:
+                creds["weixin_token"] = token
+                base_url = conf().get("weixin_base_url", "")
+                if base_url:
+                    creds["weixin_base_url"] = base_url
+                # Consume the transient QR token so the *next* Weixin instance
+                # created (a different account) does not inherit this one's
+                # token from the global config.
+                conf()["weixin_token"] = ""
+        inst = upsert_instance(
+            conf(),
+            channel_type=channel_name,
+            instance_id=instance_id,
+            credentials=creds,
+        )
+
+        downloading = False
+        if channel_name == "feishu":
+            try:
+                from channel.feishu import lark_install
+                downloading = lark_install.needs_download()
+            except Exception as e:
+                logger.warning(f"[WebChannel] Could not check Feishu SDK state: {e}")
+
+        def _do_start():
+            try:
+                mgr = self._channel_mgr()
+                if mgr is None:
+                    logger.warning(
+                        f"[WebChannel] ChannelManager unavailable, cannot start '{inst.instance_id}'"
+                    )
+                    return
+                mgr.add_channel(inst)
+                logger.info(f"[WebChannel] Channel instance '{inst.instance_id}' start completed")
+            except Exception as e:
+                logger.error(
+                    f"[WebChannel] Failed to start channel instance '{inst.instance_id}': {e}",
+                    exc_info=True,
+                )
+
+        threading.Thread(target=_do_start, daemon=True).start()
+        return json.dumps({
+            "status": "success",
+            "instance_id": inst.instance_id,
+            "downloading": downloading,
+        }, ensure_ascii=False)
+
+    def _handle_instance_save(self, channel_name: str, instance_id: str, updates: dict):
+        """Update one instance's credentials in team.json and restart it."""
+        from channel.channel_instances import get_instance, upsert_instance
+
+        if not instance_id:
+            return json.dumps({"status": "error", "message": "instance_id is required"})
+        before = get_instance(conf(), instance_id)
+        creds = self._clean_credentials(channel_name, updates)
+        inst = upsert_instance(
+            conf(),
+            channel_type=channel_name,
+            instance_id=instance_id,
+            credentials=creds,
+        )
+        # Only restart when a credential actually changed, so re-saving an
+        # unchanged form does not tear down a live connection.
+        changed = not before or (dict(before.credentials or {}) != dict(inst.credentials or {}))
+        if changed:
+            def _do_restart():
+                try:
+                    mgr = self._channel_mgr()
+                    if mgr is None:
+                        return
+                    mgr.restart(inst)
+                except Exception as e:
+                    logger.error(
+                        f"[WebChannel] Failed to restart instance '{inst.instance_id}': {e}",
+                        exc_info=True,
+                    )
+            threading.Thread(target=_do_restart, daemon=True).start()
+        logger.info(
+            f"[WebChannel] Channel instance '{inst.instance_id}' saved, "
+            f"restart={'yes' if changed else 'no'}"
+        )
+        return json.dumps({"status": "success", "instance_id": inst.instance_id}, ensure_ascii=False)
+
+    def _handle_instance_disconnect(self, channel_name: str, instance_id: str):
+        """Remove one instance record from team.json and stop its channel."""
+        from channel.channel_instances import remove_instance
+
+        if not instance_id:
+            return json.dumps({"status": "error", "message": "instance_id is required"})
+        remove_instance(conf(), instance_id)
+
+        def _do_stop():
+            try:
+                mgr = self._channel_mgr()
+                if mgr is None:
+                    return
+                remover = getattr(mgr, "remove_channel", None)
+                if callable(remover):
+                    remover(instance_id)
+                else:
+                    mgr.stop(instance_id)
+                logger.info(f"[WebChannel] Channel instance '{instance_id}' disconnected")
+            except Exception as e:
+                logger.warning(
+                    f"[WebChannel] Failed to stop instance '{instance_id}': {e}",
+                    exc_info=True,
+                )
+
+        threading.Thread(target=_do_stop, daemon=True).start()
+        return json.dumps({"status": "success", "instance_id": instance_id}, ensure_ascii=False)
 
 
 class WeixinQrHandler:
@@ -5484,6 +5776,20 @@ class FeishuRegisterHandler:
             return json.dumps({"status": "error", "message": str(e)})
 
 
+def _request_agent_id(source) -> str:
+    value = getattr(source, "agent_id", None)
+    if value is None:
+        value = getattr(source, "agent", None)
+    if value is None and isinstance(source, dict):
+        value = source.get("agent_id") or source.get("agent")
+    # web.py merges query string and form body, so a field present in both
+    # arrives as a list. Collapse it to a single id rather than letting an
+    # unhashable list reach registry lookups.
+    if isinstance(value, (list, tuple)):
+        value = value[0] if value else None
+    return value or None
+
+
 class ToolsHandler:
     def GET(self):
         _require_auth()
@@ -5526,9 +5832,13 @@ class SkillsHandler:
         try:
             from agent.skills.service import SkillService
             from agent.skills.manager import SkillManager
-            from common import i18n
-            workspace_root = _get_workspace_root()
-            manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
+            from common import i18n, state_dir
+            params = web.input(agent_id='')
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
+            # The library page lists everything installed, unnarrowed by the
+            # Agent's selection: a skill it has not selected still has to be
+            # visible here for the selection to be editable at all.
+            manager = SkillManager(custom_dir=str(state_dir.skills_dir(base=workspace_root)))
             service = SkillService(manager)
             skills = service.query()
             if i18n.get_language() == i18n.ZH_HANT:
@@ -5548,13 +5858,14 @@ class SkillsHandler:
         try:
             from agent.skills.service import SkillService
             from agent.skills.manager import SkillManager
+            from common import state_dir
             body = json.loads(web.data())
             action = body.get("action")
             name = body.get("name")
             if not action or not name:
                 return json.dumps({"status": "error", "message": "action and name are required"})
-            workspace_root = _get_workspace_root()
-            manager = SkillManager(custom_dir=os.path.join(workspace_root, "skills"))
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(body))
+            manager = SkillManager(custom_dir=str(state_dir.skills_dir(base=workspace_root)))
             service = SkillService(manager)
             if action == "open":
                 service.open({"name": name})
@@ -5574,8 +5885,10 @@ class MemoryHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.memory.service import MemoryService
-            params = web.input(page='1', page_size='20', category='memory')
-            workspace_root = _get_workspace_root()
+            params = web.input(
+                page='1', page_size='20', category='memory', agent_id=''
+            )
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
             service = MemoryService(workspace_root)
             result = service.list_files(
                 page=int(params.page), page_size=int(params.page_size),
@@ -5593,10 +5906,10 @@ class MemoryContentHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.memory.service import MemoryService
-            params = web.input(filename='', category='memory')
+            params = web.input(filename='', category='memory', agent_id='')
             if not params.filename:
                 return json.dumps({"status": "error", "message": "filename required"})
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
             service = MemoryService(workspace_root)
             result = service.get_content(params.filename, category=params.category)
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
@@ -5615,10 +5928,34 @@ class SchedulerHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.tools.scheduler.task_store import TaskStore
-            workspace_root = _get_workspace_root()
-            store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
-            store = TaskStore(store_path)
-            tasks = store.list_tasks()
+            params = web.input(agent_id='')
+            requested = _request_agent_id(params)
+
+            # An explicit agent_id scopes the list to that Agent (unchanged
+            # behaviour for callers that already target one). Without it the
+            # list aggregates every Agent's tasks so the console shows the whole
+            # team's schedule, each task tagged with the Agent that owns it —
+            # the owner is otherwise only implicit in which file it lives in.
+            if requested:
+                agents = [requested]
+            else:
+                from agent.registry import get_agent_registry
+                agents = [p.id for p in get_agent_registry().list(include_disabled=False)]
+
+            tasks = []
+            for agent_id in agents:
+                try:
+                    workspace_root = _get_workspace_root(agent_id=agent_id)
+                except Exception as e:
+                    logger.debug(f"[WebChannel] Scheduler skip agent {agent_id}: {e}")
+                    continue
+                store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
+                for task in TaskStore(store_path).list_tasks():
+                    # Tag the owner so the frontend can show it and so write
+                    # operations (run/toggle/update/delete) route back to the
+                    # right Agent's store rather than defaulting to the default.
+                    task["agent_id"] = agent_id
+                    tasks.append(task)
             return json.dumps({"status": "success", "tasks": tasks}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler API error: {e}")
@@ -5631,12 +5968,13 @@ class SchedulerRunHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             body = json.loads(web.data())
+            agent_id = _request_agent_id(body)
             task_id = body.get("task_id")
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
 
             from agent.tools.scheduler.integration import get_scheduler_service
-            service = get_scheduler_service()
+            service = get_scheduler_service(agent_id=agent_id)
             if service is None:
                 return json.dumps({
                     "status": "error",
@@ -5664,7 +6002,7 @@ class SchedulerToggleHandler:
             if not task_id:
                 return json.dumps({"status": "error", "message": "task_id required"})
             from agent.tools.scheduler.task_store import TaskStore
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(body))
             store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
             store = TaskStore(store_path)
             store.enable_task(task_id, enabled)
@@ -5688,7 +6026,7 @@ class SchedulerUpdateHandler:
             from agent.tools.scheduler.task_store import TaskStore
             from agent.tools.scheduler.scheduler_service import SchedulerService
             from datetime import datetime
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(body))
             store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
             store = TaskStore(store_path)
             
@@ -5800,13 +6138,392 @@ class SchedulerDeleteHandler:
                 return json.dumps({"status": "error", "message": "task_id required"})
             
             from agent.tools.scheduler.task_store import TaskStore
-            workspace_root = _get_workspace_root()
+            workspace_root = _get_workspace_root(agent_id=_request_agent_id(body))
             store_path = os.path.join(workspace_root, "scheduler", "tasks.json")
             store = TaskStore(store_path)
             store.delete_task(task_id)
             return json.dumps({"status": "success"}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Scheduler delete error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+def _agent_admin_service():
+    from agent.admin import AgentAdminService
+    return AgentAdminService(os.path.join(get_data_root(), "config.json"))
+
+
+def _bind_channel_instance(channel_type: str, instance_id: str = "", agent_id: str = "", members=None):
+    """Point one channel instance at an Agent (and team), hot-swapping without a restart.
+
+    The binding lives on the channel instance itself (channel_instances[].agent_id
+    in team.json), the single source of truth for routing. For a single-instance
+    channel the instance id is just the channel type. An empty agent_id unbinds it
+    (falls back to the default Agent).
+
+    Rebinding only changes *which* Agent inbound messages route to — the
+    credentials and connection are untouched — so there is no reason to tear
+    down and re-establish the IM link. We persist the new binding and then set
+    ``bound_agent_id`` live on the running channel; the next inbound message
+    reads the updated value. This avoids the reconnect storm a restart caused
+    when the user flipped the picker a few times.
+    """
+    from channel.channel_instances import upsert_instance
+
+    ctype = (channel_type or "").strip().lower()
+    if not ctype:
+        raise ValueError("channel_type is required")
+    target_id = (instance_id or "").strip() or ctype
+    agent_id = (agent_id or "").strip()
+
+    inst = upsert_instance(
+        conf(),
+        channel_type=ctype,
+        instance_id=target_id,
+        agent_id=agent_id,
+        members=members,
+    )
+
+    try:
+        import sys
+        app_module = sys.modules.get("__main__") or sys.modules.get("app")
+        mgr = getattr(app_module, "_channel_mgr", None) if app_module else None
+        channel = mgr.get_channel(target_id) if mgr else None
+        if channel is not None:
+            # Live-update owner + team on the running instance. Empty owner means
+            # "follow the default Agent". No restart: this only changes routing.
+            channel.bound_agent_id = agent_id
+            channel.members = list(inst.members or [])
+            logger.info(
+                f"[WebChannel] Channel '{target_id}' rebound to "
+                f"'{agent_id or 'default'}' with team {inst.members or []} (no restart)"
+            )
+    except Exception as e:
+        logger.error(
+            f"[WebChannel] Failed to hot-rebind channel '{target_id}': {e}",
+            exc_info=True,
+        )
+
+    return {
+        "instance_id": inst.instance_id,
+        "agent_id": inst.agent_id,
+        "members": list(inst.members or []),
+    }
+
+
+def _reload_agent_runtime(service, changed_agent_ids=None) -> None:
+    """Re-point the live runtime at a freshly loaded roster.
+
+    This runs inside the roster-edit request, so it must stay cheap. The old
+    implementation tore everything down - stop every scheduler, drop every
+    cached session, then rebuild all of them - which grew linearly with the
+    number of Agents (each rebuild reloads dozens of skills). Editing one
+    Agent's name should not cost a full-fleet reload.
+
+    Instead we reconcile incrementally:
+      * swap the registry/router (always cheap),
+      * start a scheduler only for Agents that gained one, stop those that
+        disappeared, and leave already-running ones untouched,
+      * evict only the sessions of the Agents that actually changed, so their
+        next turn picks up the new name / model / persona. Everyone else keeps
+        their warm cache.
+
+    ``changed_agent_ids`` narrows the session eviction to just the edited
+    Agents. When omitted we fall back to evicting nothing extra beyond the
+    add/remove diff, since pure metadata edits without an id (e.g. binding
+    changes) touch no cached runtime.
+    """
+    from agent.registry import set_agent_registry
+    from agent.routing import AgentRouter, set_agent_router
+
+    settings = service._load()
+    registry = service._registry(settings)
+    router = AgentRouter.from_config(settings, registry)
+    set_agent_registry(registry)
+    set_agent_router(router)
+
+    from bridge.bridge import Bridge
+    bridge = Bridge()
+    agent_bridge = getattr(bridge, "_agent_bridge", None)
+    if agent_bridge is None:
+        return
+
+    agent_bridge.agent_registry = registry
+    agent_bridge.agent_router = router
+
+    # Reconcile schedulers against what is already running, rather than
+    # stopping and recreating the whole set.
+    from agent.tools.scheduler.integration import init_scheduler, stop_scheduler
+    live_ids = {p.id for p in registry.list(include_disabled=False)}
+    previously = set(agent_bridge.scheduler_agent_ids)
+
+    for agent_id in previously - live_ids:
+        try:
+            stop_scheduler(agent_id)
+        except Exception as e:
+            logger.warning(f"[WebChannel] stop_scheduler({agent_id}) failed: {e}")
+        agent_bridge.scheduler_agent_ids.discard(agent_id)
+
+    for profile in registry.list(include_disabled=False):
+        if profile.id in previously:
+            continue  # already has a running scheduler; init_scheduler is a no-op
+        if init_scheduler(agent_bridge, profile.workspace, profile.id):
+            agent_bridge.scheduler_agent_ids.add(profile.id)
+    agent_bridge.scheduler_initialized = bool(agent_bridge.scheduler_agent_ids)
+
+    # Drop cached runtimes only for the Agents whose definition changed, so the
+    # edit takes effect on their next turn without wiping everyone's session.
+    for agent_id in (changed_agent_ids or []):
+        try:
+            agent_bridge.clear_agent(agent_id)
+        except Exception as e:
+            logger.warning(f"[WebChannel] clear_agent({agent_id}) failed: {e}")
+
+
+class AgentsHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            return json.dumps(
+                {"status": "success", **_agent_admin_service().snapshot()},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.error(f"[WebChannel] Agents API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            action = body.get("action")
+            service = _agent_admin_service()
+            revision = body.get("revision") or None
+            if action == "create":
+                result = service.create_agent(
+                    agent_id=body.get("id", ""),
+                    name=body.get("name", ""),
+                    # Blank means "put it where a new one goes", which is what
+                    # the console sends: it asks for a name, not a path.
+                    workspace=body.get("workspace") or None,
+                    clone_from=body.get("clone_from") or None,
+                    avatar=body.get("avatar") or None,
+                    description=body.get("description") or None,
+                    skills=body.get("skills"),
+                    knowledge=body.get("knowledge"),
+                    knowledge_mode=body.get("knowledge_mode") or None,
+                    revision=revision,
+                )
+            elif action == "update":
+                updates = {
+                    "name": body.get("name"),
+                    "enabled": body.get("enabled"),
+                    "make_default": bool(body.get("make_default", False)),
+                    "avatar": body.get("avatar"),
+                    "description": body.get("description"),
+                    "model": body.get("model"),
+                    "bot_type": body.get("bot_type"),
+                    "revision": revision,
+                }
+                if "skills" in body:
+                    updates["skills"] = body.get("skills")
+                if "knowledge" in body:
+                    updates["knowledge"] = body.get("knowledge")
+                result = service.update_agent(body.get("id", ""), **updates)
+            elif action == "archive":
+                result = service.archive_agent(body.get("id", ""), revision=revision)
+            elif action == "delete":
+                result = service.delete_agent(body.get("id", ""), revision=revision)
+            elif action == "set_knowledge_mode":
+                # A filesystem toggle (symlink vs own dir), not a roster edit, so
+                # it doesn't participate in the roster revision guard.
+                result = service.set_knowledge_mode(
+                    body.get("id", ""), body.get("mode", "")
+                )
+            elif action == "bind_channel_instance":
+                # members: list => set team; omitted/None => leave team untouched
+                raw_members = body.get("members", None)
+                members = raw_members if isinstance(raw_members, list) else None
+                result = _bind_channel_instance(
+                    channel_type=body.get("channel_type", ""),
+                    instance_id=body.get("instance_id", ""),
+                    agent_id=body.get("agent_id", ""),
+                    members=members,
+                )
+            else:
+                return json.dumps({
+                    "status": "error", "message": f"unknown action: {action}"
+                })
+            # Only the edited Agent needs its cached runtime dropped; a create
+            # has no live sessions yet. bind_channel_instance hot-updates the
+            # running channel's binding in place (see _bind_channel_instance),
+            # so it neither restarts a channel nor touches the roster runtime.
+            if action == "bind_channel_instance":
+                return json.dumps(
+                    {"status": "success", "result": result},
+                    ensure_ascii=False,
+                )
+            changed = None
+            if action in ("update", "archive", "delete", "set_knowledge_mode"):
+                changed = [body.get("id", "")] if body.get("id") else None
+            _reload_agent_runtime(service, changed_agent_ids=changed)
+            # Hand back the fresh revision so a client making rapid successive
+            # edits (e.g. ticking skill checkboxes) can chain them without a
+            # full reload and without tripping the stale-roster guard.
+            try:
+                revision_after = service.snapshot().get("revision")
+            except Exception:
+                revision_after = None
+            return json.dumps(
+                {"status": "success", "result": result, "revision": revision_after},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            from agent.admin import StaleRosterError
+            code = None
+            if isinstance(e, StaleRosterError):
+                web.ctx.status = "409 Conflict"
+                code = "stale_roster"
+            logger.error(f"[WebChannel] Agents POST error: {e}")
+            return json.dumps({"status": "error", "message": str(e), "code": code})
+
+
+class AgentCoreFileHandler:
+    def GET(self, agent_id: str, filename: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            result = _agent_admin_service().read_core_file(agent_id, filename)
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"status": "error", "message": str(e)})
+
+    def PUT(self, agent_id: str, filename: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            body = json.loads(web.data())
+            result = _agent_admin_service().write_core_file(
+                agent_id,
+                filename,
+                body.get("content"),
+                body.get("revision", ""),
+            )
+            try:
+                from bridge.bridge import Bridge
+                agent_bridge = getattr(Bridge(), "_agent_bridge", None)
+                if agent_bridge is not None:
+                    agent_bridge.clear_agent(agent_id)
+            except Exception as e:
+                logger.warning(
+                    f"[WebChannel] Failed to evict edited agent={agent_id}: {e}"
+                )
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except Exception as e:
+            from agent.admin import StaleAgentFileError
+            if isinstance(e, StaleAgentFileError):
+                web.ctx.status = "409 Conflict"
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+# An emoji costs nothing to store or serve, so it is the default way to tell
+# Agents apart; an uploaded picture sets the field to this token instead and the
+# bytes live beside the other shared assets.
+AVATAR_IMAGE_TOKEN = "image"
+AVATAR_TYPES = {
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+}
+MAX_AVATAR_BYTES = 2 * 1024 * 1024
+
+
+def _avatar_path(agent_id: str) -> Optional[str]:
+    from common.state_dir import shared_root
+
+    base = shared_root() / "avatars"
+    for suffix in AVATAR_TYPES:
+        candidate = base / f"{agent_id}{suffix}"
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+class AgentAvatarHandler:
+    def GET(self, agent_id: str):
+        _require_auth()
+        path = _avatar_path(agent_id)
+        if not path:
+            web.ctx.status = "404 Not Found"
+            web.header('Content-Type', 'application/json; charset=utf-8')
+            return json.dumps({"status": "error", "message": "no avatar"})
+        with open(path, "rb") as handle:
+            data = handle.read()
+        web.header('Content-Type', AVATAR_TYPES[os.path.splitext(path)[1].lower()])
+        # Content-addressed by the caller via ?v=, so it can be cached hard.
+        web.header('Cache-Control', 'private, max-age=86400')
+        return data
+
+    def POST(self, agent_id: str):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from common.state_dir import shared_root
+            from agent.registry import get_agent_registry
+
+            get_agent_registry().get(agent_id, require_enabled=False)
+            params = web.input(avatar={})
+            upload = params.get("avatar")
+            raw = getattr(upload, "value", None)
+            filename = getattr(upload, "filename", "") or ""
+            if not raw:
+                return json.dumps({"status": "error", "message": "avatar file required"})
+            if len(raw) > MAX_AVATAR_BYTES:
+                return json.dumps({"status": "error", "message": "avatar exceeds 2 MiB"})
+            suffix = os.path.splitext(filename)[1].lower()
+            if suffix not in AVATAR_TYPES:
+                return json.dumps({
+                    "status": "error",
+                    "message": f"unsupported image type: {suffix or 'unknown'}",
+                })
+
+            base = shared_root() / "avatars"
+            base.mkdir(parents=True, exist_ok=True)
+            # Drop any other extension first, so one Agent never ends up with
+            # two avatar files and a resolution order deciding which one wins.
+            for other in AVATAR_TYPES:
+                stale = base / f"{agent_id}{other}"
+                if other != suffix and stale.is_file():
+                    try:
+                        stale.unlink()
+                    except OSError:
+                        pass
+            target = base / f"{agent_id}{suffix}"
+            tmp = base / f".{agent_id}{suffix}.tmp"
+            with open(tmp, "wb") as handle:
+                handle.write(raw)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, target)
+
+            service = _agent_admin_service()
+            result = service.update_agent(agent_id, avatar=AVATAR_IMAGE_TOKEN)
+            # An avatar is a file plus a metadata flag; it changes nothing about
+            # routing, sessions or schedulers. Skipping the full runtime reload
+            # keeps the upload instant instead of tearing everything down.
+            # Hand back the fresh revision so the console can patch its roster in
+            # place without a full reload and without going stale on the next edit.
+            revision = service.snapshot().get("revision")
+            return json.dumps(
+                {"status": "success", "result": result, "revision": revision},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            logger.error(f"[WebChannel] Agent avatar upload error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 
@@ -5855,21 +6572,210 @@ def _annotate_sessions_with_projects(store, result: dict, agent_id: Optional[str
     result["project_order"] = project_store.get_order()
 
 
+def _agent_badge(profile) -> dict:
+    return {"id": profile.id, "name": profile.name, "avatar": profile.avatar or ""}
+
+
+def _roster_from_members(host_agent_id: str, members) -> List[dict]:
+    """Badge every reachable member of a conversation, host first."""
+    from agent.registry import get_agent_registry
+
+    if not members:
+        return []
+    registry = get_agent_registry()
+    roster: List[dict] = []
+    for agent_id in [host_agent_id, *members]:
+        if any(item["id"] == agent_id for item in roster):
+            continue
+        try:
+            roster.append(_agent_badge(registry.get(agent_id)))
+        except Exception:
+            continue
+    return roster
+
+
+def _session_roster(session_id: str, host_agent_id: str) -> List[dict]:
+    """Everyone who can be addressed in this conversation, host included.
+
+    Empty for a conversation nobody was invited into, which is every
+    conversation until the user says otherwise.
+    """
+    from agent.workspace import session_prefs
+
+    try:
+        members = session_prefs.get_prefs(session_id, host_agent_id).get("members")
+    except Exception as e:
+        logger.debug(f"[WebChannel] roster lookup failed for {session_id}: {e}")
+        return []
+    return _roster_from_members(host_agent_id, members)
+
+
+def _addressed_agent_id(text: str, roster: List[dict]) -> str:
+    """The teammate this message names, or "" when it names nobody.
+
+    Matching accepts the display name as well as the id, because the composer
+    writes the name — nobody types ``@agent-17n3e8`` on purpose. Longer labels
+    are tried first so that a name containing another name still resolves to
+    the one actually written.
+
+    Only a leading mention counts. Naming somebody mid-sentence is usually
+    talking *about* them ("ask Ops to..."), not handing them the turn.
+    """
+    stripped = (text or "").lstrip()
+    if not stripped.startswith("@"):
+        return ""
+    candidates = []
+    for item in roster:
+        for label in (item.get("name") or "", item.get("id") or ""):
+            if label:
+                candidates.append((label, item["id"]))
+    for label, agent_id in sorted(candidates, key=lambda pair: -len(pair[0])):
+        pattern = r"^@" + re.escape(label) + r"(?=[\s，,：:、]|$)"
+        if re.match(pattern, stripped, re.IGNORECASE):
+            return agent_id
+    return ""
+
+
+def _list_sessions_across_agents(page: int, page_size: int) -> dict:
+    """One page of every Agent's conversations, merged.
+
+    Sessions are stored one database per Agent, so "all conversations" is a
+    merge across files rather than a query. Each Agent is asked for as many rows
+    as the requested page could possibly draw from it, because any of them can
+    supply the row that sorts into that page.
+
+    Presenting them in one list is what keeps a second Agent from feeling like a
+    second account: the alternative, switching the whole console to look at
+    another Agent's conversations, makes the roster a tenant selector.
+    """
+    from agent.memory import get_conversation_store
+    from agent.registry import get_agent_registry
+    from agent.workspace import project_store, session_prefs
+    from common.state_dir import state_root_str
+
+    take = max(1, page) * page_size
+    merged: List[dict] = []
+    total = 0
+    space_paths = set()
+    uses_default = False
+    try:
+        members_index = session_prefs.members_index()
+    except Exception as e:
+        # Faces are decoration; losing them must not cost the user the list.
+        logger.warning(f"[WebChannel] Could not read session rosters: {e}")
+        members_index = {}
+
+    for profile in get_agent_registry().list(include_disabled=False):
+        try:
+            store = get_conversation_store(profile.workspace)
+            chunk = store.list_sessions(channel_type="web", page=1, page_size=take)
+            project_map = project_store.get_project_map(profile.id)
+            session_ids = store.list_session_ids(channel_type="web")
+        except Exception as e:
+            # One unreadable workspace must not blank out the whole list; the
+            # other Agents' conversations are still perfectly readable.
+            logger.warning(
+                f"[WebChannel] Skipping sessions for agent={profile.id}: {e}"
+            )
+            continue
+
+        total += chunk.get("total", 0)
+        badge = _agent_badge(profile)
+        for session in chunk.get("sessions") or []:
+            path = project_map.get(session["session_id"])
+            session["agent"] = badge
+            # Only a conversation with more than one Agent in it needs faces in
+            # the list; a solo one reads better as a plain row, exactly as it
+            # did before there was a roster.
+            roster = _roster_from_members(
+                profile.id, members_index.get((profile.id, session["session_id"]))
+            )
+            if len(roster) > 1:
+                session["participants"] = roster
+            session["project"] = (
+                {"path": path, "name": project_store.display_name_for(path)}
+                if path else None
+            )
+            merged.append(session)
+
+        for sid in session_ids:
+            path = project_map.get(sid)
+            if path:
+                space_paths.add(path)
+            else:
+                uses_default = True
+
+    # One row per conversation. A session id can exist in more than one Agent's
+    # store (an older client once let a conversation change hands mid-way, and
+    # each side kept the turns it saw); showing it twice makes both rows light
+    # up as "selected". Keep the copy holding the bulk of the conversation —
+    # that's the one the user recognises — and let the newest break a tie.
+    by_id: Dict[str, dict] = {}
+    for session in merged:
+        sid = session.get("session_id")
+        kept = by_id.get(sid)
+        if kept is None or (
+            (int(session.get("msg_count") or 0), int(session.get("last_active") or 0))
+            > (int(kept.get("msg_count") or 0), int(kept.get("last_active") or 0))
+        ):
+            by_id[sid] = session
+    total -= len(merged) - len(by_id)
+    merged = list(by_id.values())
+
+    # Same ordering the per-Agent query applies, so a merged page looks exactly
+    # like a single Agent's page does.
+    merged.sort(
+        key=lambda s: (
+            0 if s.get("pinned") else 1,
+            -int(s.get("last_active") or 0),
+        )
+    )
+    offset = (max(1, page) - 1) * page_size
+    result = {
+        "sessions": merged[offset:offset + page_size],
+        "total": total,
+        "page": max(1, page),
+        "page_size": page_size,
+        "has_more": total > offset + page_size,
+        "space_count": len(space_paths) + (1 if uses_default else 0),
+        "default_workspace": state_root_str(),
+        "project_order": project_store.get_order(),
+    }
+    result["group_mode"] = "project" if result["space_count"] > 1 else "time"
+    return result
+
+
 class SessionsHandler:
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
-            params = web.input(page='1', page_size='50', agent='')
-            agent_id = params.agent or None
+            params = web.input(
+                page='1', page_size='50', agent_id='', agent='', scope=''
+            )
+            page = int(params.page)
+            page_size = int(params.page_size)
+            if (params.scope or '').strip() == 'all':
+                result = _list_sessions_across_agents(page, page_size)
+                return json.dumps({"status": "success", **result}, ensure_ascii=False)
+
+            agent_id = _request_agent_id(params)
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            from agent.registry import get_agent_registry
+            store = get_conversation_store(
+                _get_workspace_root(agent_id=agent_id)
+            )
             result = store.list_sessions(
                 channel_type="web",
-                page=int(params.page),
-                page_size=int(params.page_size),
+                page=page,
+                page_size=page_size,
             )
             _annotate_sessions_with_projects(store, result, agent_id)
+            badge = _agent_badge(
+                get_agent_registry().get(agent_id or None, require_enabled=False)
+            )
+            for session in result.get("sessions") or []:
+                session["agent"] = badge
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Sessions API error: {e}")
@@ -5884,6 +6790,8 @@ class SessionDetailHandler:
         try:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
+            params = web.input(agent_id='')
+            agent_id = _request_agent_id(params)
 
             # Stop any in-flight run first: a reply that lands after the delete
             # would otherwise keep burning tokens for a session nobody can see.
@@ -5901,7 +6809,7 @@ class SessionDetailHandler:
                 logger.warning(f"[WebChannel] Cancel on delete failed: {e}")
 
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = get_conversation_store(_get_workspace_root(agent_id=agent_id))
             store.clear_session(session_id)
 
             # Drop the session's side stores too. Left behind, a stale project
@@ -5918,7 +6826,7 @@ class SessionDetailHandler:
             try:
                 from bridge.bridge import Bridge
                 ab = Bridge().get_agent_bridge()
-                ab.clear_session(session_id)
+                ab.clear_session(session_id, agent_id=agent_id)
             except Exception:
                 pass
 
@@ -5929,7 +6837,9 @@ class SessionDetailHandler:
                 channel.cancel_session(session_id)
             except Exception as e:
                 logger.warning(f"[WebChannel] Failed to drain queue on delete: {e}")
-            channel.session_queues.pop(session_id, None)
+            channel.session_queues.pop(
+                channel._session_queue_key(session_id, agent_id), None
+            )
 
             logger.info(f"[WebChannel] Session deleted: {session_id}")
             return json.dumps({"status": "success"})
@@ -5945,13 +6855,14 @@ class SessionDetailHandler:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
             body = json.loads(web.data())
+            agent_id = _request_agent_id(body)
             title = (body.get("title") or "").strip()
             pinned = body.get("pinned")
             if not title and pinned is None:
                 return json.dumps({"status": "error", "message": "title or pinned required"})
 
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = get_conversation_store(_get_workspace_root(agent_id=agent_id))
 
             found = True
             if title:
@@ -6048,6 +6959,12 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     ``source`` tells the UI whether a value is this conversation's own choice or
     inherited, so it can show "follow global" as a real, selectable state instead
     of silently duplicating the global value onto every session.
+
+    The model resolves the same way the runtime does (see AgentLLMModel.model):
+    the conversation's pin, else the owning Agent's own default model, else the
+    global config. ``source`` is ``session`` / ``agent`` / ``global`` accordingly,
+    and ``agent`` carries the Agent's default when it has one, so a fresh chat
+    with a specialist Agent shows the model it will really answer with.
     """
     from agent.workspace import session_prefs
 
@@ -6061,12 +6978,34 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
     global_model = local_config.get("model") or ""
     global_permission = permission_global_mode()
 
+    # The default Agent never has a model of its own: it *is* the global choice.
+    agent_default = None
+    try:
+        from agent.registry import get_agent_registry
+        registry = get_agent_registry()
+        profile = registry.get(agent_id or None, require_enabled=False)
+        if profile.id != registry.default_agent_id and profile.model:
+            agent_default = {
+                "model": profile.model,
+                "provider": profile.bot_type or global_provider,
+            }
+    except Exception as e:
+        logger.debug(f"[WebChannel] agent default model unavailable: {e}")
+
+    if prefs.get("model"):
+        effective_model, effective_provider, source = prefs["model"], prefs.get("provider"), "session"
+    elif agent_default:
+        effective_model, effective_provider, source = agent_default["model"], agent_default["provider"], "agent"
+    else:
+        effective_model, effective_provider, source = global_model, global_provider, "global"
+
     return {
         "model": {
-            "model": prefs.get("model") or global_model,
-            "provider": prefs.get("provider") or global_provider,
-            "source": "session" if prefs.get("model") else "global",
+            "model": effective_model,
+            "provider": effective_provider or global_provider,
+            "source": source,
             "global": {"model": global_model, "provider": global_provider},
+            "agent": agent_default,
             "providers": _session_model_catalog(),
         },
         "permission": {
@@ -6078,6 +7017,39 @@ def _session_settings_state(session_id: str, agent_id: Optional[str]) -> dict:
             "global": global_permission,
             "modes": list(PERMISSION_MODES),
         },
+        "team": _session_team_state(prefs, agent_id),
+    }
+
+
+def _session_team_state(prefs: dict, agent_id: Optional[str]) -> dict:
+    """Who else is on this conversation, and who could be added.
+
+    An archived member is reported but marked unavailable rather than dropped,
+    so the roster the user set is what the roster page shows.
+    """
+    from agent.registry import get_agent_registry
+
+    registry = get_agent_registry()
+    owner_id = registry.get(agent_id or None, require_enabled=False).id
+    members = []
+    for member_id in prefs.get("members") or []:
+        try:
+            profile = registry.get(member_id, require_enabled=False)
+        except Exception:
+            members.append({"id": member_id, "name": member_id, "available": False})
+            continue
+        members.append({
+            **_agent_badge(profile),
+            "available": profile.enabled and profile.id != owner_id,
+        })
+    return {
+        "owner": _agent_badge(registry.get(owner_id, require_enabled=False)),
+        "members": members,
+        "candidates": [
+            _agent_badge(profile)
+            for profile in registry.list(include_disabled=False)
+            if profile.id != owner_id
+        ],
     }
 
 
@@ -6095,8 +7067,10 @@ class SessionSettingsHandler:
         try:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
-            params = web.input(agent='')
-            state = _session_settings_state(session_id, params.agent or None)
+            params = web.input(agent='', agent_id='')
+            state = _session_settings_state(
+                session_id, params.agent or params.agent_id or None
+            )
             return json.dumps({"status": "success", **state}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Session settings read error: {e}")
@@ -6132,11 +7106,24 @@ class SessionSettingsHandler:
                 # with no model would route the global model to the wrong vendor.
                 updates["model"] = model
                 updates["provider"] = provider if model else None
+            if "members" in body:
+                raw = body.get("members")
+                if raw is None:
+                    updates["members"] = None
+                elif isinstance(raw, list):
+                    updates["members"] = [
+                        str(item).strip() for item in raw if str(item).strip()
+                    ]
+                else:
+                    return json.dumps({
+                        "status": "error",
+                        "message": "members must be a list of agent ids",
+                    })
 
             if not updates:
                 return json.dumps({
                     "status": "error",
-                    "message": "permission, model or provider required",
+                    "message": "permission, model, provider or members required",
                 })
 
             session_prefs.set_prefs(session_id, agent_id, **updates)
@@ -6171,6 +7158,7 @@ class SessionTitleHandler:
                 return json.dumps({"status": "error", "message": "session_id required"})
 
             body = json.loads(web.data())
+            agent_id = _request_agent_id(body)
             user_message = body.get("user_message", "")
             assistant_reply = body.get("assistant_reply", "")
             if not user_message:
@@ -6179,7 +7167,7 @@ class SessionTitleHandler:
             title = _generate_session_title(user_message, assistant_reply, session_id)
 
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = get_conversation_store(_get_workspace_root(agent_id=agent_id))
             updated = store.rename_session(session_id, title)
             logger.info(f"[WebChannel] Session title set: sid={session_id}, title='{title}', db_updated={updated}")
 
@@ -6222,9 +7210,13 @@ class SessionClearContextHandler:
         try:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
+            params = web.input(agent_id='')
+            raw_body = web.data()
+            body = json.loads(raw_body) if raw_body else {}
+            agent_id = _request_agent_id(body) or _request_agent_id(params)
 
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = get_conversation_store(_get_workspace_root(agent_id=agent_id))
             new_seq = store.clear_context(session_id)
 
             # Delete the agent instance so a fresh one is created on the next message
@@ -6232,7 +7224,7 @@ class SessionClearContextHandler:
                 from bridge.bridge import Bridge
                 bridge = Bridge()
                 ab = bridge.get_agent_bridge()
-                ab.clear_session(session_id)
+                ab.clear_session(session_id, agent_id=agent_id)
             except Exception:
                 pass
 
@@ -6248,13 +7240,15 @@ class HistoryHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Access-Control-Allow-Origin', '*')
         try:
-            params = web.input(session_id='', page='1', page_size='20')
+            params = web.input(session_id='', page='1', page_size='20', agent_id='')
             session_id = params.session_id.strip()
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
 
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = get_conversation_store(
+                _get_workspace_root(agent_id=_request_agent_id(params))
+            )
             result = store.load_history_page(
                 session_id=session_id,
                 page=int(params.page),
@@ -6280,6 +7274,7 @@ class MessageDeleteHandler:
         web.header('Access-Control-Allow-Origin', '*')
         try:
             data = json.loads(web.data())
+            agent_id = _request_agent_id(data)
             session_id = data.get('session_id', '').strip()
             user_seq = data.get('user_seq')
             delete_user = data.get('delete_user', True)
@@ -6290,14 +7285,16 @@ class MessageDeleteHandler:
             
             # 1. Delete from database
             from agent.memory import get_conversation_store
-            store = get_conversation_store()
+            store = get_conversation_store(_get_workspace_root(agent_id=agent_id))
             deleted = store.delete_message_pair(session_id, int(user_seq), delete_user=delete_user, cascade=cascade)
 
             # 2. Sync agent's in-memory context so its next turn sees the
             # same history as the DB. Handled by the agent_bridge helper.
             try:
                 from bridge.bridge import Bridge
-                Bridge().get_agent_bridge().sync_session_messages_from_store(session_id)
+                Bridge().get_agent_bridge().sync_session_messages_from_store(
+                    session_id, agent_id=agent_id
+                )
             except Exception as sync_err:
                 logger.warning(f"[WebChannel] Failed to sync agent memory: {sync_err}")
 
@@ -6827,7 +7824,10 @@ class KnowledgeListHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.knowledge.service import KnowledgeService
-            svc = KnowledgeService(_get_workspace_root())
+            params = web.input(agent_id='')
+            svc = KnowledgeService(
+                _get_workspace_root(agent_id=_request_agent_id(params))
+            )
             result = svc.list_tree()
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
@@ -6842,8 +7842,10 @@ class KnowledgeReadHandler:
         try:
             from pathlib import Path
             from agent.knowledge.service import KnowledgeService
-            params = web.input(path='')
-            svc = KnowledgeService(_get_workspace_root())
+            params = web.input(path='', agent_id='')
+            svc = KnowledgeService(
+                _get_workspace_root(agent_id=_request_agent_id(params))
+            )
             result = svc.read_file(params.path)
             # Absolute directory of the doc (posix separators), so clients can
             # resolve image srcs that are relative to the doc into /api/file
@@ -6864,7 +7866,10 @@ class KnowledgeGraphHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
             from agent.knowledge.service import KnowledgeService
-            svc = KnowledgeService(_get_workspace_root())
+            params = web.input(agent_id='')
+            svc = KnowledgeService(
+                _get_workspace_root(agent_id=_request_agent_id(params))
+            )
             return json.dumps(svc.build_graph(), ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Knowledge graph error: {e}")
@@ -6880,7 +7885,9 @@ class KnowledgeActionHandler:
             action = body.get("action", "")
             payload = body.get("payload") or {}
             from agent.knowledge.service import KnowledgeService
-            result = KnowledgeService(_get_workspace_root()).dispatch(action, payload)
+            result = KnowledgeService(
+                _get_workspace_root(agent_id=_request_agent_id(body))
+            ).dispatch(action, payload)
             return json.dumps({
                 "status": "success" if result["code"] < 300 else "error",
                 **result,
@@ -6905,6 +7912,7 @@ class KnowledgeImportHandler:
                     "payload": None,
                 })
             params = _raw_web_input()
+            agent_id = _request_agent_id(params)
             target_category = params.get("target_category", "")
             conflict_strategy = params.get("conflict_strategy", "skip")
             uploaded = _ensure_list(params.get("files"))
@@ -6941,7 +7949,9 @@ class KnowledgeImportHandler:
                     "content": content,
                 })
 
-            result = KnowledgeService(_get_workspace_root()).dispatch("import_documents", {
+            result = KnowledgeService(
+                _get_workspace_root(agent_id=agent_id)
+            ).dispatch("import_documents", {
                 "target_category": target_category,
                 "conflict_strategy": conflict_strategy,
                 "files": files,

@@ -333,7 +333,9 @@ class ToolManager:
                 with open(mcp_json_path, "r", encoding="utf-8") as f:
                     data = _json.load(f)
                 raw = data.get("mcpServers") or data.get("mcp_servers") or data
-                logger.info(f"[ToolManager] Loading MCP config from {mcp_json_path}")
+                # DEBUG: with N agents this fires N times for the same shared
+                # mcp.json; the real boot is logged once at INFO further below.
+                logger.debug(f"[ToolManager] Loading MCP config from {mcp_json_path}")
                 return _normalize_mcp_configs(raw)
             except Exception as e:
                 logger.warning(f"[ToolManager] Failed to read {mcp_json_path}: {e}, falling back to config.json")
@@ -382,7 +384,9 @@ class ToolManager:
                 daemon=True,
                 name="mcp-loader",
             ).start()
-            logger.info(
+            # DEBUG: fires once per agent; with many agents sharing one mcp.json
+            # this is just noise. The actual server boot is logged at INFO.
+            logger.debug(
                 f"[ToolManager] MCP loading started in background "
                 f"({len(mcp_servers_config)} server(s) configured)"
             )
@@ -458,6 +462,16 @@ class ToolManager:
         with self._mcp_registry._registry_lock:
             client = self._mcp_registry._clients.pop(server_name, None)
         if client is not None:
+            # This client may be pooled and shared with other Agents on the same
+            # mcp.json. Drop the matching pool entry so a later reload re-boots a
+            # fresh subprocess rather than handing out the one we're stopping.
+            try:
+                pool = self._mcp_registry._shared_pool
+                with self._mcp_registry._shared_pool_lock:
+                    for k in [k for k, v in pool.items() if v is client]:
+                        pool.pop(k, None)
+            except Exception:
+                pass
             try:
                 client.shutdown()
             except Exception as e:
@@ -486,12 +500,30 @@ class ToolManager:
             # Let the OAuth web callback bring a server online once authorized.
             set_reload_callback(self.reload_mcp_server)
 
+            mcp_json_path = self._mcp_json_path()
+
+            booted_any = False
             for cfg in mcp_servers_config:
                 server_name = cfg.get("name", "<unnamed>")
                 try:
-                    client = McpClient(cfg)
-                    if not client.initialize():
-                        if getattr(client, "needs_auth", False):
+                    # Reuse a subprocess already booted from the *same* mcp.json
+                    # with the *same* config, so several Agents sharing one
+                    # mcp.json don't each fork their own copy of every server.
+                    # Booting is serialized per key, so concurrent loader threads
+                    # racing on the same server end up sharing one subprocess.
+                    share_key = registry.shared_key(mcp_json_path, server_name, cfg)
+                    boot_failure = {}
+
+                    def _boot():
+                        c = McpClient(cfg)
+                        if c.initialize():
+                            return c
+                        boot_failure["needs_auth"] = getattr(c, "needs_auth", False)
+                        return None
+
+                    client, reused = registry.get_or_boot_shared(share_key, _boot)
+                    if client is None:
+                        if boot_failure.get("needs_auth"):
                             self._mcp_status[server_name] = "needs_auth"
                             logger.info(
                                 f"[MCP] Server '{server_name}' needs authorization — "
@@ -521,17 +553,31 @@ class ToolManager:
                     with registry._registry_lock:
                         registry._clients[server_name] = client
                     self._mcp_status[server_name] = "ready"
-                    logger.info(
-                        f"[MCP] Server '{server_name}' ready — "
-                        f"{len(added)} tool(s): {added}"
-                    )
+                    if reused:
+                        # A shared subprocess this Agent attached to; log quietly
+                        # so N Agents sharing one mcp.json don't repeat the line.
+                        logger.debug(
+                            f"[MCP] Server '{server_name}' reused — "
+                            f"{len(added)} tool(s) attached"
+                        )
+                    else:
+                        booted_any = True
+                        logger.info(
+                            f"[MCP] Server '{server_name}' ready — "
+                            f"{len(added)} tool(s): {added}"
+                        )
                 except Exception as e:
                     self._mcp_status[server_name] = "failed"
                     logger.warning(f"[MCP] Server '{server_name}' load failed: {e}")
 
             ready = sum(1 for s in self._mcp_status.values() if s == "ready")
             total = len(self._mcp_status)
-            logger.info(
+            # Only surface the summary at INFO when this loader actually booted a
+            # server. When every server was reused from the shared pool (the
+            # common case for the 2nd..Nth agent sharing one mcp.json) keep it at
+            # DEBUG to avoid N identical "loading complete" lines.
+            _complete_log = logger.info if booted_any else logger.debug
+            _complete_log(
                 f"[ToolManager] MCP loading complete: "
                 f"{ready}/{total} server(s) ready, "
                 f"{len(self._mcp_tool_instances)} tool(s) available"

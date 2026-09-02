@@ -11,6 +11,10 @@ interface QrScanPanelProps {
   provider: Provider
   // Fired once the channel is connected so the page can refresh.
   onConnected: () => void
+  // Multi-Agent only: when true, the connect that follows a successful scan
+  // mints a NEW channel instance (instance_id '') rather than editing the
+  // single legacy one. Undefined/false keeps the legacy single-instance path.
+  newInstance?: boolean
 }
 
 const POLL_INTERVAL = 2000
@@ -19,7 +23,10 @@ const POLL_INTERVAL = 2000
 // the web console: fetch a QR, poll its status, then connect the channel. The
 // scan starts as soon as the panel mounts, so the caller decides when to show
 // it rather than wiring up a separate "start" button.
-const QrScanPanel: React.FC<QrScanPanelProps> = ({ provider, onConnected }) => {
+const QrScanPanel: React.FC<QrScanPanelProps> = ({ provider, onConnected, newInstance }) => {
+  // When minting a new instance, pass instance_id ''; otherwise omit it so the
+  // legacy per-type path is taken untouched.
+  const instanceArg = newInstance ? '' : undefined
   const [phase, setPhase] = useState<Phase>('loading')
   const [qr, setQr] = useState('')
   const [openLink, setOpenLink] = useState('')
@@ -51,7 +58,7 @@ const QrScanPanel: React.FC<QrScanPanelProps> = ({ provider, onConnected }) => {
         const s = data.qr_status as string
         if (s === 'confirmed') {
           setPhase('success')
-          await apiClient.channelAction('connect', 'weixin', {})
+          await apiClient.channelAction('connect', 'weixin', {}, instanceArg)
           if (aliveRef.current) onConnected()
         } else if (s === 'expired' && (data.qr_image || data.qrcode_url)) {
           setQr((data.qr_image as string) || (data.qrcode_url as string))
@@ -151,10 +158,15 @@ const QrScanPanel: React.FC<QrScanPanelProps> = ({ provider, onConnected }) => {
         }
         if (rs === 'done') {
           setPhase('success')
-          await apiClient.channelAction('connect', 'feishu', {
-            feishu_app_id: data.app_id,
-            feishu_app_secret: data.app_secret,
-          })
+          await apiClient.channelAction(
+            'connect',
+            'feishu',
+            {
+              feishu_app_id: data.app_id,
+              feishu_app_secret: data.app_secret,
+            },
+            instanceArg
+          )
           if (aliveRef.current) onConnected()
         } else if (rs === 'expired') {
           fail(t('feishu_scan_expired'))
@@ -276,7 +288,7 @@ const QrScanPanel: React.FC<QrScanPanelProps> = ({ provider, onConnected }) => {
           <p className="text-sm text-danger text-center mb-3">{errMsg}</p>
           <button
             onClick={start}
-            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-btn border border-strong text-sm text-content-secondary hover:bg-inset cursor-pointer transition-colors"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-btn border border-strong text-sm text-content-secondary hover:bg-inset-2 cursor-pointer transition-colors"
           >
             <RotateCcw size={13} />
             {t('feishu_scan_retry')}

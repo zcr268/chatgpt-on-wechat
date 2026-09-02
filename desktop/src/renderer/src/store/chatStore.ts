@@ -1,9 +1,12 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
 import { useWorkspaceStore } from './workspaceStore'
+import { sessionOwner } from './sessionStore'
+import { cfgFor } from './sessionSettingsStore'
+import { findAgent } from './agentStore'
 import { notifyRunDone } from '../lib/taskNotify'
 import { parseAttachmentMarkers } from '../lib/fileKind'
-import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage } from '../types'
+import type { Artifact, ChatMessage, MessageStep, Attachment, StreamEvent, HistoryMessage, AgentBadge } from '../types'
 
 /**
  * Per-session chat state. Supports parallel sessions: each session keeps its
@@ -68,6 +71,43 @@ function stripCancelMarker(text: string): string {
     .replace(/_\(Cancelled by user\)_/g, '')
     .replace(/_\(Cancelled\)_/g, '')
     .trim()
+}
+
+/**
+ * Everyone addressable in a conversation, owner first: the owner plus any
+ * invited teammates. Empty outside a group chat.
+ */
+function sessionRoster(sid: string): AgentBadge[] {
+  const team = cfgFor(sid)?.team
+  if (!team || !team.members?.length) return []
+  const roster: AgentBadge[] = [team.owner]
+  for (const m of team.members) {
+    if (!roster.some((a) => a.id === m.id)) roster.push(m)
+  }
+  return roster
+}
+
+/**
+ * The teammate a message hands the turn to, or '' for nobody. Mirrors the
+ * server's rule: only a leading mention counts (naming someone mid-sentence is
+ * talking *about* them), matched by display name or id, longest label first so
+ * a name containing another name still resolves to the one written.
+ */
+function addressedAgentId(text: string, roster: AgentBadge[]): string {
+  const stripped = (text || '').replace(/^\s+/, '')
+  if (!stripped.startsWith('@') || roster.length < 2) return ''
+  const labels: Array<[string, string]> = []
+  for (const a of roster) {
+    for (const label of [a.name, a.id]) {
+      if (label) labels.push([String(label), a.id])
+    }
+  }
+  labels.sort((x, y) => y[0].length - x[0].length)
+  for (const [label, id] of labels) {
+    const re = new RegExp(`^@${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?=[\\s，,：:、]|$)`, 'i')
+    if (re.test(stripped)) return id
+  }
+  return ''
 }
 
 const SUBSTEP_ARGS_CHARS = 90
@@ -454,6 +494,14 @@ export const useChatStore = create<ChatState>((set, get) => {
         attachments: attachments.length ? attachments : undefined,
       }
       const botId = uid('assistant')
+      // The conversation's owner answers unless a teammate was addressed with a
+      // leading @mention (group chat). Lock the speaker onto the reply at send
+      // time so a later Agent switch never rewrites who spoke in the history.
+      // Empty in single-Agent mode, so those replies keep the product logo
+      // exactly as before.
+      const owner = sessionOwner(sid)
+      const addressed = owner ? addressedAgentId(text, sessionRoster(sid)) : ''
+      const speakerAgentId = addressed || owner
       const botMsg: ChatMessage = {
         id: botId,
         role: 'assistant',
@@ -461,6 +509,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         timestamp: Date.now() / 1000,
         steps: [],
         isStreaming: true,
+        extras: speakerAgentId ? { agent_id: speakerAgentId } : undefined,
       }
       patchMessages(sid, (msgs) => [...msgs, userMsg, botMsg])
       patchSession(sid, { isStreaming: true })
@@ -470,7 +519,17 @@ export const useChatStore = create<ChatState>((set, get) => {
         const res = await apiClient.sendMessage(sid, text, {
           stream: true,
           attachments: attachments.length ? attachments : undefined,
+          agentId: owner || undefined,
+          speakerAgentId: addressed && addressed !== owner ? addressed : undefined,
         })
+        // The server is the authority on who took the turn; repaint the live
+        // bubble if it resolved the mention differently than we guessed.
+        if (owner && res.status === 'success') {
+          const speaker = res.speaker || owner
+          if (speaker !== speakerAgentId && findAgent(speaker)) {
+            updateMsg(sid, botId, (m) => ({ ...m, extras: { ...(m.extras || {}), agent_id: speaker } }))
+          }
+        }
         if (res.status === 'success' && res.stream && res.request_id) {
           patchSession(sid, { requestId: res.request_id })
           attachStream(sid, res.request_id, botId)
@@ -532,7 +591,13 @@ export const useChatStore = create<ChatState>((set, get) => {
       // delete the turn on the backend (by the user's seq) then resend
       if (userMsg.userSeq != null) {
         try {
-          await apiClient.deleteMessage({ sessionId: sid, userSeq: userMsg.userSeq, deleteUser: true, cascade: true })
+          await apiClient.deleteMessage({
+            sessionId: sid,
+            userSeq: userMsg.userSeq,
+            deleteUser: true,
+            cascade: true,
+            agentId: sessionOwner(sid) || undefined,
+          })
         } catch {
           /* ignore */
         }
@@ -551,7 +616,13 @@ export const useChatStore = create<ChatState>((set, get) => {
       // cascade-delete this turn on the backend
       if (msg.userSeq != null) {
         apiClient
-          .deleteMessage({ sessionId: sid, userSeq: msg.userSeq, deleteUser: true, cascade: true })
+          .deleteMessage({
+            sessionId: sid,
+            userSeq: msg.userSeq,
+            deleteUser: true,
+            cascade: true,
+            agentId: sessionOwner(sid) || undefined,
+          })
           .catch(() => {})
       }
       patchMessages(sid, (msgs) => msgs.slice(0, userIdx))
@@ -560,7 +631,13 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     deleteMessage: async (sid, userSeq, cascade) => {
       try {
-        await apiClient.deleteMessage({ sessionId: sid, userSeq, deleteUser: true, cascade })
+        await apiClient.deleteMessage({
+          sessionId: sid,
+          userSeq,
+          deleteUser: true,
+          cascade,
+          agentId: sessionOwner(sid) || undefined,
+        })
       } catch {
         /* ignore */
       }
@@ -570,7 +647,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     loadHistory: async (sid, page = 1) => {
       try {
-        const res = await apiClient.getHistory(sid, page, 20)
+        const res = await apiClient.getHistory(sid, page, 20, sessionOwner(sid) || undefined)
         const uiMsgs = res.messages.map(historyToMessage)
         patchSession(sid, {
           historyPage: res.page,
@@ -590,7 +667,7 @@ export const useChatStore = create<ChatState>((set, get) => {
 
     clearContext: async (sid) => {
       try {
-        const res = await apiClient.clearContext(sid)
+        const res = await apiClient.clearContext(sid, sessionOwner(sid) || undefined)
         if (res.status !== 'success') return false
         // Append a visual divider so the user sees the context was cleared
         // (mirrors the web console's context-divider).

@@ -59,7 +59,7 @@ class DiscordChannel(ChatChannel):
     # ------------------------------------------------------------------
 
     def startup(self):
-        self.bot_token = conf().get("discord_token", "")
+        self.bot_token = self.cfg("discord_token", "")
         if not self.bot_token:
             err = "[Discord] discord_token is required"
             logger.error(err)
@@ -263,6 +263,8 @@ class DiscordChannel(ChatChannel):
                 context["receiver"] = str(message.channel.id)
                 context["discord_channel_id"] = message.channel.id
                 context["discord_reply_to_msg_id"] = message.id if is_group else None
+                from agent.team_addressing import stamp_speaker_from_channel
+                stamp_speaker_from_channel(self, context, dc_msg.content)
                 self.produce(context)
             logger.debug(f"[Discord] received: type={ctype}, content={str(dc_msg.content)[:80]}")
 
@@ -277,8 +279,7 @@ class DiscordChannel(ChatChannel):
             agent_bridge = Bridge().get_agent_bridge()
             receiver = str(message.channel.id)
             agent_id = agent_bridge.agent_router.resolve(
-                channel_type=self.channel_type,
-                conversation_ids=(session_id, receiver),
+                explicit_agent_id=getattr(self, "bound_agent_id", "") or None,
             )
             scoped_session_id = agent_bridge._cancel_key(
                 agent_id, session_id, agent_bridge.agent_registry.default_agent_id
@@ -388,6 +389,7 @@ class DiscordChannel(ChatChannel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
 
