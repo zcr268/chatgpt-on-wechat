@@ -7674,6 +7674,31 @@ def _editable_target(raw_path: str, session_id: str = None, agent_id: str = None
     return svc, rel
 
 
+def _is_memory_rel(rel_path: str) -> bool:
+    """True if a workspace-relative path points at a memory file backed by the
+    vector index (so an edit has to be re-embedded, not just written)."""
+    p = (rel_path or "").lstrip("./")
+    return p == "MEMORY.md" or p.startswith(("memory/", "memory\\"))
+
+
+def _mark_memory_dirty(agent_id: str = None) -> None:
+    """Flag the agent's memory index stale after a console edit to a memory file.
+
+    The index is built from the file contents, so a human edit here must be
+    re-embedded the same way an agent's write/edit tool triggers it — otherwise
+    semantic search keeps returning the pre-edit text until something else marks
+    the store dirty. Best-effort: a failure here must not fail the save.
+    """
+    try:
+        from bridge.bridge import Bridge
+        agent = Bridge().get_agent_bridge().get_agent(agent_id=agent_id or None)
+        mm = getattr(agent, "memory_manager", None)
+        if mm:
+            mm.mark_dirty()
+    except Exception as e:
+        logger.warning(f"[WebChannel] Failed to mark memory index dirty: {e}")
+
+
 class WorkspaceReadHandler:
     """
     Text content of one workspace file, for the preview panel's editor.
@@ -7727,12 +7752,17 @@ class WorkspaceWriteHandler:
             if not isinstance(content, str):
                 return json.dumps({"status": "error", "message": "content must be a string"})
 
-            svc, rel = _editable_target(raw_path, body.get("session") or None,
-                                        body.get("agent") or None)
+            agent_id = body.get("agent") or None
+            svc, rel = _editable_target(raw_path, body.get("session") or None, agent_id)
             try:
                 result = svc.write_text(rel, content, expected_mtime=body.get("expected_mtime"))
             except WorkspaceConflictError as e:
                 return json.dumps({"status": "error", "code": "conflict", "message": str(e)})
+
+            # A memory file feeds the vector index; re-embed it on edit so search
+            # doesn't keep returning the stale pre-edit text.
+            if _is_memory_rel(rel):
+                _mark_memory_dirty(agent_id)
 
             logger.info(f"[WebChannel] Workspace file saved: {result['path']} ({result['size']} bytes)")
             return json.dumps({"status": "success", **result}, ensure_ascii=False)

@@ -95,7 +95,7 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
                     with identity_scope(agent_id=agent_id):
                         action = task.get("action", {})
                         action_type = action.get("type")
-                        channel_type = action.get("channel_type", "unknown")
+                        channel_type = _primary_channel_type(action.get("channel_type"))
                         receiver = action.get("receiver", "")
 
                         if not _is_channel_ready(channel_type, receiver, agent_id):
@@ -138,6 +138,22 @@ def init_scheduler(agent_bridge, workspace_root: str = None, agent_id: str = Non
         except Exception as e:
             logger.error(f"[Scheduler] Failed to initialize scheduler: {e}")
             return False
+
+
+def _primary_channel_type(raw) -> str:
+    """Normalize a task's stored channel_type to a single channel name.
+
+    config.json allows a comma-joined value (e.g. "feishu,dingtalk") that
+    app.py splits into several channels at startup. A scheduled task, though,
+    delivers to one place, and create_channel() only understands a single type
+    — passing the whole "feishu,dingtalk" string lands in its `else: raise`.
+    Take the first non-empty entry so a task copied from that config still
+    delivers instead of failing every tick.
+    """
+    if not raw:
+        return "unknown"
+    first = str(raw).split(",")[0].strip()
+    return first or "unknown"
 
 
 def _is_channel_ready(
@@ -294,7 +310,7 @@ def _execute_agent_task(task: dict, agent_bridge, agent_id: str = None) -> bool:
         task_description = action.get("task_description")
         receiver = action.get("receiver")
         is_group = action.get("is_group", False)
-        channel_type = action.get("channel_type", "unknown")
+        channel_type = _primary_channel_type(action.get("channel_type"))
         
         if not task_description:
             logger.error(f"[Scheduler] Task {task['id']}: No task_description specified")
@@ -417,7 +433,7 @@ def _execute_send_message(task: dict, agent_bridge, agent_id: str = None) -> boo
         content = action.get("content", "")
         receiver = action.get("receiver")
         is_group = action.get("is_group", False)
-        channel_type = action.get("channel_type", "unknown")
+        channel_type = _primary_channel_type(action.get("channel_type"))
         
         if not receiver:
             logger.error(f"[Scheduler] Task {task['id']}: No receiver specified")
@@ -503,7 +519,7 @@ def _execute_tool_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         result_prefix = action.get("result_prefix", "")
         receiver = action.get("receiver")
         is_group = action.get("is_group", False)
-        channel_type = action.get("channel_type", "unknown")
+        channel_type = _primary_channel_type(action.get("channel_type"))
 
         if not tool_name:
             logger.error(f"[Scheduler] Task {task['id']}: No tool_name specified")
@@ -579,7 +595,7 @@ def _execute_skill_call(task: dict, agent_bridge, agent_id: str = None) -> bool:
         result_prefix = action.get("result_prefix", "")
         receiver = action.get("receiver")
         is_group = action.get("isgroup", False)
-        channel_type = action.get("channel_type", "unknown")
+        channel_type = _primary_channel_type(action.get("channel_type"))
 
         if not skill_name:
             logger.error(f"[Scheduler] Task {task['id']}: No skill_name specified")
