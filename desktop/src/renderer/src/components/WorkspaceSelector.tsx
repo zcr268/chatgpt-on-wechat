@@ -168,7 +168,9 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
           }`}
         >
           <FolderOpen size={13} className="shrink-0" />
-          <span className="composer-chip-label truncate">{label}</span>
+          {/* The default workspace is the implicit state, so the label there is
+              just clutter — show the icon alone and only name a real project. */}
+          {current && <span className="composer-chip-label truncate">{label}</span>}
           <ChevronDown size={11} className="opacity-60 shrink-0" />
         </button>
       </Tooltip>

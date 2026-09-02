@@ -8,6 +8,8 @@ import type { MemoryItem, MemoryCategory, WorkspaceReadResult } from '../types'
 import Markdown from '../components/Markdown'
 import { DocActions, DocEditor, DocNotice } from '../components/DocEditor'
 import { createDocEditorStore } from '../store/docEditorStore'
+import AgentScopeSelect from '../components/AgentScopeSelect'
+import { useAgentStore, selectMultiAgent } from '../store/agentStore'
 
 interface MemoryPageProps {
   baseUrl: string
@@ -53,11 +55,11 @@ const typeBadge = (type: string): { label: string; cls: string } => {
     case 'global':
       return { label: t('memory_type_global'), cls: 'bg-accent-soft text-accent' }
     case 'evolution':
-      return { label: t('memory_type_evolution'), cls: 'bg-inset text-success' }
+      return { label: t('memory_type_evolution'), cls: 'bg-inset-2 text-success' }
     case 'dream':
-      return { label: t('memory_type_dream'), cls: 'bg-inset text-info' }
+      return { label: t('memory_type_dream'), cls: 'bg-inset-2 text-info' }
     default:
-      return { label: t('memory_type_daily'), cls: 'bg-inset text-content-secondary' }
+      return { label: t('memory_type_daily'), cls: 'bg-inset-2 text-content-secondary' }
   }
 }
 
@@ -76,13 +78,30 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
   const edit = memoryEditor((s) => s.edit)
   const editorRef = useRef<HTMLTextAreaElement>(null)
 
+  // Which Agent's memory is shown. The first visit shows the default Agent;
+  // the last choice is remembered across visits (and dropped if that Agent no
+  // longer exists). Empty (single-Agent mode) means the legacy path.
+  const multiAgent = useAgentStore(selectMultiAgent)
+  const defaultAgentId = useAgentStore((s) => s.defaultAgentId)
+  const agents = useAgentStore((s) => s.agents)
+  const [scopeAgentId, setScopeAgentId] = useState<string>(
+    () => localStorage.getItem('cow_memory_agent') || ''
+  )
+  const remembered = agents.some((a) => a.id === scopeAgentId) ? scopeAgentId : ''
+  const viewingAgentId = multiAgent ? remembered || defaultAgentId : ''
+
+  const setScope = (id: string) => {
+    setScopeAgentId(id)
+    localStorage.setItem('cow_memory_agent', id)
+  }
+
   const category: MemoryCategory = tab === 'evolution' ? 'evolution' : 'memory'
 
   const loadList = useCallback(
-    async (cat: MemoryCategory, p: number) => {
+    async (cat: MemoryCategory, p: number, agentId: string) => {
       try {
         setLoading(true)
-        const data = await apiClient.getMemoryList(p, PAGE_SIZE, cat)
+        const data = await apiClient.getMemoryList(p, PAGE_SIZE, cat, agentId || undefined)
         setItems(data.list || [])
         setTotal(data.total || 0)
         setPage(data.page || p)
@@ -99,9 +118,9 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
 
   useEffect(() => {
     apiClient.setBaseUrl(baseUrl)
-    void loadList(category, 1)
+    void loadList(category, 1, viewingAgentId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl, tab])
+  }, [baseUrl, tab, viewingAgentId])
 
   const openFile = async (item: MemoryItem) => {
     // In the evolution tab a file lives in its own dir (dream vs evolution).
@@ -111,7 +130,11 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
     // list only knows its name and category.
     let relPath: string
     try {
-      const meta = await apiClient.getMemoryDoc(item.filename, fileCategory)
+      const meta = await apiClient.getMemoryDoc(
+        item.filename,
+        fileCategory,
+        viewingAgentId || undefined
+      )
       if (meta.status !== 'success' || !meta.rel_path) throw new Error(meta.message)
       relPath = meta.rel_path
     } catch {
@@ -140,14 +163,17 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
           <p className="text-xs text-content-tertiary mt-1">{t('memory_desc')}</p>
         </div>
         {!doc && (
-          <div className="flex items-center gap-1 bg-inset rounded-btn p-0.5">
-            <TabBtn icon={Brain} label={t('memory_tab_files')} active={tab === 'files'} onClick={() => void switchTab('files')} />
-            <TabBtn
-              icon={Sprout}
-              label={t('memory_tab_dreams')}
-              active={tab === 'evolution'}
-              onClick={() => void switchTab('evolution')}
-            />
+          <div className="flex items-center gap-3">
+            <AgentScopeSelect value={viewingAgentId} onChange={setScope} />
+            <div className="flex items-center gap-1 bg-inset-2 rounded-btn p-0.5">
+              <TabBtn icon={Brain} label={t('memory_tab_files')} active={tab === 'files'} onClick={() => void switchTab('files')} />
+              <TabBtn
+                icon={Sprout}
+                label={t('memory_tab_dreams')}
+                active={tab === 'evolution'}
+                onClick={() => void switchTab('evolution')}
+              />
+            </div>
           </div>
         )}
       </div>
@@ -160,7 +186,7 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
           <div className="flex items-center gap-3 px-6 py-3 flex-shrink-0 border-b border-subtle">
             <button
               onClick={() => void memoryEditor.getState().close()}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-sm text-content-secondary hover:bg-inset border border-strong transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-btn text-sm text-content-secondary hover:bg-inset-2 border border-strong transition-colors cursor-pointer"
             >
               <ArrowLeft size={14} />
               {t('memory_back')}
@@ -230,7 +256,7 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
                           <tr
                             key={item.filename}
                             onClick={() => openFile(item)}
-                            className="border-b border-subtle last:border-0 hover:bg-inset cursor-pointer transition-colors"
+                            className="border-b border-subtle last:border-0 hover:bg-inset-2 cursor-pointer transition-colors"
                           >
                             <td className="px-4 py-3 text-sm font-mono text-content-secondary">
                               <span className="inline-flex items-center gap-2">
@@ -256,12 +282,12 @@ const MemoryPage: React.FC<MemoryPageProps> = ({ baseUrl }) => {
                       {page} / {totalPages}
                     </span>
                     <div className="flex gap-2">
-                      <PageBtn icon={ChevronLeft} label={t('memory_prev')} disabled={page <= 1} onClick={() => loadList(category, page - 1)} />
+                      <PageBtn icon={ChevronLeft} label={t('memory_prev')} disabled={page <= 1} onClick={() => loadList(category, page - 1, viewingAgentId)} />
                       <PageBtn
                         icon={ChevronRight}
                         label={t('memory_next')}
                         disabled={page >= totalPages}
-                        onClick={() => loadList(category, page + 1)}
+                        onClick={() => loadList(category, page + 1, viewingAgentId)}
                         iconRight
                       />
                     </div>
@@ -289,7 +315,7 @@ const TabBtn: React.FC<{ icon: LucideIcon; label: string; active: boolean; onCli
   <button
     onClick={onClick}
     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[6px] text-sm font-medium cursor-pointer transition-colors ${
-      active ? 'bg-surface text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
+      active ? 'bg-elevated dark:bg-white/10 text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
     }`}
   >
     <Icon size={14} />
@@ -307,7 +333,7 @@ const PageBtn: React.FC<{
   <button
     onClick={onClick}
     disabled={disabled}
-    className="inline-flex items-center gap-1 px-3 py-1 rounded-btn border border-strong text-xs text-content-secondary hover:bg-inset disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+    className="inline-flex items-center gap-1 px-3 py-1 rounded-btn border border-strong text-xs text-content-secondary hover:bg-inset-2 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
   >
     {!iconRight && <Icon size={13} />}
     {label}

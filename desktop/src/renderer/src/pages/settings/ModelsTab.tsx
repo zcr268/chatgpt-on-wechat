@@ -293,7 +293,7 @@ const VendorSection: React.FC<VendorSectionProps> = ({ data, onChanged }) => {
 const VendorChip: React.FC<{ provider: ModelProvider; onClick: () => void }> = ({ provider, onClick }) => (
   <button
     onClick={onClick}
-    className="group flex items-center gap-2.5 px-3 py-2.5 rounded-btn border border-default bg-inset hover:border-accent cursor-pointer transition-colors text-left"
+    className="group flex items-center gap-2.5 px-3 py-2.5 rounded-btn border border-default bg-inset-2 hover:border-accent cursor-pointer transition-colors text-left"
   >
     <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-surface-2 text-content-secondary flex items-center justify-center text-xs font-bold">
       {(localizedLabel(provider.label) || provider.id || '?').slice(0, 1).toUpperCase()}

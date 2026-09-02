@@ -367,6 +367,18 @@ export interface SessionItem {
   pinned?: boolean
   /** Bound project workspace, or null/absent for the default workspace. */
   project?: { path: string; name: string } | null
+  /** The Agent whose store holds this conversation (multi-Agent backends). */
+  agent?: AgentBadge
+  /** Everyone in the conversation (owner first) when more than one Agent is
+   *  in it; absent for an ordinary solo chat. */
+  participants?: AgentBadge[]
+}
+
+/** The compact Agent identity the backend attaches to sessions and teams. */
+export interface AgentBadge {
+  id: string
+  name: string
+  avatar?: string
 }
 
 export interface SessionsPage {
@@ -395,8 +407,12 @@ export interface SessionSettingsState {
   model: {
     model: string
     provider: string
-    source: 'session' | 'global'
+    // Where the effective model comes from: the conversation's own pin, the
+    // owning Agent's default model, or the global config (in that order).
+    source: 'session' | 'agent' | 'global'
     global: { model: string; provider: string }
+    // The owning Agent's default model, when it has one (never for the default Agent).
+    agent?: { model: string; provider: string } | null
     providers: SessionModelProvider[]
   }
   permission: {
@@ -405,6 +421,16 @@ export interface SessionSettingsState {
     global: string
     modes: string[]
   }
+  /** Who else is on this conversation (multi-Agent backends only). */
+  team?: SessionTeam
+}
+
+export interface SessionTeam {
+  owner: AgentBadge
+  /** Invited teammates; `available: false` marks an archived/disabled one. */
+  members: (AgentBadge & { available?: boolean })[]
+  /** Enabled Agents that could still be invited. */
+  candidates: AgentBadge[]
 }
 
 /** Backend history message (as returned by /api/history). */
@@ -616,9 +642,72 @@ export interface ChannelInfo {
   active: boolean
   fields: ChannelField[]
   login_status?: string
+  // Multi-instance fields (present only for one-card-per-instance entries the
+  // backend returns in `data.instances` when the install is in multi-Agent
+  // mode). Absent on legacy per-type cards, keeping single-Agent behavior.
+  instance_id?: string
+  channel_type?: string
+  agent_id?: string
+  members?: string[]
+}
+
+// The full /api/channels response. Legacy single-Agent installs only populate
+// `channels`; multi-Agent installs additionally set the flags and `instances`.
+export interface ChannelsResponse {
+  status: string
+  channels: ChannelInfo[]
+  multi_agent?: boolean
+  multi_instance_types?: string[]
+  instances?: ChannelInfo[]
 }
 
 export type ChannelAction = 'save' | 'connect' | 'disconnect'
+
+// ============================================================
+// Agents / team roster (multi-Agent mode)
+// ============================================================
+
+// One Agent in the roster, mirroring the backend AgentProfile.to_dict().
+export interface AgentProfile {
+  id: string
+  name: string
+  workspace?: string
+  enabled: boolean
+  description?: string
+  model?: string
+  bot_type?: string
+  avatar?: string
+  skills?: string[]
+  knowledge?: string[]
+  // "shared" (reads the default Agent's knowledge base) or "own" (private dir).
+  knowledge_mode?: 'shared' | 'own'
+}
+
+// A stored channel_instances record from the roster (team.json).
+export interface ChannelInstanceRecord {
+  instance_id: string
+  channel_type: string
+  agent_id?: string
+  members?: string[]
+  credentials?: Record<string, unknown>
+}
+
+// The /api/agents GET snapshot.
+export interface RosterSnapshot {
+  status?: string
+  default_agent_id: string
+  agents: AgentProfile[]
+  channel_instances: ChannelInstanceRecord[]
+  revision: string
+}
+
+export type AgentAction =
+  | 'create'
+  | 'update'
+  | 'archive'
+  | 'delete'
+  | 'set_knowledge_mode'
+  | 'bind_channel_instance'
 
 // ============================================================
 // Tools / skills
@@ -714,13 +803,16 @@ export interface KnowledgeGraph {
   links: Array<{ source: string; target: string }>
 }
 
-export type KnowledgeAction =
+// An optional `agent_id` scopes the write to a specific Agent's knowledge base
+// (used by the Knowledge page's per-Agent view). Omitted in single-Agent mode.
+export type KnowledgeAction = { agent_id?: string } & (
   | { action: 'create_category'; payload: { path: string } }
   | { action: 'create_document'; payload: { path: string; content: string; overwrite?: boolean } }
   | { action: 'rename_category'; payload: { path: string; new_path: string } }
   | { action: 'delete_category'; payload: { path: string; confirm?: boolean } }
   | { action: 'delete_documents'; payload: { paths: string[] } }
   | { action: 'move_documents'; payload: { paths: string[]; target_category: string } }
+)
 
 // Result row from a bulk import (one per uploaded file).
 export interface KnowledgeImportResult {
@@ -767,6 +859,9 @@ export interface SchedulerTask {
   schedule: TaskSchedule
   action: TaskAction
   next_run_at?: string
+  // The Agent that owns this task. Present only in multi-Agent installs; used to
+  // route mutations to the right store and to show the owner badge on the card.
+  agent_id?: string
 }
 
 // ============================================================

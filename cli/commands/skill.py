@@ -1384,6 +1384,13 @@ def uninstall(name, yes):
         except Exception:
             pass
 
+    # Scrub the removed skill from any Agent's selection so team.json self-heals.
+    try:
+        from agent.admin import get_agent_admin_service
+        get_agent_admin_service().prune_skill(name)
+    except Exception:
+        pass
+
     click.echo(click.style(f"✓ Skill '{name}' uninstalled.", fg="green"))
 
 

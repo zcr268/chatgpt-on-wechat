@@ -102,11 +102,16 @@ class WeixinChannel(ChatChannel):
     def startup(self):
         self._stop_event.clear()
 
-        base_url = conf().get("weixin_base_url", DEFAULT_BASE_URL)
+        base_url = self.cfg("weixin_base_url", DEFAULT_BASE_URL)
         cdn_base_url = conf().get("weixin_cdn_base_url", CDN_BASE_URL)
-        token = conf().get("weixin_token", "")
+        token = self.cfg("weixin_token", "")
 
-        self._credentials_path = get_weixin_credentials_path()
+        # Isolate the token file per instance so two Weixin accounts running in
+        # one process don't overwrite each other's credentials. instance_id is
+        # empty for a single-instance (legacy) channel -> the legacy path.
+        self._credentials_path = get_weixin_credentials_path(
+            getattr(self, "instance_id", "") or ""
+        )
 
         # Always load credentials so we can restore context_tokens even when
         # the bot token itself comes from config.
@@ -115,6 +120,22 @@ class WeixinChannel(ChatChannel):
             token = creds.get("token", "")
             if creds.get("base_url"):
                 base_url = creds["base_url"]
+
+        # Fallback for an instance whose token was scanned via the QR flow: that
+        # flow writes to the default (id-less) credentials file, so the first
+        # instance to start inherits it here rather than being pushed back into
+        # a fresh scan. Claimed once — copied into this instance's own file — so
+        # a later restart reads it from the per-instance path directly.
+        if not token and getattr(self, "instance_id", ""):
+            legacy = _load_credentials(get_weixin_credentials_path())
+            if legacy.get("token"):
+                token = legacy["token"]
+                if legacy.get("base_url"):
+                    base_url = legacy["base_url"]
+                logger.info(
+                    f"[Weixin] instance '{self.instance_id}' inherited its token "
+                    f"from the QR-login default file"
+                )
 
         # Restore persisted context_tokens so scheduler can deliver pushes
         # immediately after restart, without waiting for the user to ping
@@ -596,6 +617,8 @@ class WeixinChannel(ChatChannel):
             no_need_at=True,
         )
         if context:
+            from agent.team_addressing import stamp_speaker_from_channel
+            stamp_speaker_from_channel(self, context, wx_msg.content)
             self.produce(context)
 
     # ── _compose_context ───────────────────────────────────────────────
@@ -605,6 +628,7 @@ class WeixinChannel(ChatChannel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
 

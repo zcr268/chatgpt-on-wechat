@@ -36,7 +36,8 @@
   --bg-surface: #ffffff;     /* panels, cards */
   --bg-surface-2: #f3f4f6;   /* nested surfaces, hover fills (gray-100) */
   --bg-elevated: #ffffff;    /* popovers, menus, modals */
-  --bg-inset: #f3f4f6;       /* inputs, code blocks (gray-100) */
+  --bg-inset: #f9fafb;       /* inputs, composer, textareas: same gray as the page (gray-50, like the web console) */
+  --bg-inset-2: #f3f4f6;     /* nested fills that must stay visibly darker than inset: code blocks, tool output, badges (gray-100) */
 
   --text-primary: #1e293b;   /* headings, primary text (slate-800) */
   --text-secondary: #475569; /* body, labels (slate-600) */
@@ -87,6 +88,7 @@
   --bg-surface-2: #1c1c1f;
   --bg-elevated: #1f1f23;
   --bg-inset: #161618;
+  --bg-inset-2: #161618;
 
   --text-primary: #f4f4f5;     /* contrast > 7:1 on bg-base */
   --text-secondary: #c4c4cc;
@@ -379,12 +381,24 @@ body * {
   color: var(--text-secondary);
 }
 
+/* Tables scroll sideways inside their own wrapper instead of pushing the
+   bubble wider than the column (see the table_open rule in Markdown.tsx). */
+.msg-content .table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.8em 0;
+  scrollbar-width: thin;
+}
 .msg-content table {
   border-collapse: collapse;
   width: 100%;
-  margin: 0.8em 0;
+  margin: 0;
   font-size: 0.9em;
 }
+/* Header cells stay on one line; body cells wrap normally, and a run of
+   unbreakable tokens makes the wrapper scroll rather than the bubble grow. */
+.msg-content th { white-space: nowrap; }
+.msg-content td { overflow-wrap: break-word; }
 .msg-content th, .msg-content td {
   border: 1px solid var(--border-default);
   padding: 0.4em 0.7em;
@@ -398,7 +412,7 @@ body * {
 .msg-content :not(pre) > code {
   padding: 0.12em 0.4em;
   border-radius: 5px;
-  background: var(--bg-inset);
+  background: var(--bg-inset-2);
   border: 1px solid var(--border-subtle);
   font-family: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
   font-size: 0.85em;
@@ -410,7 +424,7 @@ body * {
   border-radius: 10px;
   overflow: hidden;
   border: 1px solid var(--border-default);
-  background: var(--bg-inset);
+  background: var(--bg-inset-2);
 }
 .msg-content .code-block-header {
   display: flex;
@@ -437,7 +451,7 @@ body * {
   border-radius: 5px;
   transition: color 0.15s, background 0.15s;
 }
-.msg-content .code-copy-btn:hover { color: var(--text-secondary); background: var(--bg-inset); }
+.msg-content .code-copy-btn:hover { color: var(--text-secondary); background: var(--bg-inset-2); }
 .msg-content .code-copy-btn.copied { color: var(--accent); }
 .msg-content .code-block-wrapper pre {
   margin: 0;

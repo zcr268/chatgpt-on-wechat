@@ -11,7 +11,7 @@ import re
 import threading
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 from common.utils import expand_path
 
@@ -30,9 +30,19 @@ class AgentProfile:
     id: str
     name: str
     workspace: str
+    #: What this Agent is for, in one line. Read by teammates: a name alone is
+    #: enough to address someone but not to decide whose work something is.
+    description: Optional[str] = None
     enabled: bool = True
     model: Optional[str] = None
     bot_type: Optional[str] = None
+    avatar: Optional[str] = None
+    # Which shared assets this Agent draws on. ``None`` means "all of them",
+    # which is what every existing config means and what a new Agent gets;
+    # an empty tuple is a real answer that differs from it, so the two cannot
+    # collapse into one falsy case.
+    skills: Optional[Tuple[str, ...]] = None
+    knowledge: Optional[Tuple[str, ...]] = None
 
     @property
     def workspace_path(self) -> Path:
@@ -45,10 +55,18 @@ class AgentProfile:
             "workspace": self.workspace,
             "enabled": self.enabled,
         }
+        if self.description:
+            data["description"] = self.description
         if self.model:
             data["model"] = self.model
         if self.bot_type:
             data["bot_type"] = self.bot_type
+        if self.avatar:
+            data["avatar"] = self.avatar
+        if self.skills is not None:
+            data["skills"] = list(self.skills)
+        if self.knowledge is not None:
+            data["knowledge"] = list(self.knowledge)
         return data
 
 
@@ -56,6 +74,30 @@ def _normalise_workspace(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         raise AgentRegistryError("agent workspace must be a non-empty string")
     return str(Path(expand_path(value.strip())).resolve(strict=False))
+
+
+def _asset_selection(
+    raw: Mapping[str, Any], agent_id: str, key: str
+) -> Optional[Tuple[str, ...]]:
+    """Parse an "only these shared assets" list, keeping absent distinct from empty.
+
+    Absent means this Agent draws on everything, which is what every config
+    written before the field existed means. A list, including an empty one,
+    means the selection is deliberate.
+    """
+    value = raw.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, list) or not all(isinstance(x, str) for x in value):
+        raise AgentRegistryError(
+            f"agent '{agent_id}' {key} must be a list of strings when set"
+        )
+    seen = []
+    for name in value:
+        name = name.strip()
+        if name and name not in seen:
+            seen.append(name)
+    return tuple(seen)
 
 
 def _profile_from_mapping(
@@ -85,6 +127,10 @@ def _profile_from_mapping(
     if not isinstance(enabled, bool):
         raise AgentRegistryError(f"agent '{agent_id}' enabled must be a boolean")
 
+    description = raw.get("description")
+    if description is not None and not isinstance(description, str):
+        raise AgentRegistryError(f"agent '{agent_id}' description must be a string")
+
     model = raw.get("model")
     bot_type = raw.get("bot_type")
     for key, value in (("model", model), ("bot_type", bot_type)):
@@ -97,13 +143,21 @@ def _profile_from_mapping(
     if workspace is None:
         workspace = default_workspace
 
+    avatar = raw.get("avatar")
+    if avatar is not None and not isinstance(avatar, str):
+        raise AgentRegistryError(f"agent '{agent_id}' avatar must be a string")
+
     return AgentProfile(
         id=agent_id,
         name=name.strip(),
         workspace=_normalise_workspace(workspace),
+        description=(description.strip() or None) if description else None,
         enabled=enabled,
         model=model.strip() if isinstance(model, str) else None,
         bot_type=bot_type.strip() if isinstance(bot_type, str) else None,
+        avatar=avatar.strip() if isinstance(avatar, str) and avatar.strip() else None,
+        skills=_asset_selection(raw, agent_id, "skills"),
+        knowledge=_asset_selection(raw, agent_id, "knowledge"),
     )
 
 
@@ -138,7 +192,7 @@ class AgentRegistry:
 
         raw_agents = settings.get("agents")
         if raw_agents is None or raw_agents == []:
-            profile = AgentProfile(id="default", name="Default", workspace=instance_root)
+            profile = AgentProfile(id="default", name="CowAgent", workspace=instance_root)
             return cls([profile], "default")
 
         if not isinstance(raw_agents, list):
@@ -263,11 +317,9 @@ _registry_lock = threading.Lock()
 
 
 def _config_signature(settings: Mapping[str, Any]) -> tuple:
-    return (
-        repr(settings.get("agents") or []),
-        settings.get("default_agent_id") or "",
-        settings.get("agent_workspace") or "",
-    )
+    from agent import team
+
+    return (team.stamp(settings), settings.get("agent_workspace") or "")
 
 
 def get_agent_registry() -> AgentRegistry:
@@ -282,6 +334,7 @@ def get_agent_registry() -> AgentRegistry:
     global _registry_instance, _registry_signature
     import os
 
+    from agent import team
     from config import conf
 
     settings = conf()
@@ -290,6 +343,9 @@ def get_agent_registry() -> AgentRegistry:
         if _registry_pinned and _registry_instance is not None:
             return _registry_instance
         if _registry_instance is None or _registry_signature != signature:
+            # The roster is its own file; config.json only still holds it on an
+            # install that has not written one yet. `resolve` hides which.
+            settings = team.resolve(settings)
             try:
                 _registry_instance = AgentRegistry.from_config(settings)
             except AgentRegistryError:

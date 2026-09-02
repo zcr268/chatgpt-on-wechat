@@ -53,12 +53,10 @@ class TestQianfanConstantsAndRouting(unittest.TestCase):
         from bridge.agent_bridge import AgentLLMModel
         from common import const
 
+        # __init__ is bypassed: routing is a pure function of the model name
+        # and config, and the overrides default to "follow the global config"
+        # on the class, which is what is being asked about here.
         model = AgentLLMModel.__new__(AgentLLMModel)
-        # __init__ is bypassed here, so the per-session override fields have to
-        # be set by hand. None on both means "follow the global config", which
-        # is what routing is being asked about.
-        model._session_model = None
-        model._session_provider = None
         fake_conf = MagicMock()
         fake_conf.get.side_effect = lambda key, default=None: {
             "use_linkai": False,

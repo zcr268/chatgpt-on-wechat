@@ -3,7 +3,7 @@ title: web_search - 联网搜索
 description: 搜索互联网获取实时信息，支持多个搜索厂商
 ---
 
-搜索互联网获取实时信息、新闻、研究等内容。支持博查、百度千帆、智谱、LinkAI 四个后端，配置任意一家即可使用。
+搜索互联网获取实时信息、新闻、研究等内容。支持博查、百度千帆、智谱、LinkAI、AnySearch五个后端，配置任意一家即可使用。
 
 <Tip>
   推荐通过 [Web 控制台](/zh/channels/web) 的「模型管理 → 搜索」面板可视化配置厂商与策略，无需手动编辑配置文件。
@@ -17,8 +17,9 @@ description: 搜索互联网获取实时信息，支持多个搜索厂商
 | 百度千帆 | 复用 `qianfan_api_key` | [千帆控制台](https://cloud.baidu.com/doc/qianfan/s/2mh4su4uy) |
 | 智谱 Zhipu | 复用 `zhipu_ai_api_key` | [智谱开放平台](https://docs.bigmodel.cn/cn/guide/tools/web-search) |
 | LinkAI | 复用 `linkai_api_key` | [LinkAI 控制台](https://link-ai.tech/console/interface) |
+| AnySearch | 复用 `anysearch_api_key` | [AnySearch 控制台](https://anysearch.com/) |
 
-除博查需要单独的 `bocha_api_key` 外，其他三家直接复用对应模型的 API Key，配好模型即同时获得搜索能力。
+除博查、AnySearch需要单独配置专用密钥（bocha_api_key / anysearch_api_key）外，其他三家直接复用对应模型的 API Key，配好模型即同时获得搜索能力。
 
 ## 路由策略
 
@@ -47,5 +48,5 @@ description: 搜索互联网获取实时信息，支持多个搜索厂商
 | `provider` | string | 否 | `auto` 策略下配置了多个厂商时可见，用于单次切换厂商 |
 
 <Note>
-  四家凭证均未配置时，该工具不会注册到 Agent。
+  五家凭证均未配置时，该工具不会注册到 Agent。
 </Note>

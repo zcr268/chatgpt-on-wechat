@@ -48,6 +48,10 @@ class ChatChannel(Channel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
+        # Multi-instance routing + team: stamp the bound Agent, instance id and
+        # teammates so the router/bridge treat this as a bound (and possibly
+        # team) conversation. All empty on a legacy single-instance channel.
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
         # context首次传入时，receiver是None，根据类型设置receiver

@@ -80,7 +80,7 @@ def test_delegate_lists_only_enabled_allowed_targets():
     assert result.status == "success"
     assert result.result == {
         "source_agent_id": "primary",
-        "agents": [{"id": "research", "name": "Research"}],
+        "agents": [{"id": "research", "name": "Research", "description": ""}],
     }
 
 

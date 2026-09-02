@@ -795,8 +795,93 @@ class McpClientRegistry:
                 obj = super().__new__(cls)
                 obj._clients: dict[str, McpClient] = {}
                 obj._registry_lock = threading.Lock()
+                # Process-wide pool of booted clients keyed by their *source*
+                # config, so several Agents that resolve to the same shared
+                # mcp.json reuse one subprocess instead of each forking its own.
+                # Keyed by (mcp_json_path, server_name, config_signature): an
+                # Agent with its own mcp.json, or a different command/env, gets a
+                # distinct key and stays isolated.
+                obj._shared_pool: dict[tuple, McpClient] = {}
+                obj._shared_pool_lock = threading.Lock()
+                # Per-key boot locks so that when several Agents' loader threads
+                # miss the pool for the same server at once, only one forks the
+                # subprocess and the rest wait and reuse it (instead of racing
+                # and each booting a duplicate).
+                obj._boot_locks: dict[tuple, threading.Lock] = {}
                 cls._instance = obj
         return cls._instance
+
+    @staticmethod
+    def shared_key(mcp_json_path: str, server_name: str, cfg: dict) -> tuple:
+        import json as _json
+        try:
+            sig = _json.dumps(cfg, sort_keys=True, ensure_ascii=False, default=str)
+        except Exception:
+            sig = repr(cfg)
+        return (mcp_json_path or "", server_name, sig)
+
+    def get_shared_client(self, key: tuple):
+        """Return a live pooled client for this exact config, or None. A client
+        whose subprocess has died is dropped so the caller boots a fresh one."""
+        with self._shared_pool_lock:
+            client = self._shared_pool.get(key)
+        if client is None:
+            return None
+        if not self._shared_client_alive(client):
+            with self._shared_pool_lock:
+                # Only evict the exact object we found dead; a concurrent reload
+                # may already have put a fresh one under the same key.
+                if self._shared_pool.get(key) is client:
+                    self._shared_pool.pop(key, None)
+            return None
+        return client
+
+    def put_shared_client(self, key: tuple, client: "McpClient") -> None:
+        with self._shared_pool_lock:
+            self._shared_pool[key] = client
+
+    def _boot_lock_for(self, key: tuple) -> "threading.Lock":
+        with self._shared_pool_lock:
+            lock = self._boot_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._boot_locks[key] = lock
+            return lock
+
+    def get_or_boot_shared(self, key: tuple, factory):
+        """Return a pooled client for ``key``, booting it via ``factory`` if
+        absent. Serialized per key so concurrent loader threads don't each fork
+        a duplicate; distinct keys still boot in parallel.
+
+        Returns (client, reused). ``client`` is None when ``factory`` failed to
+        produce a usable client (e.g. init failed / needs auth); ``reused`` is
+        True when an already-booted subprocess was handed back.
+        """
+        client = self.get_shared_client(key)
+        if client is not None:
+            return client, True
+        with self._boot_lock_for(key):
+            # Re-check: another thread may have booted it while we waited.
+            client = self.get_shared_client(key)
+            if client is not None:
+                return client, True
+            client = factory()
+            if client is None:
+                return None, False
+            self.put_shared_client(key, client)
+            return client, False
+
+    @staticmethod
+    def _shared_client_alive(client: "McpClient") -> bool:
+        """Best-effort liveness: a stdio client whose child process has exited
+        must not be reused. Unknown/remote transports are assumed alive."""
+        proc = getattr(client, "_proc", None)
+        if proc is not None and hasattr(proc, "poll"):
+            try:
+                return proc.poll() is None
+            except Exception:
+                return False
+        return True
 
     def start_all(self, configs: list) -> None:
         """Initialize McpClient for each config entry; skip failures with a warning."""

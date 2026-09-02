@@ -73,6 +73,7 @@ const PermissionSelector: React.FC<PermissionSelectorProps> = ({ sessionId }) =>
         open={open}
         onToggle={toggle}
         onClose={close}
+        labelHidden
       >
         <div className="px-2.5 pt-1 pb-1.5 text-[11px] font-semibold text-content-tertiary">
           {t('perm_menu_title')}

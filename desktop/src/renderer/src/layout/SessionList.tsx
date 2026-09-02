@@ -21,6 +21,8 @@ import { usePlatform } from '../hooks/usePlatform'
 import type { SessionItem } from '../types'
 import apiClient from '../api/client'
 import Tooltip from '../components/Tooltip'
+import NewChatMenu from '../components/NewChatMenu'
+import AgentAvatar from '../components/AgentAvatar'
 import { Modal, Btn, TextInput } from '../pages/settings/primitives'
 
 const COLLAPSED_KEY = 'cow_collapsed_projects'
@@ -320,21 +322,25 @@ const SessionList: React.FC = () => {
             <History size={16} />
           </button>
         </Tooltip>
-        <button
-          onClick={async () => {
-            if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
-            // Inherit the current session's project; fall back to default.
-            const inherited = useSessionStore.getState().currentProject()
-            const id = newSession()
-            addOptimistic(id, inherited)
-            expandSpace(inherited ? inherited.path : DEFAULT_SPACE_KEY)
-            if (inherited) apiClient.selectProject(id, inherited.path).catch(() => {})
+        <NewChatMenu
+          align="end"
+          onStarted={() => {
+            const project = useSessionStore.getState().currentProject()
+            expandSpace(project ? project.path : DEFAULT_SPACE_KEY)
           }}
-          className={`titlebar-no-drag inline-flex items-center gap-1.5 px-2.5 h-7 rounded-btn text-[12px] font-medium text-accent hover:bg-accent-soft cursor-pointer transition-colors ${trafficDrop}`}
         >
-          <Plus size={15} />
-          {t('session_new')}
-        </button>
+          {({ onClick, open }) => (
+            <button
+              onClick={onClick}
+              className={`titlebar-no-drag inline-flex items-center gap-1.5 px-2.5 h-7 rounded-btn text-[12px] font-medium text-accent cursor-pointer transition-colors ${
+                open ? 'bg-accent-soft' : 'hover:bg-accent-soft'
+              } ${trafficDrop}`}
+            >
+              <Plus size={15} />
+              {t('session_new')}
+            </button>
+          )}
+        </NewChatMenu>
       </div>
 
       <div
@@ -485,13 +491,30 @@ const SessionList: React.FC = () => {
                           className="flex-1 min-w-0 bg-inset border border-strong rounded px-1.5 py-0.5 text-[13px] text-content focus:outline-none focus:border-accent"
                         />
                       ) : (
-                        <span
-                          className={`flex-1 min-w-0 truncate text-[13px] pr-5 group-hover:pr-0 ${
-                            isActive ? 'text-accent font-medium' : 'text-content-secondary'
-                          }`}
-                        >
-                          {s.title || s.session_id}
-                        </span>
+                        <>
+                          {/* Faces mark a group conversation, the way a group chat
+                              is distinguishable from a direct one. Solo chats stay
+                              plain rows. At most three faces; "+N" caps a larger group. */}
+                          {s.participants && s.participants.length > 1 && (
+                            <span className="flex items-center -space-x-1.5 shrink-0 mr-0.5">
+                              {s.participants.slice(0, 3).map((p) => (
+                                <span key={p.id} className="ring-2 ring-surface rounded-full">
+                                  <AgentAvatar agent={p} size={16} />
+                                </span>
+                              ))}
+                              {s.participants.length > 3 && (
+                                <span className="text-[10px] text-content-tertiary pl-2">+{s.participants.length - 3}</span>
+                              )}
+                            </span>
+                          )}
+                          <span
+                            className={`flex-1 min-w-0 truncate text-[13px] pr-5 group-hover:pr-0 ${
+                              isActive ? 'text-accent font-medium' : 'text-content-secondary'
+                            }`}
+                          >
+                            {s.title || s.session_id}
+                          </span>
+                        </>
                       )}
 
                       {isEditing ? (

@@ -155,6 +155,11 @@
                     </button>
                     <div class="menu-group-items pl-2">
                         <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
+                           data-view="agents">
+                            <i class="fas fa-people-group item-icon text-xs w-5 text-center"></i>
+                            <span data-i18n="menu_agents">智能体</span>
+                        </a>
+                        <a class="sidebar-item flex items-center gap-3 px-3 py-2 rounded-lg cursor-pointer transition-all duration-150 hover:bg-white/5 hover:text-neutral-200 text-[14px]"
                            data-view="config">
                             <i class="fas fa-sliders item-icon text-xs w-5 text-center"></i>
                             <span data-i18n="menu_config">配置</span>
@@ -228,12 +233,38 @@
                     <i class="fas fa-times"></i>
                 </button>
             </div>
-            <button class="session-panel-new" onclick="newChat()">
-                <i class="fas fa-plus"></i>
-                <span data-i18n="new_chat">新对话</span>
-            </button>
+            <div class="session-panel-new-wrap">
+                <button class="session-panel-new" onclick="onNewChatButton(event)">
+                    <i class="fas fa-plus"></i>
+                    <span data-i18n="new_chat">新对话</span>
+                    <i id="new-chat-caret" class="fas fa-chevron-down new-chat-caret hidden"></i>
+                </button>
+                <div id="new-chat-menu" class="new-chat-menu hidden"></div>
+            </div>
             <div id="session-list" class="session-list"></div>
         </aside>
+
+        <!-- Multi-agent new-chat modal: pick who joins, then start -->
+        <div id="team-chat-modal" class="agent-modal hidden">
+            <div class="agent-modal-card">
+                <h3 class="agent-modal-title" data-i18n="new_team_chat">多智能体对话</h3>
+                <div class="agent-modal-body">
+                    <p class="agent-field-hint mb-3" data-i18n="new_team_chat_hint">选择参与本次对话的智能体，第一个为会话的默认智能体。</p>
+                    <div class="team-chat-list-head">
+                        <span class="team-chat-list-label" data-i18n="agents_pick_hint">选择智能体</span>
+                        <button type="button" class="agent-btn agent-btn-text agent-btn-sm" onclick="openAgentCreateFromModal()">
+                            <i class="fas fa-plus mr-1"></i><span data-i18n="agents_create">创建智能体</span>
+                        </button>
+                    </div>
+                    <div id="team-chat-list" class="team-chat-list"></div>
+                </div>
+                <div class="agent-modal-foot">
+                    <span id="team-chat-status" class="agent-field-hint text-red-500 mr-auto"></span>
+                    <button onclick="closeTeamChatModal()" class="agent-btn agent-btn-text" data-i18n="cancel">取消</button>
+                    <button onclick="startTeamChat()" class="agent-btn agent-btn-primary" data-i18n="new_team_chat_start">开始对话</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Mobile overlay for session panel (click to close) -->
         <div id="session-panel-overlay" class="session-panel-overlay hidden" onclick="closeSessionPanel()"></div>
@@ -436,11 +467,13 @@
                                 <!-- Attachment preview: scrolls horizontally above the text -->
                                 <div id="attachment-preview" class="attachment-preview hidden"></div>
 
-                                <textarea id="chat-input"
-                                          class="composer-textarea"
-                                          rows="1"
-                                          data-i18n-placeholder="input_placeholder"
-                                          placeholder="输入消息，/ 使用指令，@ 引用文件"></textarea>
+                                <div class="composer-identity-row">
+                                    <textarea id="chat-input"
+                                              class="composer-textarea"
+                                              rows="1"
+                                              data-i18n-placeholder="input_placeholder"
+                                              placeholder="输入消息，/ 使用指令，@ 引用智能体或文件"></textarea>
+                                </div>
 
                                 <div class="composer-toolbar">
                                     <div class="composer-group">
@@ -467,7 +500,7 @@
                                             <i class="fas fa-chevron-down composer-chip-caret"></i>
                                         </button>
 
-                                        <button id="permission-selector-btn" type="button" class="composer-chip"
+                                        <button id="permission-selector-btn" type="button" class="composer-chip composer-chip-icon-only"
                                                 onclick="togglePermissionSelector(event)"
                                                 data-tip-float data-tooltip-pos="top">
                                             <i id="permission-selector-icon" class="fas fa-shield-halved"></i>
@@ -484,6 +517,18 @@
                                             <span id="model-selector-label" class="composer-chip-label">—</span>
                                             <i class="fas fa-chevron-down composer-chip-caret"></i>
                                         </button>
+
+                                        <!-- The Agent identity chip sits right of the model, avatar-only,
+                                             as the face the reply comes from (matches the desktop composer).
+                                             Only shown in multi-Agent mode. -->
+                                        <div id="composer-identity" class="composer-identity hidden">
+                                            <button id="composer-agent-btn" type="button" class="composer-agent-btn"
+                                                    onclick="toggleComposerAgentMenu(event)"
+                                                    data-tip-float data-tooltip-pos="top">
+                                                <span id="composer-agent-avatar" class="agent-avatar agent-avatar-32"></span>
+                                            </button>
+                                            <div id="composer-agent-menu" class="composer-menu composer-menu-up hidden"></div>
+                                        </div>
                                         <button id="optimize-btn" type="button" class="composer-icon-btn"
                                                 data-tooltip="智能优化输入">
                                             <i class="fas fa-magic text-[13px]"></i>
@@ -604,6 +649,127 @@
                 </div>
 
                 <!-- ====================================================== -->
+                <!-- VIEW: Agent Team                                        -->
+                <!-- ====================================================== -->
+                <div id="view-agents" class="view agents-view">
+                    <div class="agents-list-pane">
+                        <div class="agents-list-head">
+                            <div class="min-w-0">
+                                <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="agents_page_title">智能体团队</h2>
+                                <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="agents_page_desc">管理团队中的智能体成员</p>
+                            </div>
+                            <button onclick="openAgentCreateForm()"
+                                    class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium whitespace-nowrap shrink-0">
+                                <i class="fas fa-plus mr-1.5"></i><span data-i18n="agents_create">创建智能体</span>
+                            </button>
+                        </div>
+                        <div id="agents-grid" class="agents-grid"></div>
+                    </div>
+
+                    <aside id="agent-detail" class="agent-detail hidden">
+                        <div class="agent-detail-header">
+                            <button type="button" class="agent-detail-close" onclick="closeAgentDetail()">
+                                <i class="fas fa-times"></i>
+                            </button>
+                            <div id="agent-detail-identity" class="agent-detail-identity"></div>
+                        </div>
+                        <div class="agent-detail-tabs">
+                            <button type="button" class="agent-detail-tab active" data-tab="profile" onclick="selectAgentDetailTab('profile')" data-i18n="agents_tab_profile">概况</button>
+                            <button type="button" class="agent-detail-tab" data-tab="skills" onclick="selectAgentDetailTab('skills')" data-i18n="agents_tab_skills">能力</button>
+                            <button type="button" class="agent-detail-tab" data-tab="files" onclick="selectAgentDetailTab('files')" data-i18n="agents_tab_files">核心文件</button>
+                        </div>
+                        <div id="agent-detail-profile" class="agent-detail-pane"></div>
+                        <div id="agent-detail-skills" class="agent-detail-pane hidden"></div>
+                        <div id="agent-detail-files" class="agent-detail-pane hidden">
+                            <div class="flex items-center gap-2 mb-3">
+                                <div id="agent-core-file" class="cfg-dropdown cfg-dropdown-xs" tabindex="0" style="width: 180px;">
+                                    <div class="cfg-dropdown-selected">
+                                        <span class="cfg-dropdown-text">--</span>
+                                        <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                    </div>
+                                    <div class="cfg-dropdown-menu"></div>
+                                </div>
+                                <div id="agent-core-mode" class="agent-seg" role="group">
+                                    <button type="button" class="agent-seg-btn active" data-mode="edit" onclick="setAgentCoreViewMode('edit')">
+                                        <i class="fas fa-pen mr-1"></i><span data-i18n="agents_core_edit">编辑</span>
+                                    </button>
+                                    <button type="button" class="agent-seg-btn" data-mode="preview" onclick="setAgentCoreViewMode('preview')">
+                                        <i class="fas fa-eye mr-1"></i><span data-i18n="agents_core_preview">预览</span>
+                                    </button>
+                                </div>
+                                <div id="agent-editor-status" class="ml-auto text-xs whitespace-nowrap opacity-0 transition-opacity duration-300"></div>
+                                <button onclick="saveAgentCoreFile()" class="px-3 h-7 rounded-lg bg-primary-500 text-white text-xs font-medium" data-i18n="save">保存</button>
+                            </div>
+                            <div id="agent-editor-label" class="text-xs text-slate-400 dark:text-slate-500 font-mono mb-2.5 truncate"></div>
+                            <textarea id="agent-core-editor" spellcheck="false" class="agent-core-editor" placeholder=""></textarea>
+                            <div id="agent-core-preview" class="agent-core-preview msg-content hidden"></div>
+                        </div>
+                    </aside>
+
+                    <div id="agent-create-form" class="agent-modal hidden">
+                        <div class="agent-modal-card agent-modal-card-wide">
+                            <h3 class="agent-modal-title" data-i18n="agents_create">创建智能体</h3>
+                            <div class="agent-modal-body">
+                                <div class="agent-field">
+                                    <label class="agent-field-label" data-i18n="agents_name">名称</label>
+                                    <input id="agent-create-name" data-i18n-placeholder="agents_name_placeholder" placeholder="智能体名称" class="agent-input">
+                                </div>
+                                <div class="agent-field">
+                                    <label class="agent-field-label" data-i18n="agents_avatar">头像</label>
+                                    <div id="agent-create-avatar" class="agent-avatar-picker"></div>
+                                </div>
+                                <div class="agent-field">
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label">ID</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_id_tip"><i class="fas fa-circle-info"></i></span>
+                                    </div>
+                                    <input id="agent-create-id" data-i18n-placeholder="agents_id_placeholder" placeholder="留空则自动生成" class="agent-input font-mono">
+                                </div>
+                                <div class="agent-field">
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label" data-i18n="agents_description">职责</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_description_hint"><i class="fas fa-circle-info"></i></span>
+                                    </div>
+                                    <textarea id="agent-create-description" rows="3" data-i18n-placeholder="agents_description_placeholder" placeholder="该智能体负责哪些工作、在什么场景被使用" class="agent-input agent-textarea"></textarea>
+                                </div>
+                                <div class="agent-field">
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label" data-i18n="agents_clone_label">从已有智能体复制</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_clone_hint"><i class="fas fa-circle-info"></i></span>
+                                    </div>
+                                    <div id="agent-create-clone" class="cfg-dropdown" tabindex="0">
+                                        <div class="cfg-dropdown-selected">
+                                            <span class="cfg-dropdown-value"><span class="cfg-dropdown-face"></span><span class="cfg-dropdown-text">--</span></span>
+                                            <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                        </div>
+                                        <div class="cfg-dropdown-menu"></div>
+                                    </div>
+                                </div>
+                                <div class="agent-field">
+                                    <div class="agent-field-label-row">
+                                        <label class="agent-field-label" data-i18n="agents_knowledge">知识库</label>
+                                        <span class="agent-field-tip" data-i18n-tip="agents_knowledge_hint"><i class="fas fa-circle-info"></i></span>
+                                    </div>
+                                    <div id="agent-create-knowledge" class="agent-seg" role="group">
+                                        <button type="button" class="agent-seg-btn active" data-mode="shared">
+                                            <i class="fas fa-users mr-1"></i><span data-i18n="agents_knowledge_shared">共享</span>
+                                        </button>
+                                        <button type="button" class="agent-seg-btn" data-mode="own">
+                                            <i class="fas fa-box-archive mr-1"></i><span data-i18n="agents_knowledge_own">独立</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="agent-modal-foot">
+                                <span id="agent-create-status" class="agent-field-hint text-red-500 mr-auto"></span>
+                                <button onclick="closeAgentCreateForm()" class="agent-btn agent-btn-text" data-i18n="cancel">取消</button>
+                                <button onclick="createAgentWorkspace()" class="agent-btn agent-btn-primary" data-i18n="agents_create">创建智能体</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ====================================================== -->
                 <!-- VIEW: Config                                            -->
                 <!-- ====================================================== -->
                 <div id="view-config" class="view">
@@ -626,15 +792,17 @@
                             </div>
 
                             <!-- Tabs: 基础配置 / 模型配置 -->
-                            <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 mb-6 w-max">
-                                <button id="config-tab-basic" onclick="switchConfigTab('basic')"
-                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
-                                    <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
-                                </button>
-                                <button id="config-tab-models" onclick="switchConfigTab('models')"
-                                        class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                    <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
-                                </button>
+                            <div class="flex items-center justify-between gap-3 mb-6">
+                                <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5 w-max">
+                                    <button id="config-tab-basic" onclick="switchConfigTab('basic')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
+                                        <i class="fas fa-sliders mr-1.5"></i><span data-i18n="settings_tab_basic">基础配置</span>
+                                    </button>
+                                    <button id="config-tab-models" onclick="switchConfigTab('models')"
+                                            class="config-tab px-4 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                        <i class="fas fa-microchip mr-1.5"></i><span data-i18n="settings_tab_models">模型配置</span>
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Panel: 基础配置 -->
@@ -1046,15 +1214,25 @@
                                         <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="memory_title">记忆管理</h2>
                                         <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="memory_desc">查看 Agent 记忆文件和内容</p>
                                     </div>
-                                    <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
-                                        <button id="memory-tab-files" onclick="switchMemoryTab('files')"
-                                                class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
-                                            <i class="fas fa-file-lines mr-1.5"></i><span data-i18n="memory_tab_files">记忆文件</span>
-                                        </button>
-                                        <button id="memory-tab-dreams" onclick="switchMemoryTab('dreams')"
-                                                class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
-                                            <i class="fas fa-seedling mr-1.5"></i><span data-i18n="memory_tab_dreams">自主进化</span>
-                                        </button>
+                                    <div class="flex items-center gap-3">
+                                        <div id="memory-agent-select" class="cfg-dropdown cfg-dropdown-avatar cfg-dropdown-sm" tabindex="0" style="width: 160px;">
+                                            <div class="cfg-dropdown-selected">
+                                                <span class="cfg-dropdown-face"></span>
+                                                <span class="cfg-dropdown-text">--</span>
+                                                <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                            </div>
+                                            <div class="cfg-dropdown-menu"></div>
+                                        </div>
+                                        <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
+                                            <button id="memory-tab-files" onclick="switchMemoryTab('files')"
+                                                    class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
+                                                <i class="fas fa-file-lines mr-1.5"></i><span data-i18n="memory_tab_files">记忆文件</span>
+                                            </button>
+                                            <button id="memory-tab-dreams" onclick="switchMemoryTab('dreams')"
+                                                    class="memory-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150">
+                                                <i class="fas fa-seedling mr-1.5"></i><span data-i18n="memory_tab_dreams">自主进化</span>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <div id="memory-empty" class="flex flex-col items-center justify-center py-20">
@@ -1132,11 +1310,19 @@
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 md:mb-6 md:flex-shrink-0">
                                 <div>
                                     <h2 class="text-xl font-bold text-slate-800 dark:text-slate-100" data-i18n="knowledge_title">知识库</h2>
-                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="knowledge_desc">浏览和探索你的知识库</p>
+                                    <p class="text-sm text-slate-500 dark:text-slate-400 mt-1" data-i18n="knowledge_shared_hint">知识库默认全员共享，在侧栏「知识」查看和编辑。</p>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <span id="knowledge-stats" class="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline"></span>
                                     <span id="knowledge-action-status" class="text-xs opacity-0 transition-opacity duration-200"></span>
+                                    <div id="knowledge-agent-select" class="cfg-dropdown cfg-dropdown-avatar cfg-dropdown-sm" tabindex="0" style="width: 150px;">
+                                        <div class="cfg-dropdown-selected">
+                                            <span class="cfg-dropdown-face"></span>
+                                            <span class="cfg-dropdown-text">--</span>
+                                            <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                                        </div>
+                                        <div class="cfg-dropdown-menu"></div>
+                                    </div>
                                     <div class="flex items-center bg-slate-100 dark:bg-white/10 rounded-lg p-0.5">
                                         <button id="knowledge-tab-docs" onclick="switchKnowledgeTab('docs')"
                                                 class="knowledge-tab px-3 py-1.5 rounded-md text-xs font-medium cursor-pointer transition-colors duration-150 active">
@@ -1625,6 +1811,7 @@
                         <h3 class="font-semibold text-slate-800 dark:text-slate-100 text-base" data-i18n="task_edit_title">编辑定时任务</h3>
                         <p id="task-edit-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono"></p>
                     </div>
+                    <div id="task-edit-owner" class="hidden flex-shrink-0 items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-white/10"></div>
                 </div>
 
                 <div class="space-y-4">

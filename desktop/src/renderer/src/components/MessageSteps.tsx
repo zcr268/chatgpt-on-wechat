@@ -24,7 +24,7 @@ const ThinkingStep: React.FC<{ content: string; streaming?: boolean }> = ({ cont
         <ChevronRight size={11} className={`transition-transform opacity-50 ${expanded ? 'rotate-90' : ''}`} />
       </div>
       {expanded && (
-        <pre className="mt-1.5 ml-4 p-2 rounded-md bg-inset border border-subtle whitespace-pre-wrap leading-relaxed max-h-[260px] overflow-y-auto font-sans text-content-tertiary">
+        <pre className="mt-1.5 ml-4 p-2 rounded-md bg-inset-2 border border-subtle whitespace-pre-wrap leading-relaxed max-h-[260px] overflow-y-auto font-sans text-content-tertiary">
           {content}
         </pre>
       )}
@@ -101,7 +101,7 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
         <ChevronRight size={11} className={`ml-auto transition-transform opacity-50 ${expanded ? 'rotate-90' : ''}`} />
       </div>
       {expanded && (
-        <div className="mt-1.5 ml-4 p-2 rounded-md bg-inset border border-subtle space-y-2">
+        <div className="mt-1.5 ml-4 p-2 rounded-md bg-inset-2 border border-subtle space-y-2">
           {step.arguments && Object.keys(step.arguments).length > 0 && (
             <div>
               <div className="text-[10px] font-semibold uppercase tracking-wide opacity-60 mb-1">Input</div>
@@ -157,7 +157,7 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
 const PermissionDeniedHint: React.FC<{ mode?: string }> = ({ mode }) => {
   const label = permLabel(mode)
   return (
-    <div className="mt-1.5 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-default bg-inset text-[12px] text-content-secondary">
+    <div className="mt-1.5 mb-1 flex items-center gap-2 px-3 py-2 rounded-lg border border-default bg-inset-2 text-[12px] text-content-secondary">
       <Shield size={13} className="shrink-0 text-content-tertiary" />
       <span className="flex-1 min-w-0">
         {t('perm_denied_hint').replace('{name}', label)}

@@ -1,9 +1,64 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from 'react'
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Info } from 'lucide-react'
 import { t } from '../../i18n'
 
 // Shared presentational building blocks for the settings tabs.
+
+/**
+ * A small info icon that reveals its help on hover, so a form label can carry a
+ * hint without a permanent paragraph under the field. The bubble is rendered in
+ * a body-level portal (never clipped by a scroll container) and preserves line
+ * breaks in `tip`, so multi-line help (e.g. one line per option) lays out as
+ * written.
+ */
+export const FieldTip: React.FC<{ tip: string }> = ({ tip }) => {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const show = useCallback((el: HTMLElement) => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => {
+      const r = el.getBoundingClientRect()
+      setPos({ x: r.left + r.width / 2, y: r.top - 8 })
+    }, 100)
+  }, [])
+  const hide = useCallback(() => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    setPos(null)
+  }, [])
+
+  if (!tip) return null
+  return (
+    <>
+      <span
+        className="inline-flex items-center justify-center text-content-tertiary hover:text-content-secondary cursor-help"
+        onMouseEnter={(e) => show(e.currentTarget)}
+        onMouseLeave={hide}
+      >
+        <Info size={13} />
+      </span>
+      {pos &&
+        createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: pos.x,
+              top: pos.y,
+              transform: 'translate(-50%, -100%)',
+              pointerEvents: 'none',
+              zIndex: 9999,
+              whiteSpace: 'pre-line',
+            }}
+            className="px-2.5 py-1.5 rounded-md bg-elevated border border-default shadow-lg text-[11px] leading-snug text-content max-w-[280px]"
+          >
+            {tip}
+          </div>,
+          document.body,
+        )}
+    </>
+  )
+}
 
 export const Card: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode }> = ({
   icon,
@@ -26,14 +81,20 @@ export const Card: React.FC<{ icon: React.ReactNode; title: string; subtitle?: s
 export const Field: React.FC<{
   label: string
   hint?: string
+  // Help shown in an info icon next to the label (hover), instead of a
+  // permanent line under the field. Supports \n for multi-line hints.
+  labelTip?: string
   // Optional trailing element on the label row (right-aligned), e.g. a helper
   // link. Kept generic so any build can attach an action next to a field.
   labelAction?: React.ReactNode
   children: React.ReactNode
-}> = ({ label, hint, labelAction, children }) => (
+}> = ({ label, hint, labelTip, labelAction, children }) => (
   <div>
     <div className="mb-1.5 flex items-center justify-between gap-2">
-      <label className="block text-sm font-medium text-content-secondary">{label}</label>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <label className="block text-sm font-medium text-content-secondary">{label}</label>
+        {labelTip && <FieldTip tip={labelTip} />}
+      </div>
       {labelAction}
     </div>
     {children}

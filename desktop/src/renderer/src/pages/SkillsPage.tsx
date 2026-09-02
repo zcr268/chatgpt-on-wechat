@@ -197,7 +197,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                         title={t('skill_open_hint')}
                         className="rounded-card border border-default bg-surface p-4 flex items-start gap-3 cursor-pointer hover:border-strong transition-colors"
                       >
-                        <div className="w-9 h-9 rounded-lg bg-inset flex items-center justify-center flex-shrink-0">
+                        <div className="w-9 h-9 rounded-lg bg-inset-2 flex items-center justify-center flex-shrink-0">
                           <Zap size={15} className={skill.enabled ? 'text-accent' : 'text-content-tertiary'} />
                         </div>
                         <div className="flex-1 min-w-0">
@@ -232,7 +232,7 @@ const Section: React.FC<{ title: string; count: number; children: React.ReactNod
     <div className="flex items-center gap-2 mb-3">
       <span className="text-xs font-semibold uppercase tracking-wider text-content-tertiary">{title}</span>
       {count > 0 && (
-        <span className="px-1.5 py-0.5 rounded-full text-xs bg-inset text-content-tertiary min-w-[20px] text-center">{count}</span>
+        <span className="px-1.5 py-0.5 rounded-full text-xs bg-inset-2 text-content-tertiary min-w-[20px] text-center">{count}</span>
       )}
     </div>
     {children}
