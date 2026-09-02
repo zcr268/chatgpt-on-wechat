@@ -5,6 +5,8 @@ import { t } from '../i18n'
 import apiClient from '../api/client'
 import type { SchedulerTask, TaskSchedule, TaskAction } from '../types'
 import { Modal, Btn, Toggle, TextInput, Dropdown } from './settings/primitives'
+import AgentAvatar from '../components/AgentAvatar'
+import { useAgentStore, selectMultiAgent, findAgent } from '../store/agentStore'
 
 interface TasksPageProps {
   baseUrl: string
@@ -38,6 +40,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
   const [tasks, setTasks] = useState<SchedulerTask[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<SchedulerTask | null>(null)
+  const multiAgent = useAgentStore(selectMultiAgent)
 
   const loadTasks = async () => {
     try {
@@ -62,7 +65,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
     // Optimistic flip; revert on failure.
     setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, enabled } : x)))
     try {
-      await apiClient.toggleTask(task.id, enabled)
+      await apiClient.toggleTask(task.id, enabled, task.agent_id || '')
     } catch {
       setTasks((prev) => prev.map((x) => (x.id === task.id ? { ...x, enabled: !enabled } : x)))
     }
@@ -98,6 +101,7 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
             <div className="grid gap-3">
               {tasks.map((task) => {
                 const content = task.action?.content || task.action?.task_description || ''
+                const owner = multiAgent && task.agent_id ? findAgent(task.agent_id) : null
                 return (
                   <div
                     key={task.id}
@@ -109,6 +113,15 @@ const TasksPage: React.FC<TasksPageProps> = ({ baseUrl }) => {
                     <div className="flex items-center gap-2 mb-2">
                       <span className={`w-2 h-2 rounded-full flex-shrink-0 ${task.enabled ? 'bg-accent' : 'bg-content-tertiary'}`} />
                       <span className="font-medium text-sm text-content truncate">{task.name || task.id}</span>
+                      {owner && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-inset-2 text-content-secondary flex-shrink-0"
+                          title={owner.name || owner.id}
+                        >
+                          <AgentAvatar agent={owner} size={14} />
+                          <span className="text-[11px] max-w-[80px] truncate">{owner.name || owner.id}</span>
+                        </span>
+                      )}
                       <div className="flex-1" />
                       <span className="text-xs font-mono text-content-tertiary">{scheduleSummary(task.schedule)}</span>
                     </div>
@@ -156,6 +169,8 @@ const TaskEditModal: React.FC<{
   onSaved: () => void
   onDeleted: () => void
 }> = ({ task, onClose, onSaved, onDeleted }) => {
+  const multiAgent = useAgentStore(selectMultiAgent)
+  const owner = multiAgent && task.agent_id ? findAgent(task.agent_id) : null
   const [name, setName] = useState(task.name || '')
   const [enabled, setEnabled] = useState(task.enabled)
   const [schedType, setSchedType] = useState<TaskSchedule['type']>(task.schedule.type || 'cron')
@@ -186,12 +201,16 @@ const TaskEditModal: React.FC<{
     setSaving(true)
     setError('')
     try {
-      await apiClient.updateTask(task.id, {
-        name: name.trim(),
-        enabled,
-        schedule: buildSchedule(),
-        action: buildAction(),
-      })
+      await apiClient.updateTask(
+        task.id,
+        {
+          name: name.trim(),
+          enabled,
+          schedule: buildSchedule(),
+          action: buildAction(),
+        },
+        task.agent_id || ''
+      )
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : t('task_save_error'))
@@ -204,7 +223,7 @@ const TaskEditModal: React.FC<{
     if (!window.confirm(t('task_delete_confirm'))) return
     setSaving(true)
     try {
-      await apiClient.deleteTask(task.id)
+      await apiClient.deleteTask(task.id, task.agent_id || '')
       onDeleted()
     } catch {
       setSaving(false)
@@ -217,7 +236,7 @@ const TaskEditModal: React.FC<{
     setRunStatus('')
     setError('')
     try {
-      const result = await apiClient.runTask(task.id)
+      const result = await apiClient.runTask(task.id, task.agent_id || '')
       if (result.status !== 'success') throw new Error(result.message || t('task_run_error'))
       setRunStatus(t('task_run_started'))
     } catch (e) {
@@ -253,6 +272,15 @@ const TaskEditModal: React.FC<{
       <Field label={t('task_name')}>
         <TextInput value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
+
+      {owner && (
+        <Field label={t('task_owner_agent')}>
+          <div className="inline-flex items-center gap-2 px-3 py-2 rounded-btn border border-strong bg-inset text-sm text-content-secondary">
+            <AgentAvatar agent={owner} size={20} />
+            <span className="truncate">{owner.name || owner.id}</span>
+          </div>
+        </Field>
+      )}
 
       <div className="flex items-center justify-between">
         <span className="text-sm text-content-secondary">{t('task_enabled')}</span>
