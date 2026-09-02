@@ -2818,18 +2818,11 @@ function renderComposerAgentMenu() {
 
     const candidates = enabledAgents().filter(a => a.id !== activeAgentId && !taken.has(a.id));
 
-    // A group chat first lists who is already in the conversation - the owner
-    // and each teammate, all in green so "present" reads at a glance - then, in
-    // a separate section below, who can still be pulled in. Splitting the two
-    // makes it obvious the highlighted rows are members, not options.
+    // A group chat first lists the teammates already in the conversation (the
+    // owner is implicit and not shown), then, in a separate section below, who
+    // can still be pulled in. Splitting the two makes it obvious these rows are
+    // members to remove, not options to pick.
     if (sharedConversation()) {
-        const owner = findAgent(activeAgentId);
-        const ownerRow = owner ? `
-            <div class="composer-menu-item agent-row joined is-owner">
-                ${agentAvatarHTML(owner, 24)}
-                <span>${escapeHtml(owner.name || owner.id)}</span>
-                <span class="composer-menu-badge ml-auto">${escapeHtml(t('composer_agent_owner'))}</span>
-            </div>` : '';
         const joined = members.filter(m => m.id !== activeAgentId).map(m => `
             <button type="button" class="composer-menu-item agent-row joined"
                     onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
@@ -2838,9 +2831,11 @@ function renderComposerAgentMenu() {
                 <i class="fas fa-check ml-auto text-[11px] joined-check"></i>
                 <i class="fas fa-xmark ml-auto text-[11px] joined-remove"></i>
             </button>`).join('');
-        sections.push(
-            `<div class="composer-menu-title">${escapeHtml(t('team_members'))}</div>${ownerRow}${joined}`
-        );
+        if (joined) {
+            sections.push(
+                `<div class="composer-menu-title">${escapeHtml(t('team_members'))}</div>${joined}`
+            );
+        }
     }
 
     const invitable = candidates.map(agent => `

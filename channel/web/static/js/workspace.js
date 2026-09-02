@@ -853,7 +853,7 @@ function renderMentionMenu() {
             return `<div class="mention-item ${i === mentionIndex ? 'active' : ''}" data-idx="${i}">
                 ${face}
                 <span class="m-name">${escapeHtml(item.name)}</span>
-                <span class="m-path">@${escapeHtml(item.id)}</span>
+                <span class="m-path">${escapeHtml(item.id)}</span>
             </div>`;
         }
         return `<div class="mention-item ${i === mentionIndex ? 'active' : ''}" data-idx="${i}">
@@ -870,9 +870,11 @@ function matchingAgentMentions(query) {
     // its owner. A solo chat keeps @ as the file picker it always was.
     if (typeof sharedConversation !== 'function' || !sharedConversation()) return [];
     const q = String(query || '').toLowerCase();
-    // Everyone in this conversation is addressable, the owner included: naming
-    // the owner explicitly hands this turn back to them.
-    const roster = typeof sessionRoster === 'function' ? sessionRoster() : [];
+    // Only teammates are offered: @ hands the turn to someone else, so the
+    // owner (the one already replying) is filtered out of the picker.
+    const owner = typeof activeAgentId !== 'undefined' ? activeAgentId : '';
+    const roster = (typeof sessionRoster === 'function' ? sessionRoster() : [])
+        .filter(agent => agent.id !== owner);
     return roster
         .filter(agent => !q || agent.id.toLowerCase().includes(q) || String(agent.name).toLowerCase().includes(q))
         .slice(0, 6)
