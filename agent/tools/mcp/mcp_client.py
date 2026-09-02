@@ -130,6 +130,9 @@ class McpClient:
         # _http_lock protects _http_session_id initialization across
         # concurrent streamable-http requests.
         self._http_lock = threading.Lock()
+        # Blocks new requests while an expired session is being replaced.
+        # An RLock lets the recovery handshake use the normal HTTP path.
+        self._http_reinit_lock = threading.RLock()
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -555,7 +558,14 @@ class McpClient:
         """POST a JSON-RPC request and return the response (JSON or SSE-wrapped)."""
         return self._streamable_http_post(message, expect_response=True)
 
-    def _handle_401(self, err, message: dict, expect_response: bool, retried: bool) -> dict:
+    def _handle_401(
+        self,
+        err,
+        message: dict,
+        expect_response: bool,
+        retried: bool,
+        session_retried: bool = False,
+    ) -> dict:
         """Handle a 401: refresh the token and retry once, else begin OAuth."""
         www_auth = ""
         try:
@@ -570,7 +580,12 @@ class McpClient:
         # First try a silent refresh with the stored refresh token.
         if not retried and self._oauth is not None and self._oauth.refresh():
             logger.info(f"[MCP:{self.name}] Token refreshed after 401, retrying")
-            return self._streamable_http_post(message, expect_response, _retried=True)
+            return self._streamable_http_post(
+                message,
+                expect_response,
+                _retried=True,
+                _session_retried=session_retried,
+            )
 
         # No usable token — start (or restart) the interactive OAuth flow.
         self._begin_oauth(www_auth)
@@ -579,7 +594,13 @@ class McpClient:
             f"(complete the OAuth flow to enable this server)"
         )
 
-    def _streamable_http_post(self, message: dict, expect_response: bool, _retried: bool = False) -> dict:
+    def _streamable_http_post(
+        self,
+        message: dict,
+        expect_response: bool,
+        _retried: bool = False,
+        _session_retried: bool = False,
+    ) -> dict:
         """
         POST a JSON-RPC message over Streamable HTTP.
 
@@ -592,10 +613,11 @@ class McpClient:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
         }
-        # Read session id under lock to avoid racing with the
-        # initialization write below during concurrent requests.
-        with self._http_lock:
-            sid = self._http_session_id
+        # Do not start a request between invalidating an expired session and
+        # completing the replacement handshake.
+        with self._http_reinit_lock:
+            with self._http_lock:
+                sid = self._http_session_id
         if sid:
             headers["Mcp-Session-Id"] = sid
         headers.update(self._http_headers)
@@ -618,7 +640,30 @@ class McpClient:
         except urllib.error.HTTPError as e:
             # 401 is the spec-compliant "needs authorization" signal.
             if e.code == 401 and not self._has_static_auth():
-                return self._handle_401(e, message, expect_response, _retried)
+                return self._handle_401(
+                    e,
+                    message,
+                    expect_response,
+                    _retried,
+                    _session_retried,
+                )
+            if (
+                e.code == 404
+                and sid
+                and not _session_retried
+                and message.get("method") != "initialize"
+            ):
+                try:
+                    e.read()
+                except Exception:
+                    pass
+                self._replace_expired_http_session(sid)
+                return self._streamable_http_post(
+                    message,
+                    expect_response,
+                    _retried=_retried,
+                    _session_retried=True,
+                )
             # Surface the server-provided error body for easier debugging
             detail = ""
             try:
@@ -635,7 +680,11 @@ class McpClient:
             # Double-checked lock: only the first response sets the
             # session id, preventing concurrent initializers from
             # overwriting each other.
-            if session_id and not self._http_session_id:
+            if (
+                session_id
+                and (message.get("method") == "initialize" or sid is None)
+                and not self._http_session_id
+            ):
                 with self._http_lock:
                     if not self._http_session_id:
                         self._http_session_id = session_id
@@ -660,6 +709,23 @@ class McpClient:
             if not raw:
                 return {}
             return json.loads(raw)
+
+    def _replace_expired_http_session(self, expired_session_id: str) -> None:
+        """Replace an expired Streamable HTTP session once across callers."""
+        with self._http_reinit_lock:
+            with self._http_lock:
+                if self._http_session_id != expired_session_id:
+                    if not self._initialized:
+                        raise IOError(
+                            f"[MCP:{self.name}] failed to reinitialize expired HTTP session"
+                        )
+                    return
+                self._http_session_id = None
+
+            if not self._handshake():
+                raise IOError(
+                    f"[MCP:{self.name}] failed to reinitialize expired HTTP session"
+                )
 
     def _read_sse_response(self, resp, expected_id) -> dict:
         """Read an SSE stream and return the first JSON-RPC response with matching id."""
