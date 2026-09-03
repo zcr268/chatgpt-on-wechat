@@ -1802,12 +1802,19 @@ class WebChannel(ChatChannel):
             session_id = (json_data.get("session_id") or "").strip()
             lang = (json_data.get("lang") or "zh").lower()
             from bridge.bridge import Bridge
+            from agent.routing import AgentUnavailableError
             agent_bridge = Bridge().get_agent_bridge()
             agent_id = self.request_to_agent.get(request_id)
             if not agent_id:
-                agent_id = agent_bridge.agent_router.resolve(
-                    explicit_agent_id=json_data.get("agent_id"),
-                )
+                try:
+                    agent_id = agent_bridge.agent_router.resolve(
+                        explicit_agent_id=json_data.get("agent_id"),
+                    )
+                except AgentUnavailableError:
+                    # Session pinned to a since-deleted Agent; nothing in flight
+                    # for it to cancel. Report success with a zero count rather
+                    # than raising on every cancel attempt.
+                    return json.dumps({"status": "success", "cancelled": 0})
 
             registry = get_cancel_registry()
             cancelled = 0
@@ -1854,10 +1861,22 @@ class WebChannel(ChatChannel):
             json_data = json.loads(data)
             session_id = json_data.get('session_id')
             from bridge.bridge import Bridge
+            from agent.routing import AgentUnavailableError
             agent_bridge = Bridge().get_agent_bridge()
-            agent_id = agent_bridge.agent_router.resolve(
-                explicit_agent_id=json_data.get("agent_id"),
-            )
+            try:
+                agent_id = agent_bridge.agent_router.resolve(
+                    explicit_agent_id=json_data.get("agent_id"),
+                )
+            except AgentUnavailableError:
+                # The session is pinned to an Agent that has since been deleted
+                # or disabled (a stale client selection). Polling is read-only,
+                # so there is nothing to answer - report no content instead of
+                # raising every tick, which otherwise floods the log.
+                return json.dumps({
+                    "status": "success",
+                    "has_content": False,
+                    "agent_unavailable": True,
+                })
             session_queue_key = self._session_queue_key(session_id, agent_id)
 
             if not session_id or session_queue_key not in self.session_queues:

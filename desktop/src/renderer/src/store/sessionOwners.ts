@@ -81,6 +81,27 @@ export function forgetOwner(sessionId: string) {
   setOwner(sessionId, '')
 }
 
+/**
+ * Drop every session owned by a now-deleted Agent.
+ *
+ * The Agent's conversations were removed with its workspace, so any entry
+ * still mapping to its id is a ghost that would keep re-pinning requests at a
+ * gone Agent. Returns true if anything was pruned.
+ */
+export function forgetAgentOwners(agentId: string): boolean {
+  if (!agentId) return false
+  const map = { ...load() }
+  let changed = false
+  for (const sessionId of Object.keys(map)) {
+    if (map[sessionId] === agentId) {
+      delete map[sessionId]
+      changed = true
+    }
+  }
+  if (changed) persist(map)
+  return changed
+}
+
 /** The session id the client will open on launch (same key the session store uses). */
 export function readActiveSessionId(): string {
   try {

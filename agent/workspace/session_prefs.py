@@ -165,6 +165,51 @@ def forget_session(session_id: str, agent_id: Optional[str] = None) -> None:
             _save(data)
 
 
+def forget_agent(agent_id: str) -> None:
+    """Erase every trace of a deleted Agent from the prefs store.
+
+    Deleting an Agent leaves two kinds of dangling references here that would
+    otherwise linger forever:
+
+    - Its own sessions' overrides, keyed ``{agent_id}::*`` — orphaned, because
+      the conversations they belonged to were removed with the Agent's
+      workspace.
+    - Its id sitting in *other* Agents' team ``members`` rosters — a ghost
+      teammate the composer/settings would keep offering as ``available:false``.
+
+    Both are pruned in one pass; a row left with nothing pinned is dropped
+    rather than kept as an empty husk.
+    """
+    if not agent_id:
+        return
+    owner_prefix = f"{agent_id}::"
+    with _lock:
+        data = _load()
+        sessions = data["sessions"]
+        changed = False
+
+        for key in [k for k in sessions if str(k).startswith(owner_prefix)]:
+            sessions.pop(key, None)
+            changed = True
+
+        for key, entry in list(sessions.items()):
+            if not isinstance(entry, dict) or not entry.get("members"):
+                continue
+            members = [m for m in entry["members"] if m != agent_id]
+            if len(members) == len(entry["members"]):
+                continue
+            changed = True
+            if members:
+                entry["members"] = members
+            else:
+                entry.pop("members", None)
+                if not any(entry.get(f) for f in _FIELDS):
+                    sessions.pop(key, None)
+
+        if changed:
+            _save(data)
+
+
 def resolve_permission(session_id: str, agent_id: Optional[str] = None) -> str:
     """The permission mode in force for a session: its own, else the global one."""
     from agent.permission import global_mode, normalize_mode

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import apiClient from '../api/client'
-import { ownerOf, readActiveSessionId } from './sessionOwners'
+import { ownerOf, readActiveSessionId, forgetAgentOwners } from './sessionOwners'
 import type { AgentProfile, ChannelInstanceRecord, RosterSnapshot } from '../types'
 
 /**
@@ -146,6 +146,19 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
         const res = await apiClient.agentAction({ revision: get().revision, ...body })
         if (res.status === 'success') {
           await get().refresh()
+          // A deleted Agent leaves ghosts on this client: its conversations
+          // were removed server-side, but their owner mappings and the open
+          // session list still reference it. Prune the owner map and reload the
+          // list so the deleted Agent's rows disappear at once.
+          if (body.action === 'delete' && typeof body.id === 'string') {
+            forgetAgentOwners(body.id)
+            try {
+              const { useSessionStore } = await import('./sessionStore')
+              await useSessionStore.getState().loadSessions(1)
+            } catch {
+              /* session store unavailable; the list refreshes on next open */
+            }
+          }
           return { ok: true }
         }
         const code = res.code as string | undefined

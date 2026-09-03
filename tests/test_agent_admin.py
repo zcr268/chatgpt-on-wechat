@@ -219,6 +219,31 @@ def test_delete_agent_unbinds_channel_instances_pointing_at_it(admin):
     assert all(i.get("agent_id") != "research" for i in instances)
 
 
+def test_delete_agent_purges_session_prefs_orphans_and_team_members(admin):
+    """Deleting an Agent must leave no dangling references in session prefs.
+
+    Two kinds of ghost would otherwise linger: the Agent's own session
+    overrides (keyed ``{id}::*``), and its id sitting in another Agent's team
+    roster. Both have to go, while an unrelated session is left untouched.
+    """
+    from agent.workspace import session_prefs
+
+    service, _, _ = admin
+    service.create_agent("research", "Research")
+
+    # The deleted Agent owns a session override, is a teammate in the primary
+    # Agent's team conversation, and an unrelated session must survive intact.
+    session_prefs.set_prefs("s1", agent_id="research", model="claude-sonnet-5")
+    session_prefs.set_prefs("s2", agent_id="primary", members=["research", "primary"])
+    session_prefs.set_prefs("s3", agent_id="primary", model="gpt-5")
+
+    service.delete_agent("research")
+
+    assert session_prefs.get_prefs("s1", agent_id="research") == {}
+    assert session_prefs.get_prefs("s2", agent_id="primary")["members"] == ["primary"]
+    assert session_prefs.get_prefs("s3", agent_id="primary") == {"model": "gpt-5"}
+
+
 def test_default_agent_cannot_be_deleted(admin):
     service, _, _ = admin
     with pytest.raises(Exception):

@@ -577,6 +577,18 @@ class AgentAdminService:
             workspace = profile.workspace_path
             if workspace == sanctioned and workspace.is_dir():
                 shutil.rmtree(workspace, ignore_errors=True)
+
+            # Sweep the session-prefs store of anything still pointing at the
+            # gone Agent: its own orphaned session overrides and its id lingering
+            # in other conversations' team rosters. Best-effort — a hiccup here
+            # must not undo a deletion that already committed.
+            try:
+                from agent.workspace import session_prefs
+
+                session_prefs.forget_agent(agent_id)
+            except Exception as e:
+                logger.warning(f"[AgentAdmin] session prefs cleanup after delete failed: {e}")
+
             return {"id": agent_id, "deleted": True}
 
     def knowledge_mode(self, agent_id: str) -> str:

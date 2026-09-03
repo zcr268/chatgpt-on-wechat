@@ -1789,9 +1789,16 @@ const avatarVersions = {};
 
 /* Every Agent wears the product's own face until its owner uploads an image.
    No emoji, no initials: the default is the CowAgent logo, so a fresh Agent and
-   a solo chat show the exact same avatar the chat bubble has always shown. */
+   a solo chat show the exact same avatar the chat bubble has always shown.
+
+   A null agent means the id no longer resolves - a conversation pinned to a
+   since-deleted Agent. Fall back to the default Agent's face rather than the
+   bare logo, so the deleted Agent visibly degrades to the default one. */
 function agentAvatarHTML(agent, size) {
     const cls = `agent-avatar agent-avatar-${size || 32}`;
+    if (!agent && defaultAgentId) {
+        agent = findAgent(defaultAgentId);
+    }
     if (agent && agent.avatar === 'image') {
         const v = avatarVersions[agent.id] || rosterRevision || agent.id;
         return `<img class="${cls}" src="/api/agents/${encodeURIComponent(agent.id)}/avatar?v=${encodeURIComponent(v)}" alt="">`;
@@ -2548,8 +2555,14 @@ function _performAgentDelete(agentId, _retried) {
             activeAgentId = defaultAgentId;
             localStorage.setItem('cow_active_agent', activeAgentId);
         }
+        // Drop the deleted Agent's remembered session id — its conversations
+        // went with the workspace, so the pinned id would only re-pin a ghost.
+        localStorage.removeItem(`${SESSION_ID_KEY}:${agentId}`);
         return loadAgentCatalog().then(() => {
             renderComposerIdentity();
+            // The Agent's sessions were removed server-side; refresh the open
+            // list so its rows don't linger until the next unrelated reload.
+            if (typeof loadSessionList === 'function') loadSessionList();
             return true;
         });
     }).catch(err => {
