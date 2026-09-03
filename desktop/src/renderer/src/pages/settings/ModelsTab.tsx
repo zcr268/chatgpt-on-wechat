@@ -20,6 +20,7 @@ import apiClient from '../../api/client'
 import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState } from '../../types'
 import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
 import CapabilityCard from './CapabilityCard'
+import ChatFallbackCard from './ChatFallbackCard'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
@@ -127,6 +128,24 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
         busy={busy === 'chat'}
         status={statusMap.chat}
         onSave={(p, m) => run('chat', { action: 'set_capability', capability: 'chat', provider_id: p, model: m })}
+      />
+
+      {/* Chat fallback — only takes over once the main model has failed */}
+      <ChatFallbackCard
+        state={caps.chat_fallback}
+        data={data}
+        busy={busy === 'chat_fallback'}
+        status={statusMap.chat_fallback}
+        onSave={({ providerId, model, enabled, maxSwitches }) =>
+          run('chat_fallback', {
+            action: 'set_capability',
+            capability: 'chat_fallback',
+            provider_id: providerId,
+            model,
+            enabled,
+            max_switches: maxSwitches,
+          })
+        }
       />
 
       {/* Vision */}

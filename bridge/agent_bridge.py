@@ -105,6 +105,13 @@ class AgentLLMModel(LLMModel):
     # it *is* the global choice.
     _agent_model = None
     _agent_provider = None
+    # Fallback routing, engaged by use_fallback() after the primary model
+    # failed a turn for good. Declared here (not in __init__) for the same
+    # reason as the fields above: `model` is read on every call, including on
+    # instances built with __new__.
+    _fallback_model = None
+    _fallback_provider = None
+    _fallback_depth = 0
 
     def __init__(self, bridge: Bridge, bot_type: str = "chat"):
         super().__init__(model=conf().get("model") or const.DEFAULT_MODEL)
@@ -115,6 +122,11 @@ class AgentLLMModel(LLMModel):
 
     @property
     def model(self):
+        # A fallback that has been engaged outranks every normal choice: once
+        # the primary model has failed the turn, the whole point is to answer
+        # on something else.
+        if self._fallback_model:
+            return self._fallback_model
         return (
             self._session_model
             or self._agent_model
@@ -125,6 +137,76 @@ class AgentLLMModel(LLMModel):
     @model.setter
     def model(self, value):
         pass
+
+    def fallback_config(self) -> dict:
+        """Return the configured chat fallback, normalized.
+
+        A non-dict or disabled entry yields empty provider/model so callers can
+        treat "not usable" as a single check.
+        """
+        raw = conf().get("chat_fallback")
+        if not isinstance(raw, dict) or not raw.get("enabled"):
+            return {"provider": "", "model": "", "max_switches": 0}
+        try:
+            max_switches = int(raw.get("max_switches") or 0)
+        except (TypeError, ValueError):
+            max_switches = 0
+        return {
+            "provider": (raw.get("provider") or "").strip(),
+            "model": (raw.get("model") or "").strip(),
+            "max_switches": max(0, max_switches),
+        }
+
+    def fallback_available(self) -> bool:
+        """Whether this turn can still switch to the fallback model."""
+        if self._fallback_model:
+            return False  # already on it; a second switch would ping-pong
+        cfg = self.fallback_config()
+        if not cfg["provider"] or not cfg["model"]:
+            return False  # half-configured means "off"
+        return self._fallback_depth < max(1, cfg["max_switches"])
+
+    def use_fallback(self) -> bool:
+        """Switch the rest of this turn onto the configured fallback model.
+
+        Returns True when the switch happened. Called after the primary model
+        has failed a turn for good (retries exhausted), never mid-retry.
+        """
+        if not self.fallback_available():
+            return False
+        cfg = self.fallback_config()
+        # Remember where we were, so the next turn starts on the primary again.
+        self._pre_fallback_model = self.model
+        self._fallback_provider = cfg["provider"]
+        self._fallback_model = cfg["model"]
+        self._fallback_depth += 1
+        # Drop the cached primary bot; `bot` rebuilds it for the new routing.
+        self._bot = None
+        self._bot_model = None
+        self._bot_type = None
+        logger.warning(
+            "[AgentLLMModel] primary model failed; falling back to "
+            f"{cfg['provider']}/{cfg['model']} (switch {self._fallback_depth})"
+        )
+        return True
+
+    def reset_fallback(self) -> None:
+        """Return to the primary model — call once a turn ends.
+
+        Also clears the switch counter, so a later turn can fall back again.
+        The counter exists to bound a *single* turn; without resetting it a
+        session with max_switches=1 would get exactly one fallback ever.
+        """
+        if self._fallback_model is None:
+            return
+        self._fallback_model = None
+        self._fallback_provider = None
+        # Back to zero: the next turn starts fresh on the primary model, and if
+        # it fails again it is a new failure that earns a new switch.
+        self._fallback_depth = 0
+        self._bot = None
+        self._bot_model = None
+        self._bot_type = None
 
     def set_agent_default(self, provider: Optional[str], model: Optional[str]) -> None:
         """Pin the Agent's own model, under any per-conversation choice."""
@@ -171,6 +253,12 @@ class AgentLLMModel(LLMModel):
         """Resolve bot type from model name, matching Bridge.__init__ logic."""
         # A session override wins over every global routing switch, including
         # use_linkai: the user picked this provider for this conversation.
+        #
+        # An engaged fallback outranks even that: the whole point of the
+        # fallback is to leave whichever provider just failed, and the model
+        # being requested (`self.model`) is already the fallback's own.
+        if self._fallback_provider:
+            return self.provider_to_bot_type(self._fallback_provider)
         if self._session_provider:
             return self.provider_to_bot_type(self._session_provider)
         if self._agent_provider:

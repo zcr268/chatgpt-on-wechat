@@ -36,6 +36,16 @@ available_setting = {
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
     "model": "deepseek-v4-flash",  # options: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet, wenxin, moonshot, qwen-turbo, xunfei, glm-4, minimax, gemini, etc. See common/const.py for the full list
     "bot_type": "",  # optional; for OpenAI-compatible third-party services set "openai" or "custom" (in custom mode switching model won't auto-switch bot_type). See common/const.py for bot names; inferred from model name if left empty
+    # Fallback chat model, used only after the primary one has failed
+    # permanently for a turn (all retries exhausted). Opt-in: an empty
+    # provider/model disables the switch and the error surfaces as before.
+    # {"enabled": bool, "provider": str, "model": str, "max_switches": int}
+    "chat_fallback": {
+        "enabled": False,
+        "provider": "",  # a provider id as used by `bot_type` (e.g. "openai", "qianfan", "custom:<id>")
+        "model": "",  # e.g. "gpt-4o-mini"
+        "max_switches": 1,  # how many times one turn may fall back, guarding against ping-pong
+    },
     "use_azure_chatgpt": False,  # whether to use Azure chatgpt
     "azure_deployment_id": "",  # azure model deployment name
     "azure_api_version": "",  # azure api version
