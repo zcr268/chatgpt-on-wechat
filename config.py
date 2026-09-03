@@ -285,17 +285,18 @@ available_setting = {
         "timeout_seconds": 300,  # budget for one spawn call (range 10-3600)
     },
     # Delegation between configured agents. Unlike a sub agent, the target is a
-    # standing peer that answers in its own workspace, so the call is addressed
-    # by a run id and may outlive the wait. The tool only appears when at least
-    # two agents are enabled. Set to false to withhold it entirely.
+    # standing peer that answers in its own workspace. The call is synchronous:
+    # the delegating Agent waits for the teammate's result. The tool only
+    # appears in a team conversation (two+ enabled agents with members). Set to
+    # false to withhold it entirely.
     "agent_delegation": {
         "enabled": True,
         # {"<source>": ["<target>", ...]} or "*" for any. Unset means every
-        # agent may delegate to every other one.
+        # agent may delegate to every other one. Targets are further bounded to
+        # the teammates in the current conversation.
         "allowed_targets": None,
         "max_depth": 3,               # delegation hops in one chain (range 1-8)
-        "timeout_seconds": 120,       # budget for one delegated run (range 0.01-600)
-        "default_wait_seconds": 30,   # inline wait before handing back a run id
+        "timeout_seconds": 600,       # budget for one delegated run (range 0.01-600)
         "max_message_chars": 8000,    # size limit for one delegated task
     },
     "enable_thinking": False,  # Enable deep-thinking mode for thinking-capable models
