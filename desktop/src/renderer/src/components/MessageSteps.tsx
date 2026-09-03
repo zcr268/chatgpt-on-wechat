@@ -127,7 +127,7 @@ const ToolStep: React.FC<{ step: MessageStep }> = ({ step }) => {
               <div className="text-[10px] font-semibold uppercase tracking-wide opacity-60 mb-1">
                 {isError ? 'Error' : 'Output'}
               </div>
-              <div className="max-h-[420px] overflow-y-auto">
+              <div className="tool-report mt-1.5 max-h-[240px] overflow-y-auto rounded bg-[#f1f5f9] dark:bg-[#111111] px-2 py-1.5">
                 <Markdown content={step.display} />
               </div>
             </div>

@@ -363,6 +363,10 @@ body * {
 .msg-content h2 { font-size: 1.25em; }
 .msg-content h3 { font-size: 1.1em; }
 
+/* A delegate/sub-agent report: trim the first heading's top margin so it sits
+   flush under the "Output" label rather than floating. */
+.tool-report .msg-content > h3:first-child { margin-top: 0; }
+
 .msg-content a { color: var(--accent); text-decoration: none; }
 .msg-content a:hover { text-decoration: underline; }
 

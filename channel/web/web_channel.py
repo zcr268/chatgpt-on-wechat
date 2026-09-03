@@ -523,6 +523,43 @@ def _add_subagent_displays(steps) -> None:
             step["display"] = format_results(results)
 
 
+def _add_delegate_displays(steps) -> None:
+    """Give persisted `agent_delegate` steps the readable form they had live.
+
+    Same story as `_add_subagent_displays`: `display` is kept out of the model's
+    context and so out of storage, so a reloaded page would otherwise show the
+    JSON handed to the model rather than "who → whom" and the teammate's reply.
+    """
+    from agent.tools.agent_delegate.agent_delegate import format_delegate_result
+
+    for step in steps or []:
+        if not isinstance(step, dict) or step.get("name") != "agent_delegate":
+            continue
+        try:
+            payload = json.loads(step.get("result") or "{}")
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(payload, dict) or not payload.get("content"):
+            continue
+        source_id = payload.get("delegated_by") or ""
+        source_name = source_id
+        try:
+            from bridge.bridge import Bridge
+
+            source_name = (
+                Bridge().get_agent_bridge().agent_registry.get(source_id).name
+                or source_id
+            )
+        except Exception:
+            pass
+        step["display"] = format_delegate_result(
+            source_name,
+            payload.get("agent_name") or payload.get("agent_id") or "",
+            payload.get("content") or "",
+            status=payload.get("status") or "done",
+        )
+
+
 def _sanitize_upload_relative_path(relative_path: str) -> str:
     """Normalize relative upload path and reject escapes / absolute paths."""
     relative_path = (relative_path or "").replace("\\", "/").strip("/")
@@ -7353,6 +7390,7 @@ class HistoryHandler:
                 if msg.get("role") != "assistant":
                     continue
                 _add_subagent_displays(msg.get("steps"))
+                _add_delegate_displays(msg.get("steps"))
                 artifacts = _artifacts_from_steps(msg.get("steps"), session_id)
                 if artifacts:
                     msg["artifacts"] = artifacts
