@@ -6614,10 +6614,16 @@ class AgentAvatarHandler:
             from agent.registry import get_agent_registry
 
             get_agent_registry().get(agent_id, require_enabled=False)
-            params = web.input(avatar={})
+            # Read the multipart body raw. web.input() decodes it as UTF-8, which
+            # dies on the first non-text byte of an image (a PNG starts with the
+            # byte 0x89) with "utf-8 codec can't decode byte 0x89". rawinput hands
+            # back the bytes untouched, the same path the knowledge upload uses.
+            params = _raw_web_input()
             upload = params.get("avatar")
-            raw = getattr(upload, "value", None)
+            if upload is None:
+                return json.dumps({"status": "error", "message": "avatar file required"})
             filename = getattr(upload, "filename", "") or ""
+            raw = _read_uploaded_file_bytes(upload)
             if not raw:
                 return json.dumps({"status": "error", "message": "avatar file required"})
             if len(raw) > MAX_AVATAR_BYTES:
