@@ -22,6 +22,7 @@ const I18N = {
         agents_stale: '列表已更新，请刷新后重试',
         agents_id_placeholder: '留空则自动生成',
         agents_id_tip: '智能体的唯一标识，创建后不可修改。仅支持小写英文、数字和连字符（-），如 coding-agent。留空则根据名称自动生成。',
+        agents_id_invalid: 'ID 需以字母或数字开头，仅支持字母、数字、下划线和连字符，最长 64 位',
         agents_avatar: '头像',
         agents_tab_profile: '概况',
         agents_tab_skills: '能力',
@@ -426,6 +427,7 @@ const I18N = {
         agents_stale: '列表已更新，請重新整理後再試',
         agents_id_placeholder: '留空則自動產生',
         agents_id_tip: '智慧體的唯一識別碼，建立後不可修改。僅支援小寫英文、數字與連字號（-），如 coding-agent。留空則依名稱自動產生。',
+        agents_id_invalid: 'ID 需以字母或數字開頭，僅支援字母、數字、底線與連字號，最長 64 位',
         agents_avatar: '頭像',
         agents_tab_profile: '概況',
         agents_tab_skills: '能力',
@@ -825,6 +827,7 @@ const I18N = {
         agents_stale: 'The list changed; please refresh and try again',
         agents_id_placeholder: 'Auto-generated if left blank',
         agents_id_tip: 'A unique identifier, fixed once created. Lowercase letters, digits and hyphens (-) only, e.g. ops-agent. Left blank, it is derived from the name.',
+        agents_id_invalid: 'The id must start with a letter or digit and use only letters, digits, underscores and hyphens (max 64)',
         agents_avatar: 'Avatar',
         agents_tab_profile: 'Profile',
         agents_tab_skills: 'Skills',
@@ -1770,7 +1773,6 @@ let defaultAgentId = localStorage.getItem('cow_default_agent') || 'default';
 let selectedAdminAgentId = '';
 let selectedCoreRevision = '';
 let installedSkills = [];
-let _idFromNameLocked = false;
 
 function findAgent(agentId) {
     return agentCatalog.find(a => a.id === agentId) || null;
@@ -1787,13 +1789,34 @@ function enabledAgents() {
    here and prefer it, which forces the one re-fetch that shows the new picture. */
 const avatarVersions = {};
 
-/* Every Agent wears the product's own face until its owner uploads an image.
-   No emoji, no initials: the default is the CowAgent logo, so a fresh Agent and
-   a solo chat show the exact same avatar the chat bubble has always shown.
+/* How many muted discs the initials fallback cycles through. */
+const AVATAR_TONES = 6;
+
+/* Which disc an Agent gets. Keyed off the id alone, so a face never changes
+   colour once the Agent exists, and so a draft in the create modal (no id yet)
+   sits on the neutral tone instead of shifting as its name is typed. */
+function avatarTone(agentId) {
+    const key = String(agentId || '');
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    return hash % AVATAR_TONES;
+}
+
+/* The character an Agent is shown by when it has no picture. Array.from rather
+   than [0] so an astral-plane character is taken whole instead of as half a
+   surrogate pair; uppercased for latin, left alone for scripts without case. */
+function avatarInitial(name) {
+    return (Array.from(String(name || '').trim())[0] || '').toUpperCase();
+}
+
+/* Every Agent wears its own face: the image its owner uploaded, or a muted disc
+   carrying the first character of its name. Initials rather than the product
+   logo so a team is distinguishable at a glance, and low-saturation tones so a
+   roster of them stays quiet.
 
    A null agent means the id no longer resolves - a conversation pinned to a
-   since-deleted Agent. Fall back to the default Agent's face rather than the
-   bare logo, so the deleted Agent visibly degrades to the default one. */
+   since-deleted Agent. Fall back to the default Agent's face rather than an
+   empty disc, so the deleted Agent visibly degrades to the default one. */
 function agentAvatarHTML(agent, size) {
     const cls = `agent-avatar agent-avatar-${size || 32}`;
     if (!agent && defaultAgentId) {
@@ -1803,7 +1826,8 @@ function agentAvatarHTML(agent, size) {
         const v = avatarVersions[agent.id] || rosterRevision || agent.id;
         return `<img class="${cls}" src="/api/agents/${encodeURIComponent(agent.id)}/avatar?v=${encodeURIComponent(v)}" alt="">`;
     }
-    return `<img class="${cls}" src="assets/logo.jpg" alt="">`;
+    const initial = avatarInitial(agent && (agent.name || agent.id));
+    return `<span class="${cls} agent-avatar-tone-${avatarTone(agent && agent.id)}">${escapeHtml(initial)}</span>`;
 }
 
 /* Repaint the faces on bubbles already on screen. Bubbles are rendered once and
@@ -1822,9 +1846,14 @@ function refreshBubbleAvatars() {
     });
 }
 
+// Derive the ascii slug from a name, or '' when there is no ascii to work with
+// (e.g. a name written in Chinese). Callers fall back to randomAgentId().
 function slugAgentId(name) {
-    const ascii = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-    if (ascii) return ascii.slice(0, 32);
+    return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+}
+
+// An id for a name that yields no slug.
+function randomAgentId() {
     return 'agent-' + Math.random().toString(36).slice(2, 8);
 }
 
@@ -2100,9 +2129,9 @@ function renderAgentDetail() {
 }
 
 /* A live preview beside an upload button, in the page's own styling rather than
-   a raw file input. The default is the product logo; uploading swaps it for the
-   chosen image. `onUpload` may be null when the Agent does not exist yet (the
-   create modal), leaving just the logo preview. */
+   a raw file input. The default is the Agent's initial; uploading swaps it for
+   the chosen image. `onUpload` may be null when the Agent does not exist yet
+   (the create modal), leaving just the preview. */
 function renderAvatarPicker(containerId, agent, onUpload) {
     const box = document.getElementById(containerId);
     if (!box) return;
@@ -2264,6 +2293,21 @@ function renderAgentSkillsPane() {
 let _pendingCreateAvatar = null;
 let _createKnowledgeMode = 'shared';
 
+// What the Agent being filled in would look like: no id yet, so the disc is the
+// neutral tone and only the initial follows the name.
+function createAvatarDraft() {
+    const name = document.getElementById('agent-create-name');
+    return { id: '', name: (name && name.value) || '', avatar: '' };
+}
+
+// Repaint just the preview disc as the name is typed. The whole picker is not
+// re-rendered because that would rebind the upload input on every keystroke.
+function refreshCreateAvatarPreview() {
+    if (_pendingCreateAvatar) return;
+    const slot = document.querySelector('#agent-create-avatar .agent-avatar-picker-preview');
+    if (slot) slot.innerHTML = agentAvatarHTML(createAvatarDraft(), 56);
+}
+
 // The create modal's avatar picker: same look as the edit one, but the upload
 // is staged locally (preview from an object URL) instead of POSTed immediately.
 function renderCreateAvatarPicker() {
@@ -2271,7 +2315,7 @@ function renderCreateAvatarPicker() {
     if (!box) return;
     const preview = _pendingCreateAvatar
         ? `<img class="agent-avatar agent-avatar-56" src="${_pendingCreateAvatar.url}" alt="">`
-        : agentAvatarHTML(null, 56);
+        : agentAvatarHTML(createAvatarDraft(), 56);
     box.innerHTML = `
         <div class="agent-avatar-picker-preview">${preview}</div>
         <div class="agent-avatar-picker-body">
@@ -2296,8 +2340,9 @@ function openAgentCreateForm() {
     const form = document.getElementById('agent-create-form');
     if (!form) return;
     form.classList.remove('hidden');
-    _idFromNameLocked = false;
     const name = document.getElementById('agent-create-name');
+    // The id is typed by hand or left blank on purpose; nothing writes to it
+    // while the form is open. A blank one is filled in once, at submit.
     const id = document.getElementById('agent-create-id');
     const description = document.getElementById('agent-create-description');
     [name, id, description].forEach(el => { if (el) el.value = ''; });
@@ -2307,6 +2352,12 @@ function openAgentCreateForm() {
     // memory and previewed locally; it is POSTed the moment creation succeeds.
     _pendingCreateAvatar = null;
     renderCreateAvatarPicker();
+    if (name && !name.dataset.avatarBound) {
+        name.dataset.avatarBound = '1';
+        // Without an upload the face is the name's first character, so the
+        // preview has to follow what is being typed.
+        name.addEventListener('input', refreshCreateAvatarPreview);
+    }
 
     // Knowledge defaults to shared; reset the segmented control on every open.
     _createKnowledgeMode = 'shared';
@@ -2334,14 +2385,6 @@ function openAgentCreateForm() {
             }))
         );
         initDropdown(clone, opts, '', () => {});
-    }
-
-    if (name && id && !name.dataset.bound) {
-        name.dataset.bound = '1';
-        name.addEventListener('input', () => {
-            if (!_idFromNameLocked) id.value = slugAgentId(name.value);
-        });
-        id.addEventListener('input', () => { _idFromNameLocked = true; });
     }
 }
 
@@ -2374,10 +2417,20 @@ document.addEventListener('click', (e) => {
 
 function createAgentWorkspace() {
     const name = document.getElementById('agent-create-name').value.trim();
-    const id = document.getElementById('agent-create-id').value.trim() || slugAgentId(name);
     const status = document.getElementById('agent-create-status');
-    if (!name || !id) {
+    if (!name) {
         status.textContent = t('agents_name_required');
+        return;
+    }
+    // A hand-typed id is used as given; blank falls back to the name's slug,
+    // and then to a random one when the name has no ascii to slug (e.g. it is
+    // written in Chinese). Generated here rather than while typing so the field
+    // stays exactly as the user left it.
+    const typed = document.getElementById('agent-create-id').value.trim();
+    const id = typed || slugAgentId(name) || randomAgentId();
+    // Mirrors the server's rule, so a bad id is caught before the round trip.
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)) {
+        status.textContent = t('agents_id_invalid');
         return;
     }
     fetch('/api/agents', {
