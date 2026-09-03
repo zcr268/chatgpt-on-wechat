@@ -102,7 +102,7 @@ class ModelScopeBot(Bot):
             return reply
             
         elif context.type == ContextType.IMAGE_CREATE:
-            ok, retstring = self.create_img(query, 0)
+            ok, retstring = self.create_img(query)
             return Reply(ReplyType.IMAGE_URL, retstring) if ok else Reply(ReplyType.ERROR, retstring)
         else:
             return Reply(ReplyType.ERROR, "Bot 不支持处理{}类型的消息".format(context.type))
