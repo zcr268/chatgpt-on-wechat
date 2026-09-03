@@ -3614,6 +3614,21 @@ class ModelsHandler:
             "use_linkai": bool(local_config.get("use_linkai", False)),
         }
 
+    @staticmethod
+    def _chat_provider_models() -> dict:
+        """{provider_id: [model, ...]} for every chat-capable vendor.
+
+        ``ConfigHandler.PROVIDER_MODELS`` carries per-vendor metadata
+        (label, api_key_field, ...) around the model list; the console's model
+        picker wants only the lists. Kept as its own helper so the two chat
+        cards can never drift apart.
+        """
+        out = {}
+        for pid, meta in ConfigHandler.PROVIDER_MODELS.items():
+            models = (meta or {}).get("models")
+            out[pid] = list(models) if isinstance(models, (list, tuple)) else []
+        return out
+
     @classmethod
     def _chat_fallback_capability(cls, local_config: dict) -> dict:
         """The backup chat model, tried only after the primary one fails.
@@ -3638,7 +3653,11 @@ class ModelsHandler:
             "current_provider": provider_id,
             "current_model": model,
             "providers": primary.get("providers", []),
-            "provider_models": ConfigHandler.PROVIDER_MODELS,
+            # The model picker expects {provider_id: [models]}. PROVIDER_MODELS
+            # is richer ({provider_id: {label, models, ...}}), so reduce it to
+            # just the lists — handing over the raw dict makes the web console
+            # call .slice() on a mapping and throw.
+            "provider_models": cls._chat_provider_models(),
             "max_switches": cfg.get("max_switches", 1),
             # Shown in the UI so it's obvious the fallback is inactive.
             "primary_provider": primary.get("current_provider", ""),

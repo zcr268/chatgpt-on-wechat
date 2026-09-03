@@ -229,6 +229,28 @@ class TestConsoleValidation:
         handler._set_chat_fallback("openai", "backup-model", True, max_switches=99)
         assert written["chat_fallback"]["max_switches"] == 5
 
+    def test_provider_models_is_a_list_per_provider(self, monkeypatch):
+        """The console's model picker calls .slice() on provider_models[id],
+        so each value must be a list — not the richer PROVIDER_MODELS entry
+        ({label, models, ...}) it is derived from."""
+        monkeypatch.setattr(
+            "channel.web.web_channel.conf", lambda: {"model": "deepseek-v4-flash"}
+        )
+        from channel.web.web_channel import ConfigHandler, ModelsHandler
+
+        cap = ModelsHandler._chat_fallback_capability({})
+        provider_models = cap["provider_models"]
+        assert provider_models, "expected a non-empty model catalog"
+        for pid, models in provider_models.items():
+            assert isinstance(models, list), f"{pid} -> {type(models).__name__}"
+            for m in models:
+                assert isinstance(m, str), f"{pid} has a non-string model: {m!r}"
+        # Spot-check that the lists were really lifted out of the catalog.
+        assert isinstance(
+            ConfigHandler.PROVIDER_MODELS["openai"], dict
+        ), "PROVIDER_MODELS entries are dicts — hence the reduction"
+        assert "gpt-4o" in provider_models["openai"]
+
     def test_a_valid_entry_is_persisted(self, monkeypatch):
         written = {}
         monkeypatch.setattr(
