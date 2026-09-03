@@ -18,6 +18,7 @@ DASHSCOPE_HIGH_MAX_VALUES = ["high", "max"]
 DASHSCOPE_MAX_ONLY_VALUES = ["max"]
 KIMI_K3_VALUES = ["low", "high", "max"]
 CLAUDE_XHIGH_MODELS = (
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-mythos-5",
     "claude-opus-5",
