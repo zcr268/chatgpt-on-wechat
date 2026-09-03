@@ -528,10 +528,19 @@ class AgentBridge:
         Only seeds when the session has no roster of its own, so a per-session
         edit (Web) is never clobbered; and only for enabled teammates other than
         the owner, matching how a Web team is stored.
+
+        A delegated turn runs in its own private session that carries no roster;
+        the original team travels with it as ``delegation_members`` instead, so
+        seeding from that lets a teammate delegate onward to the same team.
         """
         if not session_id or not context:
             return
-        members = context.get("members") or context.kwargs.get("members")
+        members = (
+            context.get("members")
+            or context.kwargs.get("members")
+            or context.get("delegation_members")
+            or context.kwargs.get("delegation_members")
+        )
         if not members:
             return
         try:

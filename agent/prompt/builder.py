@@ -957,8 +957,9 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
             "This turn is yours to answer. Answer as yourself. When the user "
             "wants a teammate's own words, let them address that teammate.",
             "",
-            "Use agent_delegate for work that belongs to a teammate, and say "
-            "who you handed it to and what you asked for.",
+            "Use agent_delegate for work that belongs to a teammate, passing "
+            "their id above as agent_id (without the @), and say who you handed "
+            "it to and what you asked for. Refer to teammates by name to the user.",
             "",
         ]
     return [
@@ -974,7 +975,8 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
         "这一轮由你来回答，以你自己的身份回答即可。用户想听某位同事亲口说，"
         "让他去点那位同事。",
         "",
-        "该由某位同事做的事，用 agent_delegate 交出去，并说明交给了谁、交办了什么。",
+        "该由某位同事做的事，用 agent_delegate 交出去：把那位同事上面的 id "
+        "作为 agent_id 传入 (不含@符号)，并说明交给了谁、交办了什么。对用户提到同事时用名字。",
         "",
     ]
 
