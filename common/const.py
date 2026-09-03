@@ -98,6 +98,7 @@ DEEPSEEK_CHAT = "deepseek-chat"  # DeepSeek-V3 chat model
 DEEPSEEK_REASONER = "deepseek-reasoner"  # DeepSeek-R1 model
 DEEPSEEK_V4_FLASH = "deepseek-v4-flash"  # DeepSeek V4 Flash - default recommendation (thinking + tool calls)
 DEEPSEEK_V4_PRO = "deepseek-v4-pro"  # DeepSeek V4 Pro - stronger on complex tasks (thinking + tool calls)
+DEEPSEEK_V4_FLASH_VISION_EXP = "deepseek-v4-flash-vision-exp"  # DeepSeek V4 Flash vision (experimental, multimodal)
 
 # Baidu Qianfan / ERNIE
 ERNIE_5_1 = "ernie-5.1"  # ERNIE 5.1 - default recommendation, latest flagship

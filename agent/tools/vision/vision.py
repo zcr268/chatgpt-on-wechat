@@ -60,6 +60,7 @@ _DISCOVERABLE_MODELS = [
     ("zhipu_ai_api_key", const.ZHIPU_AI, const.GLM_4_7, "ZhipuAI"),
     ("minimax_api_key", const.MiniMax, const.MINIMAX_M2_7, "MiniMax"),
     ("mimo_api_key", const.MIMO, const.MIMO_V2_5_PRO, "MiMo"),
+    ("deepseek_api_key", const.DEEPSEEK, const.DEEPSEEK_V4_FLASH_VISION_EXP, "DeepSeek"),
 ]
 
 # Model name prefix → discoverable provider display_name.
@@ -77,6 +78,7 @@ _MODEL_PREFIX_TO_PROVIDER = [
     ("minimax-", "MiniMax"),
     ("abab", "MiniMax"),
     ("mimo-", "MiMo"),
+    ("deepseek-", "DeepSeek"),
 ]
 
 # Model prefixes that natively belong to OpenAI / LinkAI (raw HTTP providers).
@@ -97,6 +99,7 @@ _PROVIDER_ID_TO_DISPLAY = {
     "zhipu": "ZhipuAI",
     "minimax": "MiniMax",
     "mimo": "MiMo",
+    "deepseek": "DeepSeek",
 }
 
 
@@ -285,6 +288,20 @@ class Vision(BaseTool):
         if p:
             providers.append(p)
 
+    def _current_main_model(self) -> str:
+        """The model name the *current agent* actually runs on.
+
+        Sessions can pin their own model (e.g. claude-sonnet-5) via a session
+        override, so the global ``conf().get("model")`` (e.g. deepseek-v4-flash)
+        is the wrong source — forwarding it to the session's real bot causes a
+        vendor-foreign 404 (a Claude bot asked for deepseek-v4-flash). Prefer
+        the bridge's resolved model, fall back to global config.
+        """
+        model = getattr(self.model, "model", None)
+        if isinstance(model, str) and model.strip():
+            return model.strip()
+        return conf().get("model") or ""
+
     @staticmethod
     def _resolve_user_vision_model() -> Optional[str]:
         """Read tools.vision.model (singular ``tool`` kept as runtime fallback)."""
@@ -466,7 +483,7 @@ class Vision(BaseTool):
         main_bot_type = None
         main_bot_supports_vision = False
         if self.model and hasattr(self.model, '_resolve_bot_type'):
-            main_bot_type = self.model._resolve_bot_type(conf().get("model", ""))
+            main_bot_type = self.model._resolve_bot_type(self._current_main_model())
             main_bot = getattr(self.model, "bot", None)
             main_bot_supports_vision = self._main_bot_supports_vision(main_bot)
 
@@ -536,7 +553,7 @@ class Vision(BaseTool):
             return False
         if hasattr(bot, "supports_vision"):
             return bool(getattr(bot, "supports_vision"))
-        main_model = (conf().get("model") or "").lower()
+        main_model = self._current_main_model().lower()
         if not main_model:
             return False
         if main_model.startswith(_OPENAI_MODEL_PREFIXES):
@@ -560,11 +577,11 @@ class Vision(BaseTool):
         if not self._main_bot_supports_vision(bot):
             return None
 
-        # Use the configured main model name; do NOT inject tools.vision.model
-        # here, because by the time we reach this branch the tools.vision.model
-        # routing has already been attempted (and either matched the main bot
-        # or failed to find a provider).
-        main_model_name = conf().get("model") or None
+        # Use the *current agent's* main model name (session override aware);
+        # do NOT inject tools.vision.model here, because by the time we reach
+        # this branch the tools.vision.model routing has already been attempted
+        # (and either matched the main bot or failed to find a provider).
+        main_model_name = self._current_main_model() or None
 
         return VisionProvider(
             name=_MAIN_MODEL_PROVIDER_NAME,

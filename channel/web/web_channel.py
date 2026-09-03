@@ -3283,6 +3283,11 @@ class ModelsHandler:
     # Anything not listed here intentionally hides the model dropdown so
     # users cannot pin a chat-only model and silently get a 4xx at runtime.
     _VISION_PROVIDER_MODELS = {
+        # DeepSeek 视觉模型：V4 Flash vision（experimental, multimodal）。
+        # Placed first so it's the default image-understanding vendor —
+        # deepseek-v4-flash is the project's default main model, so a single
+        # DeepSeek key covers both chat and vision.
+        "deepseek":  [const.DEEPSEEK_V4_FLASH_VISION_EXP],
         # OpenAI ordering puts the GPT-5.6 family first, then GPT-5.5/5.4,
         # GPT-5 and the GPT-4.1/4o backstops.
         "openai":    [
@@ -3679,7 +3684,7 @@ class ModelsHandler:
         # 2. Main bot — only when it natively supports vision. We approximate
         #    "natively supports" by membership in _VISION_PROVIDER_MODELS,
         #    which is the same set vision.py's _DISCOVERABLE_MODELS covers
-        #    (minus the chat-only DeepSeek family).
+        #    (the DeepSeek family is included since V4 Flash vision).
         if main_provider in cls._VISION_PROVIDER_MODELS:
             hit = _try(main_provider, main_model)
             if hit:
