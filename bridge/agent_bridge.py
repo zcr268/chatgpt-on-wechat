@@ -802,11 +802,15 @@ class AgentBridge:
         agent. An empty override resets the agent to the global config, which is
         what makes "follow global" work after a session had pinned something.
 
-        The model is the exception: a conversation's pinned model belongs to
-        the Agent that owns it, and forcing an invited teammate onto it throws
-        away the model it was configured with — often the reason it was
-        invited. Permission stays shared, because it bounds what this
-        conversation may change regardless of who is speaking.
+        The model is the exception on two counts. A conversation's pinned model
+        belongs to the Agent that owns it, so an invited teammate is never
+        forced onto it — that would throw away the model it was configured with,
+        often the reason it was invited. And in a group chat nobody follows the
+        pin, the owner included: a team is a set of Agents each answering on its
+        own model, so the pinned model (a single-chat notion) is ignored and
+        every speaker uses its own default. Permission stays shared either way,
+        because it bounds what this conversation may change regardless of who is
+        speaking.
         """
         if agent is None or not session_id:
             return
@@ -816,7 +820,10 @@ class AgentBridge:
             prefs = session_prefs.get_prefs(session_id, agent_id)
             model = getattr(agent, "model", None)
             if model is not None and hasattr(model, "set_session_override"):
-                if owns_conversation:
+                # A conversation with members is a group: each Agent answers on
+                # its own configured model, so the session pin never applies.
+                is_group = bool(prefs.get("members"))
+                if owns_conversation and not is_group:
                     model.set_session_override(prefs.get("provider"), prefs.get("model"))
                 else:
                     model.set_session_override(None, None)
