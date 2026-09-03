@@ -2530,7 +2530,7 @@ class ConfigHandler:
             "api_base_key": "deepseek_api_base",
             "api_base_default": "https://api.deepseek.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH_VISION_EXP, const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
+            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
         }),
         ("claudeAPI", {
             "label": "Claude",
@@ -3195,6 +3195,11 @@ class ModelsHandler:
     # Anything not listed here intentionally hides the model dropdown so
     # users cannot pin a chat-only model and silently get a 4xx at runtime.
     _VISION_PROVIDER_MODELS = {
+        # DeepSeek 视觉模型：V4 Flash vision（experimental, multimodal）。
+        # Placed first so it's the default image-understanding vendor —
+        # deepseek-v4-flash is the project's default main model, so a single
+        # DeepSeek key covers both chat and vision.
+        "deepseek":  [const.DEEPSEEK_V4_FLASH_VISION_EXP],
         # OpenAI ordering puts the GPT-5.6 family first, then GPT-5.5/5.4,
         # GPT-5 and the GPT-4.1/4o backstops.
         "openai":    [
@@ -3230,8 +3235,6 @@ class ModelsHandler:
         "minimax":   [const.MINIMAX_TEXT_01],
         # MiMo 原生全模态模型：v2.5-pro / v2.5 支持图像/音频/视频输入
         "mimo":      [const.MIMO_V2_5_PRO, const.MIMO_V2_5],
-        # DeepSeek 视觉模型：V4 Flash vision（experimental, multimodal）
-        "deepseek":  [const.DEEPSEEK_V4_FLASH_VISION_EXP],
         # LinkAI proxies the underlying vendor; surface a curated set of
         # multimodal models. Order: gpt-4.1-mini → gpt-5.4-mini as the
         # cross-vendor baselines, then each vendor's recommended default.

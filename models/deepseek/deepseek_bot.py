@@ -87,6 +87,16 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
             "default_presence_penalty": conf().get("presence_penalty", 0.0),
         }
 
+    @property
+    def supports_vision(self) -> bool:
+        """Only the dedicated vision model accepts images; the default chat
+        models (deepseek-v4-flash / -pro / -chat / -reasoner) return 400 on
+        image input. Gating on the exact model name lets the vision tool
+        route to deepseek-v4-flash-vision-exp as a fallback instead of
+        misfiring the non-vision main model."""
+        model_name = (conf().get("model") or "").lower()
+        return model_name == const.DEEPSEEK_V4_FLASH_VISION_EXP
+
     @staticmethod
     def _is_v4_model(model_name: str) -> bool:
         """V4 series: explicit `thinking` switch, and a 384K output ceiling."""
