@@ -60,19 +60,23 @@ export const FieldTip: React.FC<{ tip: string }> = ({ tip }) => {
   )
 }
 
-export const Card: React.FC<{ icon: React.ReactNode; title: string; subtitle?: string; children: React.ReactNode }> = ({
-  icon,
-  title,
-  subtitle,
-  children,
-}) => (
+export const Card: React.FC<{
+  icon: React.ReactNode
+  title: string
+  subtitle?: string
+  // Optional trailing element on the header row (right-aligned), e.g. a small
+  // secondary action such as the chat-fallback gear on the main model card.
+  action?: React.ReactNode
+  children: React.ReactNode
+}> = ({ icon, title, subtitle, action, children }) => (
   <div className="rounded-card border border-default bg-surface p-5">
     <div className="flex items-center gap-2.5 mb-4">
       <div className="w-8 h-8 rounded-lg bg-accent-soft text-accent flex items-center justify-center">{icon}</div>
-      <div>
+      <div className="min-w-0">
         <h3 className="font-semibold text-content leading-tight">{title}</h3>
         {subtitle && <p className="text-xs text-content-tertiary mt-0.5">{subtitle}</p>}
       </div>
+      {action && <div className="ml-auto flex-shrink-0">{action}</div>}
     </div>
     {children}
   </div>

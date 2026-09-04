@@ -108,8 +108,11 @@ const I18N = {
         models_capability_chat_fallback: '主模型兜底',
         models_capability_chat_fallback_desc: '仅在主模型彻底失败（重试耗尽）后接管',
         models_fallback_enable: '启用兜底模型',
-        models_fallback_enabled: '已启用 — 主模型失败时自动接管',
-        models_fallback_disabled: '未启用 — 主模型失败时直接报错',
+        models_fallback_config: '兜底模型',
+        models_fallback_config_tip: '配置主模型兜底：主模型彻底失败后接管',
+        models_fallback_modal_title: '主模型兜底',
+        models_fallback_modal_desc: '当主模型重试次数用尽仍然失败时，自动切换到兜底模型完成本轮回复',
+        models_fallback_badge_on: '兜底已启用',
         models_capability_vision: '图像理解',
         models_capability_vision_desc: '识别图片内容，用于图像识别工具',
         models_capability_image: '图像生成',
@@ -517,8 +520,11 @@ const I18N = {
         models_capability_chat_fallback: '主模型兜底',
         models_capability_chat_fallback_desc: '僅在主模型徹底失敗（重試耗盡）後接管',
         models_fallback_enable: '啟用兜底模型',
-        models_fallback_enabled: '已啟用 — 主模型失敗時自動接管',
-        models_fallback_disabled: '未啟用 — 主模型失敗時直接報錯',
+        models_fallback_config: '兜底模型',
+        models_fallback_config_tip: '設定主模型兜底：主模型徹底失敗後接管',
+        models_fallback_modal_title: '主模型兜底',
+        models_fallback_modal_desc: '當主模型重試次數用盡仍然失敗時，自動切換到兜底模型完成本輪回覆',
+        models_fallback_badge_on: '兜底已啟用',
         models_capability_vision: '影像理解',
         models_capability_vision_desc: '識別圖片內容，用於影像識別工具',
         models_capability_image: '影像生成',
@@ -921,8 +927,11 @@ const I18N = {
         models_capability_chat_fallback: 'Main Model Fallback',
         models_capability_chat_fallback_desc: 'Takes over only after the main model fails for good',
         models_fallback_enable: 'Enable the fallback model',
-        models_fallback_enabled: 'On — takes over when the main model fails',
-        models_fallback_disabled: 'Off — a main-model failure is reported as-is',
+        models_fallback_config: 'Fallback',
+        models_fallback_config_tip: 'Configure the main-model fallback (takes over after the main model fails)',
+        models_fallback_modal_title: 'Main Model Fallback',
+        models_fallback_modal_desc: 'When the main model still fails after exhausting its retries, automatically switch to the fallback model to finish the reply.',
+        models_fallback_badge_on: 'Fallback on',
         models_capability_vision: 'Image Understanding',
         models_capability_vision_desc: 'Recognizes image content, used by image recognition tools',
         models_capability_image: 'Image Generation',
@@ -8339,6 +8348,11 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
                 e.stopPropagation();
                 el._ddValue = opt.value;
                 textEl.textContent = opt.label;
+                // Now that a real option is picked, drop the muted placeholder
+                // style — otherwise the chosen label stays grey (visible on
+                // dropdowns that start in a placeholder state, e.g. the chat
+                // fallback pickers).
+                textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
                 paintFace(opt);
                 menuEl.querySelectorAll('.cfg-dropdown-item').forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
@@ -9374,13 +9388,12 @@ function showConfirmDialog({ title, message, okText, cancelText, onConfirm, hide
 // see the literal class names — dynamic `bg-${color}-50` strings would not
 // be picked up reliably.
 const MODELS_CAPABILITY_DEFS = [
-    { id: 'chat',      icon: 'fa-microchip',        editable: true,  needsModel: true,  titleKey: 'models_capability_chat',      descKey: 'models_capability_chat_desc',
+    { id: 'chat',      icon: 'fa-microchip',        editable: true,  needsModel: true,  toggleable: false, titleKey: 'models_capability_chat',      descKey: 'models_capability_chat_desc',
       iconChip: 'bg-primary-50 dark:bg-primary-900/30',  iconGlyph: 'text-primary-500' },
-    // Backup for chat. Opt-in via its own on/off toggle (see `toggleable`):
-    // it sits idle until the main model fails a turn for good, so unlike the
-    // other cards an empty provider here is a real choice, not "auto".
-    { id: 'chat_fallback', icon: 'fa-shield-halved', editable: true, needsModel: true,  toggleable: true, titleKey: 'models_capability_chat_fallback', descKey: 'models_capability_chat_fallback_desc',
-      iconChip: 'bg-primary-50 dark:bg-primary-900/30',  iconGlyph: 'text-primary-400' },
+    // NOTE: the chat fallback is deliberately NOT a top-level card. It is a
+    // rarely-touched safety net, so it lives behind a small gear on the main
+    // model card (see renderCapabilityHeaderTag / openChatFallbackModal) and
+    // is edited in a modal that reuses the same picker machinery.
     { id: 'vision',    icon: 'fa-eye',              editable: true,  needsModel: true,  titleKey: 'models_capability_vision',    descKey: 'models_capability_vision_desc',
       iconChip: 'bg-blue-50 dark:bg-blue-900/30',        iconGlyph: 'text-blue-500' },
     { id: 'image',     icon: 'fa-image',            editable: true,  needsModel: true,  titleKey: 'models_capability_image',     descKey: 'models_capability_image_desc',
@@ -9584,7 +9597,86 @@ function renderCapabilityCard(def) {
 }
 
 function renderCapabilityHeaderTag(def, cap) {
+    // The main model card carries a small gear that opens the chat-fallback
+    // modal. The fallback is a rarely-touched safety net, so it stays out of
+    // the card body; a badge appears next to the gear only while it is on, so
+    // an active fallback is still discoverable at a glance.
+    if (def.id === 'chat') {
+        const fb = modelsState.capabilities.chat_fallback || {};
+        // A single entry point that also reflects state: green + "on" label
+        // when the fallback is enabled, muted + "configure" label when off.
+        const on = !!fb.enabled;
+        const cls = on
+            ? 'text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50'
+            : 'text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-300 hover:bg-slate-100 dark:hover:bg-white/5';
+        const label = on ? t('models_fallback_badge_on') : t('models_fallback_config');
+        return `
+            <button type="button" onclick="openChatFallbackModal()"
+                    title="${escapeHtml(t('models_fallback_config_tip'))}"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs flex-shrink-0
+                           cursor-pointer transition-colors ${cls}">
+                <i class="fas fa-shield-halved text-[11px]"></i>${label}
+            </button>`;
+    }
     return '';
+}
+
+// The chat fallback is configured in a modal rather than as a top-level card
+// (it is a rarely-touched safety net). The modal body reuses the exact same
+// picker machinery as a capability card — `renderCapabilityBody` keys every
+// element off `cap-chat_fallback-*`, so we hand it a def with that id and let
+// the existing provider/model/toggle/save code run unchanged. No such card is
+// registered in MODELS_CAPABILITY_DEFS, so the ids never collide.
+const CHAT_FALLBACK_DEF = {
+    id: 'chat_fallback', editable: true, needsModel: true, toggleable: true,
+    titleKey: 'models_fallback_modal_title', descKey: 'models_capability_chat_fallback_desc',
+};
+
+// Resolve a capability def by id. The chat fallback is intentionally absent
+// from MODELS_CAPABILITY_DEFS (it renders in a modal, not as a card), so the
+// shared save/toggle handlers look it up here too.
+function capabilityDefById(capId) {
+    if (capId === 'chat_fallback') return CHAT_FALLBACK_DEF;
+    return MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
+}
+
+function openChatFallbackModal() {
+    closeChatFallbackModal(); // never stack two
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chat-fallback-modal-overlay';
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4';
+    overlay.innerHTML = `
+        <div class="w-full max-w-md rounded-2xl bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 shadow-xl">
+            <div class="flex items-start gap-3 px-6 pt-6 pb-4 border-b border-slate-100 dark:border-white/5">
+                <div class="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-shield-halved text-primary-500 text-sm"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_fallback_modal_title')}</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">${t('models_fallback_modal_desc')}</p>
+                </div>
+                <button type="button" onclick="closeChatFallbackModal()"
+                        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors flex-shrink-0">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4" data-cap-body="chat_fallback"></div>
+        </div>`;
+
+    // Close on backdrop click (but not when clicking inside the dialog).
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeChatFallbackModal(); });
+
+    document.body.appendChild(overlay);
+
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const body = overlay.querySelector('[data-cap-body="chat_fallback"]');
+    renderCapabilityBody(CHAT_FALLBACK_DEF, cap, body);
+}
+
+function closeChatFallbackModal() {
+    const overlay = document.getElementById('chat-fallback-modal-overlay');
+    if (overlay) overlay.remove();
 }
 
 function _searchProviderLabel(cap, providerId) {
@@ -10014,17 +10106,14 @@ function renderCapabilityBody(def, cap, body) {
     // below it is hidden while off, so a disabled fallback never looks like an
     // unconfigured one — it is simply not part of the setup.
     const toggleHtml = def.toggleable ? `
-        <div id="cap-${def.id}-toggle-wrap">
-            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${t('models_fallback_enable')}</label>
-            <div class="flex items-center gap-2.5">
-                <button type="button" id="cap-${def.id}-toggle" role="switch"
-                        aria-checked="${cap.enabled ? 'true' : 'false'}"
-                        onclick="toggleCapabilityEnabled('${def.id}')"
-                        class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${cap.enabled ? 'bg-primary-500' : 'bg-slate-200 dark:bg-slate-700'}">
-                    <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cap.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'}"></span>
-                </button>
-                <span class="text-xs text-slate-500 dark:text-slate-400">${cap.enabled ? t('models_fallback_enabled') : t('models_fallback_disabled')}</span>
-            </div>
+        <div id="cap-${def.id}-toggle-wrap" class="flex items-center justify-between gap-3">
+            <label class="text-sm font-medium text-slate-600 dark:text-slate-400">${t('models_fallback_enable')}</label>
+            <button type="button" id="cap-${def.id}-toggle" role="switch"
+                    aria-checked="${cap.enabled ? 'true' : 'false'}"
+                    onclick="toggleCapabilityEnabled('${def.id}')"
+                    class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${cap.enabled ? 'bg-primary-500' : 'bg-slate-200 dark:bg-slate-700'}">
+                <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cap.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'}"></span>
+            </button>
         </div>` : '';
 
     // Footer layout: a "hint slot" (filled later by renderCapabilityHints for
@@ -10045,8 +10134,11 @@ function renderCapabilityBody(def, cap, body) {
         </div>`;
 
     // Pickers live in their own wrapper so a disabled opt-in capability can
-    // hide them as a group (the toggle itself stays visible above).
-    const pickersHtml = `<div id="cap-${def.id}-pickers">${providerHtml + modelHtml + dimHtml}</div>`;
+    // hide them as a group (the toggle itself stays visible above). The
+    // wrapper carries its own `space-y-4` because the body's `space-y-4` only
+    // applies to *direct* children: without it the provider/model rows would
+    // collapse against each other (and against the label above them).
+    const pickersHtml = `<div id="cap-${def.id}-pickers" class="space-y-4">${providerHtml + modelHtml + dimHtml}</div>`;
     body.innerHTML = toggleHtml + pickersHtml + footer;
 
     // TTS: mount reply-mode above provider; defer off-mode toggle to the end.
@@ -10610,7 +10702,7 @@ function _setCapabilityPickersVisible(def, body, visible) {
 // Clicking the toggle flips the local switch. Persisting is a separate act
 // (Save), so a user can flip back without ever writing to config.
 function toggleCapabilityEnabled(capId) {
-    const def = MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
+    const def = capabilityDefById(capId);
     if (!def || !def.toggleable) return;
     const cap = modelsState.capabilities[capId] || {};
     cap.enabled = !cap.enabled;
@@ -10626,8 +10718,6 @@ function toggleCapabilityEnabled(capId) {
             knob.classList.toggle('translate-x-[18px]', cap.enabled);
             knob.classList.toggle('translate-x-[3px]', !cap.enabled);
         }
-        const label = btn.nextElementSibling;
-        if (label) label.textContent = cap.enabled ? t('models_fallback_enabled') : t('models_fallback_disabled');
     }
     // Same lookup the rest of the file uses for a capability body.
     const body = document.querySelector(`[data-cap-body="${capId}"]`);
@@ -10635,7 +10725,7 @@ function toggleCapabilityEnabled(capId) {
 }
 
 function saveCapability(capId) {
-    const def = MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
+    const def = capabilityDefById(capId);
     if (!def || !def.editable) return;
     // Search has its own form (strategy + provider, no model picker).
     if (capId === 'search') { saveSearchCapability(); return; }
@@ -10707,7 +10797,11 @@ function saveCapability(capId) {
         const cap = modelsState.capabilities[capId] || {};
         enabled = !!cap.enabled;
     }
-    _persistCapability(capId, provider, model, undefined, { voice, enabled });
+    // The chat fallback is edited inside a modal; close it once the save
+    // lands so the user drops straight back to the models page (already
+    // reloaded by _persistCapability, which refreshes the main-card badge).
+    const onAfterSuccess = capId === 'chat_fallback' ? closeChatFallbackModal : undefined;
+    _persistCapability(capId, provider, model, onAfterSuccess, { voice, enabled });
 }
 
 function _persistCapability(capId, provider, model, onAfterSuccess, extras) {

@@ -25,6 +25,8 @@ export interface CapabilityCardProps {
   status?: string
   onSave: (providerId: string, model: string) => void
   children?: React.ReactNode
+  // Optional trailing element on the card header (e.g. the chat-fallback gear).
+  action?: React.ReactNode
 }
 
 const CapabilityCard: React.FC<CapabilityCardProps> = ({
@@ -40,6 +42,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   status,
   onSave,
   children,
+  action,
 }) => {
   const [provider, setProvider] = useState(state.current_provider || '')
   const [model, setModel] = useState(state.current_model || '')
@@ -121,7 +124,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   const isAuto = allowAuto && !provider
 
   return (
-    <Card icon={<Icon size={16} />} title={title} subtitle={subtitle}>
+    <Card icon={<Icon size={16} />} title={title} subtitle={subtitle} action={action}>
       <div className="space-y-4">
         <Field label={t('models_provider')}>
           <Dropdown

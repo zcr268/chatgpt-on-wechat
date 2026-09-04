@@ -693,6 +693,16 @@ class AgentStreamExecutor:
         final_response = ""
         turn = 0
 
+        # Reset any fallback routing left over from a *previous* run: a new user
+        # message always starts fresh on the primary model. Within this run the
+        # fallback is deliberately sticky — once the primary has failed a turn
+        # for good we stay on the backup for the remaining steps instead of
+        # re-hitting a provider we already know is down every step (a sustained
+        # outage — dead key, IP block, regional downtime — would otherwise burn
+        # one wasted primary call per step). The primary gets a fresh chance on
+        # the next user message.
+        self._reset_model_fallback()
+
         # Respect a run id an outer scope already set (a subagent spawn or a
         # delegated task passes one down); only mint a fresh one when this turn
         # is the top of its own run. Writing through set_agent_run_id keeps the
@@ -712,11 +722,6 @@ class AgentStreamExecutor:
                 steering_updates = self._drain_steering()
                 if steering_updates:
                     self._append_steering(steering_updates)
-
-                # A fallback engaged by an earlier turn is scoped to that turn:
-                # every new turn gets a fresh attempt on the primary model, so a
-                # transient outage doesn't silently degrade the whole session.
-                self._reset_model_fallback()
 
                 turn += 1
                 logger.info(f"[Agent] Turn {turn}")

@@ -158,25 +158,27 @@ class AgentLLMModel(LLMModel):
         }
 
     def fallback_available(self) -> bool:
-        """Whether this turn can still switch to the fallback model."""
+        """Whether this run can still switch to the fallback model."""
         if self._fallback_model:
-            return False  # already on it; a second switch would ping-pong
+            return False  # already on it; the fallback is sticky for the run
         cfg = self.fallback_config()
         if not cfg["provider"] or not cfg["model"]:
             return False  # half-configured means "off"
         return self._fallback_depth < max(1, cfg["max_switches"])
 
     def use_fallback(self) -> bool:
-        """Switch the rest of this turn onto the configured fallback model.
+        """Switch the rest of this run onto the configured fallback model.
 
         Returns True when the switch happened. Called after the primary model
-        has failed a turn for good (retries exhausted), never mid-retry.
+        has failed a turn for good (retries exhausted), never mid-retry. The
+        switch is sticky: once engaged, every remaining step of the run runs on
+        the backup (``model`` returns ``_fallback_model``), so a sustained
+        outage isn't re-probed on the primary once per step. reset_fallback()
+        clears it at the start of the next run.
         """
         if not self.fallback_available():
             return False
         cfg = self.fallback_config()
-        # Remember where we were, so the next turn starts on the primary again.
-        self._pre_fallback_model = self.model
         self._fallback_provider = cfg["provider"]
         self._fallback_model = cfg["model"]
         self._fallback_depth += 1
@@ -191,17 +193,18 @@ class AgentLLMModel(LLMModel):
         return True
 
     def reset_fallback(self) -> None:
-        """Return to the primary model — call once a turn ends.
+        """Return to the primary model — call once at the start of a run.
 
-        Also clears the switch counter, so a later turn can fall back again.
-        The counter exists to bound a *single* turn; without resetting it a
-        session with max_switches=1 would get exactly one fallback ever.
+        A new user message always starts fresh on the primary; within a run the
+        fallback stays engaged (see use_fallback). Clearing the switch counter
+        here — not mid-run — is what lets the *next* run fall back again, while
+        bounding the current run to ``max_switches`` switches total.
         """
         if self._fallback_model is None:
             return
         self._fallback_model = None
         self._fallback_provider = None
-        # Back to zero: the next turn starts fresh on the primary model, and if
+        # Back to zero: the next run starts fresh on the primary model, and if
         # it fails again it is a new failure that earns a new switch.
         self._fallback_depth = 0
         self._bot = None
