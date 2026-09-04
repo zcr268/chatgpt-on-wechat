@@ -141,6 +141,8 @@ const I18N = {
         models_search_bocha_desc: '前往博查开放平台创建 API Key',
         models_search_anysearch_title: '配置 AnySearch API Key',
         models_search_anysearch_desc: '前往 anysearch.com 控制台创建 API Key。',
+        models_search_serply_title: '配置 Serply API Key',
+        models_search_serply_desc: '前往 serply.io 控制台创建 API Key。',
         models_search_edit_hint: '点击修改配置',
         models_unavailable: '不可用',
         models_set_via_env: '通过环境变量启用',
@@ -554,6 +556,8 @@ const I18N = {
         models_search_bocha_desc: '前往博查開放平臺建立 API Key',
         models_search_anysearch_title: '設定 AnySearch API Key',
         models_search_anysearch_desc: '前往 anysearch.com 控制台建立 API Key',
+        models_search_serply_title: '設定 Serply API Key',
+        models_search_serply_desc: '前往 serply.io 控制台建立 API Key',
         models_search_edit_hint: '點選修改設定',
         models_unavailable: '不可用',
         models_set_via_env: '透過環境變數啟用',
@@ -962,6 +966,8 @@ const I18N = {
         models_search_bocha_desc: 'Create a key at the Bocha open platform.',
         models_search_anysearch_title: 'Configure AnySearch API Key',
         models_search_anysearch_desc: 'Create a key at the AnySearch console (anysearch.com).',
+        models_search_serply_title: 'Configure Serply API Key',
+        models_search_serply_desc: 'Create a key at the Serply console (serply.io).',
         models_search_edit_hint: 'Click to edit',
         models_unavailable: 'unavailable',
         models_set_via_env: 'enable via environment variable',
@@ -9996,7 +10002,7 @@ function openSearchAddProviderPicker(missingProviders) {
 }
 
 function _launchSearchProviderConfig(providerId, providerMeta) {
-    if (providerId === 'bocha' || providerId === 'anysearch') {
+    if (providerId === 'bocha' || providerId === 'anysearch' || providerId === 'serply') {
         openSearchKeyModal(providerId, providerMeta);
     } else {
         openVendorModal(providerId, () => loadModelsView({ preserveScroll: true }));
