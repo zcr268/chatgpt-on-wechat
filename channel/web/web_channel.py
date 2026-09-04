@@ -3992,7 +3992,7 @@ class ModelsHandler:
 
     # Canonical search provider order. Mirrors PROVIDER_ORDER in
     # agent/tools/web_search/web_search.py — keep them in sync.
-    _SEARCH_PROVIDERS = ("bocha", "qianfan", "zhipu", "linkai","anysearch")
+    _SEARCH_PROVIDERS = ("bocha", "qianfan", "zhipu", "linkai", "anysearch", "serply")
 
     _SEARCH_PROVIDER_LABELS = {
         "bocha":   {"zh": "博查", "en": "Bocha"},
@@ -4000,6 +4000,7 @@ class ModelsHandler:
         "qianfan": {"zh": "百度千帆", "en": "ERNIE"},
         "linkai":  {"zh": "LinkAI", "en": "LinkAI"},
         "anysearch": {"zh": "AnySearch", "en": "AnySearch"},
+        "serply":  {"zh": "Serply", "en": "Serply"},
     }
 
     @classmethod
@@ -4020,6 +4021,11 @@ class ModelsHandler:
             block = tools_cfg.get("web_search") or {} if isinstance(tools_cfg, dict) else {}
             return (block.get("anysearch_api_key") if isinstance(block, dict) else "") or os.environ.get(
                 "ANYSEARCH_API_KEY", "")
+        if provider == "serply":
+            tools_cfg = local_config.get("tools") or {}
+            block = tools_cfg.get("web_search") or {} if isinstance(tools_cfg, dict) else {}
+            return (block.get("serply_api_key") if isinstance(block, dict) else "") or os.environ.get(
+                "SERPLY_API_KEY", "")
         return ""
 
     @classmethod
@@ -4045,7 +4051,7 @@ class ModelsHandler:
                 # bocha owns its key under tools.web_search; the other three
                 # piggy-back on a model-vendor credential. Frontend uses
                 # this hint to decide which credential editor to surface.
-                "needs_dedicated_key": pid in ("bocha", "anysearch"),
+                "needs_dedicated_key": pid in ("bocha", "anysearch", "serply"),
                 "api_key_masked": ConfigHandler._mask_key(raw_key) if raw_key else "",
             })
             if ok:
@@ -4770,11 +4776,11 @@ class ModelsHandler:
     def _handle_set_search_credential(self, data: dict) -> str:
         """Persist a dedicated search-provider key under tools.web_search.
 
-        bocha and anysearch own their keys here; zhipu/qianfan/linkai reuse
-        model-vendor credentials and go through set_provider instead.
+        bocha, anysearch and serply own their keys here; zhipu/qianfan/linkai
+        reuse model-vendor credentials and go through set_provider instead.
         """
         provider = (data.get("provider") or "bocha").strip().lower()
-        if provider not in ("bocha", "anysearch"):
+        if provider not in ("bocha", "anysearch", "serply"):
             return json.dumps({"status": "error", "message": f"unsupported search provider: {provider!r}"})
         key_field = f"{provider}_api_key"
         api_key = (data.get("api_key") or "").strip() if isinstance(data.get("api_key"), str) else ""

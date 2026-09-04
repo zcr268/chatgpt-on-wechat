@@ -3,7 +3,7 @@ title: web_search - Web 検索
 description: インターネットからリアルタイム情報を検索。複数の検索プロバイダーに対応
 ---
 
-インターネットからリアルタイム情報、ニュース、リサーチなどを検索します。Bocha、百度 Qianfan、智谱（Zhipu）、LinkAI、AnySearch の 5 つのバックエンドに対応しており、いずれか 1 社を設定すれば利用可能です。
+インターネットからリアルタイム情報、ニュース、リサーチなどを検索します。Bocha、百度 Qianfan、智谱（Zhipu）、LinkAI、AnySearch、Serply の 6 つのバックエンドに対応しており、いずれか 1 社を設定すれば利用可能です。
 
 <Tip>
   [Web コンソール](/ja/channels/web) の「モデル管理 → 検索」パネルから、プロバイダーと戦略を可視化して設定するのが推奨です。設定ファイルを手動で編集する必要はありません。
@@ -18,7 +18,9 @@ description: インターネットからリアルタイム情報を検索。複�
 | 智谱 Zhipu | `zhipu_ai_api_key` を再利用 | [Zhipu Open Platform](https://docs.bigmodel.cn/cn/guide/tools/web-search) |
 | LinkAI | `linkai_api_key` を再利用 | [LinkAI コンソール](https://link-ai.tech/console/interface) |
 | AnySearch | `anysearch_api_key` を再利用 | [AnySearch Open Platform](https://anysearch.com/) |
-Bocha、AnySearch のみ独立した `api_key` が必要ですが、他の 3 社は対応するモデルの API Key をそのまま再利用するため、モデルを設定すれば検索機能も同時に利用可能になります。
+| Serply | `tools.web_search.serply_api_key` | [Serply](https://serply.io)（[ドキュメント](https://serply.io/docs)） |
+
+Bocha、AnySearch、Serply のみ独立した `api_key` が必要ですが、他の 3 社は対応するモデルの API Key をそのまま再利用するため、モデルを設定すれば検索機能も同時に利用可能になります。
 
 ## ルーティング戦略
 
@@ -33,7 +35,7 @@ Bocha、AnySearch のみ独立した `api_key` が必要ですが、他の 3 社
 }
 ```
 
-- `auto`（デフォルト）：Agent が設定済みのプロバイダーから自動的に選択し、1 回のタスク内で複数回呼び出し、異なるプロバイダーを切り替えてより包括的な結果を取得できます。未指定の場合は `bocha → qianfan → zhipu → linkai` の順でフォールバックします。
+- `auto`（デフォルト）：Agent が設定済みのプロバイダーから自動的に選択し、1 回のタスク内で複数回呼び出し、異なるプロバイダーを切り替えてより包括的な結果を取得できます。未指定の場合は `bocha → qianfan → zhipu → linkai → anysearch → serply` の順でフォールバックします。
 - `fixed`：`provider` で指定したプロバイダーに固定。該当プロバイダーの認証情報が欠けている場合は自動的に auto の順序にフォールバックします。
 
 ## ツールパラメータ
@@ -47,5 +49,5 @@ Bocha、AnySearch のみ独立した `api_key` が必要ですが、他の 3 社
 | `provider` | string | いいえ | `auto` 戦略で複数プロバイダーを設定している場合に表示。単回のプロバイダー切り替えに使用 |
 
 <Note>
-  5 社の認証情報がいずれも未設定の場合、このツールは Agent に登録されません。
+  6 社の認証情報がいずれも未設定の場合、このツールは Agent に登録されません。
 </Note>

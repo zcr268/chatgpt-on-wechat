@@ -85,6 +85,24 @@ class TestProviderOrder(unittest.TestCase):
             ("bocha", "qianfan", "zhipu", "linkai", "anysearch", "serply"),
         )
 
+    def test_web_console_provider_list_stays_in_sync(self):
+        """The web console keeps its own copy of the provider order plus the
+        set of providers that hold a dedicated key under tools.web_search.
+        Both must track the tool module so a new backend shows up in the
+        Search panel with the right credential editor."""
+        from channel.web.web_channel import ModelsHandler
+
+        self.assertEqual(ModelsHandler._SEARCH_PROVIDERS, web_search_module.PROVIDER_ORDER)
+        for pid in web_search_module.PROVIDER_ORDER:
+            self.assertIn(pid, ModelsHandler._SEARCH_PROVIDER_LABELS)
+
+        cfg = {"tools": {"web_search": {"serply_api_key": "console-key"}}}
+        self.assertEqual(ModelsHandler._search_provider_key("serply", cfg), "console-key")
+        with patch.dict(os.environ, {"SERPLY_API_KEY": "env-key"}):
+            self.assertEqual(ModelsHandler._search_provider_key("serply", {}), "env-key")
+        with patch.dict(os.environ, {"SERPLY_API_KEY": ""}):
+            self.assertEqual(ModelsHandler._search_provider_key("serply", {}), "")
+
 
 class TestAnySearchBackend(unittest.TestCase):
     """Behaviour of WebSearch._search_anysearch with a stubbed HTTP layer."""
