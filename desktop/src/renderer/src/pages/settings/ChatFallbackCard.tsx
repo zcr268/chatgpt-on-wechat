@@ -87,7 +87,6 @@ const ChatFallbackModal: React.FC<ChatFallbackModalProps> = ({
     (state?.current_provider || '').startsWith('custom:') ? state?.current_model || '' : ''
   )
   const [showCustom, setShowCustom] = useState(false)
-  const [maxSwitches, setMaxSwitches] = useState(String(state?.max_switches ?? 1))
 
   // Reset the form to the persisted state each time the modal is (re)opened so
   // a cancelled edit never leaks into the next open.
@@ -98,7 +97,6 @@ const ChatFallbackModal: React.FC<ChatFallbackModalProps> = ({
     setModel(state?.current_model || '')
     setCustomModel((state?.current_provider || '').startsWith('custom:') ? state?.current_model || '' : '')
     setShowCustom(false)
-    setMaxSwitches(String(state?.max_switches ?? 1))
   }, [open, state])
 
   const isCustomProvider = provider.startsWith('custom:')
@@ -166,7 +164,9 @@ const ChatFallbackModal: React.FC<ChatFallbackModalProps> = ({
                 providerId: provider,
                 model: finalModel,
                 enabled,
-                maxSwitches: Math.max(1, Math.min(5, parseInt(maxSwitches || '1', 10) || 1)),
+                // The fallback is sticky for the whole run, so a single switch
+                // is all it takes; no user-facing knob needed.
+                maxSwitches: 1,
               })
             }
           >
@@ -214,15 +214,6 @@ const ChatFallbackModal: React.FC<ChatFallbackModalProps> = ({
                 disabled={!provider}
               />
             )}
-          </Field>
-
-          <Field label={t('models_chat_fallback_max_switches')} hint={t('models_chat_fallback_max_switches_hint')}>
-            <TextInput
-              className="font-mono"
-              value={maxSwitches}
-              onChange={(e) => setMaxSwitches(e.target.value.replace(/[^0-9]/g, ''))}
-              placeholder="1"
-            />
           </Field>
 
           {incomplete && <p className="text-xs text-danger">{t('models_chat_fallback_incomplete')}</p>}

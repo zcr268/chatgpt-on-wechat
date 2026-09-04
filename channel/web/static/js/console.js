@@ -8335,6 +8335,17 @@ let cfgProviderValue = '';
 let cfgModelValue = '';
 let cfgReasoningEffortValue = 'high';
 let configReasoningByModel = {};
+// Remembers the custom model name the user typed per provider, so switching
+// away from a provider (which rebuilds its model dropdown) and back does not
+// lose an unsaved custom model. Keyed by provider id.
+let configCustomModelByProvider = {};
+// Same idea for the Models tab capability cards: remember the custom model the
+// user typed per (capability, provider) and the provider active before the
+// last switch, so switching vendors and back restores the custom model.
+// Keyed by `${capabilityId}:${providerId}` -> custom model string.
+let capabilityCustomModelMemory = {};
+// Keyed by capabilityId -> provider id active before the current switch.
+let capabilityLastProviderId = {};
 
 // --- Custom dropdown helper ---
 function initDropdown(el, options, selectedValue, onChange, opts) {
@@ -8496,7 +8507,14 @@ function initConfigView(data) {
     }
     const customModelEl = document.getElementById('cfg-model-custom');
     if (customModelEl && !customModelEl._cfgReasoningBound) {
-        customModelEl.addEventListener('input', syncReasoningEffortOptions);
+        customModelEl.addEventListener('input', () => {
+            // Remember the typed custom model for the current provider so a
+            // provider switch and switch-back doesn't lose it.
+            if (cfgModelValue === '__custom__') {
+                configCustomModelByProvider[cfgProviderValue] = customModelEl.value.trim();
+            }
+            syncReasoningEffortOptions();
+        });
         customModelEl._cfgReasoningBound = true;
     }
     syncReasoningEffortOptions();
@@ -8579,7 +8597,17 @@ function onProviderChange(pid) {
     const modelOpts = (p.models || []).map(m => ({ value: m, label: m }));
     modelOpts.push({ value: '__custom__', label: t('config_custom_option') });
 
-    initDropdown(modelEl, modelOpts, modelOpts[0] ? modelOpts[0].value : '', onModelSelectChange);
+    // Restore a custom model the user typed for this provider earlier in the
+    // session (kept in configCustomModelByProvider). Fall back to the first
+    // preset. For a custom provider with no preset models the picker only has
+    // the "__custom__" entry, so a remembered value is the only way its model
+    // survives a provider switch.
+    const rememberedCustom = configCustomModelByProvider[cfgProviderValue];
+    const initialModelValue = rememberedCustom
+        ? '__custom__'
+        : (modelOpts[0] ? modelOpts[0].value : '');
+
+    initDropdown(modelEl, modelOpts, initialModelValue, onModelSelectChange);
 
     // API Key
     const keyField = p.api_key_field;
@@ -8641,19 +8669,27 @@ function onProviderChange(pid) {
         apiBaseInput.placeholder = 'https://...';
     }
 
-    onModelSelectChange(modelOpts[0] ? modelOpts[0].value : '');
+    onModelSelectChange(initialModelValue, { restoredCustom: rememberedCustom });
     syncReasoningEffortOptions();
 }
 
-function onModelSelectChange(val) {
+function onModelSelectChange(val, opts) {
+    opts = opts || {};
     cfgModelValue = val || getDropdownValue(document.getElementById('cfg-model-select'));
     const customWrap = document.getElementById('cfg-model-custom-wrap');
+    const customInput = document.getElementById('cfg-model-custom');
     if (cfgModelValue === '__custom__') {
         customWrap.classList.remove('hidden');
-        document.getElementById('cfg-model-custom').focus();
+        // When switching back to a provider we restore the remembered value;
+        // otherwise this is a fresh pick of "custom" and we focus for input.
+        if (opts.restoredCustom) {
+            customInput.value = opts.restoredCustom;
+        } else {
+            customInput.focus();
+        }
     } else {
         customWrap.classList.add('hidden');
-        document.getElementById('cfg-model-custom').value = '';
+        customInput.value = '';
     }
     syncReasoningEffortOptions();
 }
@@ -8676,6 +8712,8 @@ function syncModelSelection(model) {
         initDropdown(modelEl, modelOpts, '__custom__', onModelSelectChange);
         document.getElementById('cfg-model-custom-wrap').classList.remove('hidden');
         document.getElementById('cfg-model-custom').value = model;
+        // Seed the per-provider memory so switching away and back keeps it.
+        if (model) configCustomModelByProvider[cfgProviderValue] = model;
     }
     syncReasoningEffortOptions();
 }
@@ -8941,6 +8979,10 @@ function switchConfigTab(tab) {
         document.getElementById(`config-panel-${name}`)?.classList.toggle('hidden', name !== tab);
     });
     if (tab === 'models') loadModelsView();
+    // Re-pull /config when returning to Basic: a provider added on the Models
+    // tab must show up in the basic main-model provider picker without a manual
+    // page refresh. loadConfigView re-renders from the fresh provider list.
+    if (tab === 'basic') loadConfigView();
 }
 
 // =====================================================================
@@ -9566,8 +9608,20 @@ function renderVendorsSection() {
                 </button>
             </div>`;
     } else {
+        // Existing vendors as chips, plus a trailing "add" tile so a new
+        // built-in or custom provider can still be added once at least one is
+        // already configured (otherwise the add entry only showed on the empty
+        // state). openVendorModal('') opens the picker → built-in or custom.
+        const addTile = `
+            <button onclick="openVendorModal('')"
+                    class="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed
+                           border-slate-300 dark:border-white/15 text-slate-500 dark:text-slate-400
+                           hover:border-primary-400 hover:text-primary-500 cursor-pointer transition-colors text-sm">
+                <i class="fas fa-plus text-[11px]"></i>${t('models_add_vendor')}
+            </button>`;
         body = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             ${configured.map(renderVendorChip).join('')}
+            ${addTile}
         </div>`;
     }
 
@@ -10266,6 +10320,20 @@ function renderCapabilityBody(def, cap, body) {
             dropdownPlaceholder = { placeholder: t('models_pick_provider') };
         }
     }
+    // Seed the "provider active before the last switch" tracker so the very
+    // first vendor switch can still stash the initial provider's custom model.
+    capabilityLastProviderId[def.id] = initialProviderValue;
+    // If the initially selected model is a custom one, remember it against the
+    // initial provider so a switch-away-and-back keeps it too.
+    if (initialProviderValue && cap.current_model) {
+        const provList = (cap.provider_models && cap.provider_models[initialProviderValue])
+            || (initialProviderValue.startsWith('custom:') && cap.provider_models && cap.provider_models['custom'])
+            || [];
+        const presetValues = provList.map(e => (typeof e === 'string' ? e : e.value));
+        if (!presetValues.includes(cap.current_model)) {
+            capabilityCustomModelMemory[`${def.id}:${initialProviderValue}`] = cap.current_model;
+        }
+    }
     initDropdown(
         provDd,
         ddOpts,
@@ -10714,11 +10782,28 @@ function rebuildCapabilityVoiceDropdown(providerId, selectedVoice, scope, modelI
 
 function onCapabilityProviderChange(def, providerId, scope) {
     if (def.needsModel) {
+        // Before rebuilding the model picker for the newly picked provider,
+        // stash the custom model the user had typed under the *previous*
+        // provider, so switching back to it later restores that value.
+        const prevProvider = capabilityLastProviderId[def.id];
+        if (prevProvider && prevProvider !== providerId) {
+            const prevDd = document.getElementById(`cap-${def.id}-model`);
+            const prevInput = document.getElementById(`cap-${def.id}-model-custom`);
+            if (prevDd && prevInput && getDropdownValue(prevDd) === '__custom__') {
+                const typed = prevInput.value.trim();
+                if (typed) capabilityCustomModelMemory[`${def.id}:${prevProvider}`] = typed;
+            }
+        }
+        capabilityLastProviderId[def.id] = providerId;
+
         // Embedding: hide model picker when no provider is selected.
         const showModel = def.id === 'embedding' ? providerId !== '' :
             !(providerId === '' && capabilitySupportsAuto(def.id));
         if (showModel) {
-            rebuildCapabilityModelDropdown(def, providerId, '', scope);
+            // Restore a remembered custom model for this provider (if any) so
+            // switching vendors and back does not drop it.
+            const remembered = capabilityCustomModelMemory[`${def.id}:${providerId}`] || '';
+            rebuildCapabilityModelDropdown(def, providerId, remembered, scope);
         }
         setCapabilityModelPickerVisible(def, showModel, scope);
     }
