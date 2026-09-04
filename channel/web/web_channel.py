@@ -3427,7 +3427,11 @@ class ModelsHandler:
             name = p.get("name") or pid
             raw_key = p.get("api_key") or ""
             raw_base = p.get("api_base") or ""
-            configured = cls._is_real_key(raw_key)
+            # A custom (OpenAI-compatible) provider's API key is optional — some
+            # self-hosted / gateway endpoints need no auth. Treat the provider
+            # as configured once it has an api_base, so a keyless-but-valid
+            # endpoint isn't shown as an unconfigured (greyed-out) vendor.
+            configured = bool(raw_base) or cls._is_real_key(raw_key)
             cards.append({
                 "id": f"custom:{pid}",
                 "label": {"zh": name, "en": name},
@@ -3442,7 +3446,7 @@ class ModelsHandler:
                 # names are intentionally null.
                 "api_key_field": None,
                 "api_base_field": None,
-                "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
+                "api_key_masked": ConfigHandler._mask_key(raw_key) if cls._is_real_key(raw_key) else "",
                 "api_base": raw_base,
                 "api_base_default": "",
                 "api_base_placeholder": meta.get("api_base_placeholder") or "",
@@ -4394,8 +4398,15 @@ class ModelsHandler:
             existing["name"] = name
             if api_base:
                 existing["api_base"] = api_base
-            if api_key:
-                existing["api_key"] = api_key
+            # The API key is optional for custom providers. Distinguish "field
+            # omitted => keep existing" from "explicit empty => clear it" by
+            # presence of the key, mirroring the model handling below. A masked,
+            # untouched value is omitted by the UI, so it never reaches here.
+            if "api_key" in data:
+                if api_key:
+                    existing["api_key"] = api_key
+                else:
+                    existing.pop("api_key", None)
             # Only touch model when explicitly provided in the payload; an
             # explicit empty string clears it, a missing key keeps it (the
             # UI modal no longer sends model, so manual config survives edits).

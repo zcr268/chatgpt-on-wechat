@@ -11290,18 +11290,25 @@ function saveCustomProviderModal() {
         return;
     }
 
-    // Untouched masked key => no change (omit from payload).
-    let apiKey = keyInput.value.trim();
-    if (keyInput.dataset.masked === '1' && apiKey === (keyInput.dataset.maskedVal || '')) {
-        apiKey = '';
-    }
+    // Key handling (the custom provider's key is optional):
+    //  - masked + untouched  => keep existing, omit from payload
+    //  - non-empty typed value => set it
+    //  - explicitly cleared on edit => send "" so the backend clears it
+    const untouchedMasked =
+        keyInput.dataset.masked === '1' && keyInput.value.trim() === (keyInput.dataset.maskedVal || '');
+    const apiKey = untouchedMasked ? '' : keyInput.value.trim();
 
     const payload = {
         action: 'set_custom_provider',
         name: name,
         api_base: apiBase,
     };
-    if (apiKey) payload.api_key = apiKey;
+    if (untouchedMasked) {
+        // omit api_key entirely => backend keeps the stored key
+    } else {
+        // Send the value (possibly "") so an explicit clear is honored.
+        payload.api_key = apiKey;
+    }
     if (editing) payload.id = customProviderModalState.editId;
 
     const btn = document.getElementById('custom-provider-modal-save');

@@ -535,7 +535,10 @@ const CustomProviderModal: React.FC<{
         api_base: apiBase.trim(),
       }
       if (editing) payload.id = editing.custom_id
-      if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
+      // The custom provider key is optional. Only touch it when the user
+      // edited the field (keyDirty) and it isn't the masked placeholder; send
+      // the value even when empty so an explicit clear is honored server-side.
+      if (keyDirty && !MASK_RE.test(apiKey)) payload.api_key = apiKey.trim()
       await apiClient.modelsAction(payload)
       await onSaved()
       onClose()
