@@ -326,7 +326,12 @@ class MemoryManager:
             rel_path = str(file_path.relative_to(workspace_dir_path))
             if self.storage.get_file_hash(rel_path) == file_hash:
                 continue
-            chunks = self.chunker.chunk_text(content)
+            # Markdown files (memory + knowledge) get structure-aware chunking;
+            # anything else (rare) falls back to the plain char splitter.
+            if file_path.suffix.lower() == '.md':
+                chunks = self.chunker.chunk_markdown(content)
+            else:
+                chunks = self.chunker.chunk_text(content)
             if not chunks:
                 continue
             pending.append({
