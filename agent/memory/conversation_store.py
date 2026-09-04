@@ -442,6 +442,7 @@ class ConversationStore:
         self,
         session_id: str,
         max_turns: int = 30,
+        with_authors: bool = False,
     ) -> List[Dict[str, Any]]:
         """
         Load the most recent messages for a session, for injection into the LLM.
@@ -456,6 +457,11 @@ class ConversationStore:
         Args:
             session_id: Unique session identifier.
             max_turns: Maximum number of visible user-assistant turns to keep.
+            with_authors: Also report which Agent wrote each message, as an
+                ``agent_id`` key. Off by default because the answer is only
+                ever "the one Agent in this conversation"; a shared transcript
+                is where it matters, and where an Agent reading back its own
+                history would otherwise take a colleague's work for its own.
 
         Returns:
             Chronologically ordered list of message dicts (role, content).
@@ -470,9 +476,10 @@ class ConversationStore:
                 ).fetchone()
                 ctx_start = ctx_row[0] if ctx_row else 0
 
+                columns = "seq, role, content" + (", extras" if with_authors else "")
                 rows = conn.execute(
-                    """
-                    SELECT seq, role, content
+                    f"""
+                    SELECT {columns}
                     FROM messages
                     WHERE session_id = ? AND seq >= ?
                     ORDER BY seq DESC
@@ -485,8 +492,10 @@ class ConversationStore:
         if not rows:
             return []
 
+        authors = {row[0]: self._author_of(row[3]) for row in rows} if with_authors else {}
+
         visible_turn_seqs: List[int] = []
-        for seq, role, raw_content in rows:
+        for seq, role, raw_content, *_ in rows:
             if role != "user":
                 continue
             try:
@@ -502,7 +511,7 @@ class ConversationStore:
             cutoff_seq = visible_turn_seqs[max_turns - 1]
 
         result = []
-        for seq, role, raw_content in reversed(rows):
+        for seq, role, raw_content, *_ in reversed(rows):
             if cutoff_seq is not None and seq < cutoff_seq:
                 continue
             try:
@@ -512,8 +521,29 @@ class ConversationStore:
             # Strip thinking blocks — they are stored for UI display only
             if role == "assistant" and isinstance(content, list):
                 content = [b for b in content if b.get("type") != "thinking"]
-            result.append({"role": role, "content": content})
+            message = {"role": role, "content": content}
+            if authors.get(seq):
+                message["agent_id"] = authors[seq]
+            result.append(message)
         return result
+
+    @staticmethod
+    def _author_of(raw_extras: Any) -> str:
+        """The Agent stamped on a stored message, if any.
+
+        Absent on every message written by a conversation's own Agent, which is
+        all of them until somebody else is invited in.
+        """
+        if not raw_extras:
+            return ""
+        try:
+            extras = json.loads(raw_extras) if isinstance(raw_extras, str) else raw_extras
+        except ValueError:
+            return ""
+        if not isinstance(extras, dict):
+            return ""
+        agent_id = extras.get("agent_id")
+        return agent_id if isinstance(agent_id, str) else ""
 
     def append_messages(
         self,

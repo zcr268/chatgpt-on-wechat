@@ -14,7 +14,70 @@ const I18N = {
     zh: {
         console: '控制台',
         nav_chat: '对话', nav_manage: '管理', nav_monitor: '监控',
-        menu_chat: '对话', menu_config: '配置', menu_skills: '技能',
+        menu_chat: '对话', menu_agents: '智能体', menu_config: '配置', menu_skills: '技能',
+        agents_page_title: '智能体团队', agents_page_desc: '管理团队中的智能体成员',
+        agents_create: '创建智能体',
+        agents_name_placeholder: '智能体名称',
+        agents_name_required: '请填写名称',
+        agents_stale: '列表已更新，请刷新后重试',
+        agents_id_placeholder: '留空则自动生成',
+        agents_id_tip: '智能体的唯一标识，创建后不可修改。仅支持小写英文、数字和连字符（-），如 coding-agent。留空则根据名称自动生成。',
+        agents_id_invalid: 'ID 需以字母或数字开头，仅支持字母、数字、下划线和连字符，最长 64 位',
+        agents_avatar: '头像',
+        agents_tab_profile: '概况',
+        agents_tab_skills: '能力',
+        agents_tab_files: '核心文件',
+        agents_core_edit: '编辑',
+        agents_core_preview: '预览',
+        agents_core_file_agent: '智能体设定',
+        agents_core_file_user: '用户信息',
+        agents_core_file_rule: '工作空间规则',
+        agents_core_file_memory: '长期记忆',
+        agents_default: '默认',
+        agents_archived: '已归档',
+        agents_chat: '开始对话',
+        agents_delete: '删除',
+        agents_delete_title: '删除智能体',
+        agents_delete_confirm: '确定删除智能体「{name}」吗？其工作空间和会话将一并移除，且无法恢复。',
+        agents_pick_hint: '选择智能体',
+        agents_clone_label: '从已有智能体复制',
+        agents_clone_hint: '复制其配置、技能与知识作为起点',
+        agents_avatar_upload: '上传图片',
+        agents_clone_none: '空白',
+        agents_clone_from: '{name}',
+        agents_name: '名称',
+        agents_saved: '已保存',
+        agents_save_failed: '保存失败',
+        agents_no_desc: '暂无职责',
+        agents_description: '职责',
+        agents_description_placeholder: '该智能体负责哪些工作、在什么场景被使用',
+        agents_description_hint: '用于多智能体协作时的任务分配',
+        agents_model: '默认模型',
+        agents_model_follows_global: '跟随全局配置',
+        agents_model_default_hint: '默认使用主模型，在「模型配置」中修改。',
+        agents_skills_all: '使用全部已安装技能',
+        agents_skills_pick: '只启用勾选的技能',
+        agents_knowledge: '知识库',
+        agents_knowledge_shared: '共享',
+        agents_knowledge_own: '独立',
+        agents_knowledge_hint: '共享：与团队读写同一个知识库\n独立：拥有专属知识库，互不影响',
+        agents_knowledge_working: '处理中…',
+        agents_knowledge_failed: '切换失败',
+        agents_empty: '还没有智能体。创建一个，开始组团队。',
+        agents_select_hint: '从左侧选择一个智能体进行配置',
+        agents_pick_tip: '切换当前智能体',
+        team_members: '当前会话成员',
+        team_invite: '添加到当前会话',
+        team_remove: '移出这个会话',
+        composer_agent_owner: '主',
+        channel_bound_agent: '绑定智能体',
+        channel_bound_default: '默认',
+        channel_bound_agent_hint: '第一个为默认智能体，负责接收消息并可委派给其他成员',
+        channel_team_none: '未选择',
+        channel_team_no_candidates: '暂无可选的智能体',
+        settings_tab_basic: '基础配置',
+        settings_tab_models: '模型配置',
+        knowledge_shared_hint: '知识库默认全员共享，在侧栏「知识」查看和编辑。',
         menu_memory: '记忆', menu_knowledge: '知识', menu_channels: '通道', menu_tasks: '定时',
         menu_logs: '日志',
         models_title: '模型管理',
@@ -43,6 +106,14 @@ const I18N = {
         models_custom_add_title: '添加自定义厂商',
         models_capability_chat: '主模型',
         models_capability_chat_desc: '用于基础对话和 Agent 推理',
+        models_capability_chat_fallback: '主模型兜底',
+        models_capability_chat_fallback_desc: '仅在主模型彻底失败（重试耗尽）后接管',
+        models_fallback_enable: '启用兜底模型',
+        models_fallback_config: '兜底模型',
+        models_fallback_config_tip: '配置主模型兜底：主模型彻底失败后接管',
+        models_fallback_modal_title: '主模型兜底',
+        models_fallback_modal_desc: '当主模型重试次数用尽仍然失败时，自动切换到兜底模型完成本轮回复',
+        models_fallback_badge_on: '兜底已启用',
         models_capability_vision: '图像理解',
         models_capability_vision_desc: '识别图片内容，用于图像识别工具',
         models_capability_image: '图像生成',
@@ -68,6 +139,10 @@ const I18N = {
         models_search_add_desc: '选择一个搜索厂商进行配置',
         models_search_bocha_title: '配置博查 API Key',
         models_search_bocha_desc: '前往博查开放平台创建 API Key',
+        models_search_anysearch_title: '配置 AnySearch API Key',
+        models_search_anysearch_desc: '前往 anysearch.com 控制台创建 API Key。',
+        models_search_serply_title: '配置 Serply API Key',
+        models_search_serply_desc: '前往 serply.io 控制台创建 API Key。',
         models_search_edit_hint: '点击修改配置',
         models_unavailable: '不可用',
         models_set_via_env: '通过环境变量启用',
@@ -129,7 +204,7 @@ const I18N = {
         steer_active: '引导当前任务',
         slash_logs: '查看最近日志',
         slash_version: '查看版本',
-        input_placeholder: '输入消息，/ 使用指令，@ 引用文件',
+        input_placeholder: '输入消息，/ 使用指令，@ 引用智能体或文件',
         config_title: '配置管理', config_desc: '管理模型和 Agent 配置',
         config_model: '模型配置', config_agent: 'Agent 配置',
         config_language: '语言', config_language_hint: '界面展示、命令文案、系统提示词等使用的语言（与右上角切换同步）',
@@ -140,8 +215,6 @@ const I18N = {
         notify_task_done: '任务完成',
         notify_task_error: '任务失败',
         config_model_advanced: '高级配置',
-        settings_tab_basic: '基础配置',
-        settings_tab_models: '模型配置',
         config_channel: '通道配置',
         config_agent_enabled: 'Agent 模式',
         config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '对话中 Agent 能输入的最大 Token 长度，超过后会智能压缩处理',
@@ -172,6 +245,10 @@ const I18N = {
         tools_section_title: '内置工具', tools_loading: '加载工具中...',
         skills_section_title: '技能', skill_enable: '启用', skill_disable: '禁用',
         skill_toggle_error: '操作失败，请稍后再试',
+        skill_open_hint: '点击查看技能内容',
+        skill_back: '返回列表',
+        skill_load_failed: '读取技能内容失败',
+        skill_builtin_readonly: '内置技能不可编辑（重启会覆盖）',
         memory_title: '记忆管理', memory_desc: '查看 Agent 记忆文件和内容',
         memory_tab_files: '记忆文件', memory_tab_dreams: '自主进化',
         memory_loading: '加载记忆文件中...', memory_loading_desc: '记忆文件将显示在此处',
@@ -244,10 +321,14 @@ const I18N = {
         logs_title: '日志', logs_desc: '实时日志输出 (run.log)',
         logs_live: '实时', logs_coming_msg: '日志流即将在此提供。将连接 run.log 实现类似 tail -f 的实时输出。',
         new_chat: '新对话',
+        new_team_chat: '多智能体对话',
+        new_team_chat_hint: '选择参与本次对话的智能体，第一个为会话的默认智能体。',
+        new_team_chat_owner: '默认',
+        new_team_chat_start: '开始对话',
+        new_team_chat_min: '至少选择两个智能体',
         session_history: '历史会话',
         ws_toggle: '工作空间', ws_tab_preview: '预览', ws_tab_files: '文件',
         ws_default_workspace: '默认空间', ws_sel_title: '选择工作空间',
-        ws_sel_system_space: '系统空间', ws_sel_project_space: '项目空间',
         ws_sel_default_hint: '使用默认工作空间（~/cow）', ws_sel_recents: '最近使用',
         ws_sel_open: '打开项目…', ws_sel_new: '新建项目', ws_sel_new_placeholder: '项目名称',
         ws_sel_create: '创建', ws_sel_up: '上一级',
@@ -264,13 +345,25 @@ const I18N = {
         ws_no_inline_preview: '该类型不支持内嵌预览',
         ws_empty_dir: '空目录', ws_no_results: '没有匹配的文件',
         ws_truncated: '文件过多，仅显示部分',
+        ws_edit: '编辑', ws_edit_save: '保存 (Ctrl+S)', ws_edit_cancel: '退出编辑',
+        ws_edit_saved: '已保存',
+        ws_edit_load_failed: '打开编辑器失败',
+        ws_edit_save_failed: '保存失败',
+        ws_edit_too_large: '文件过大，无法在面板中编辑',
+        ws_edit_unsupported: '该类型不支持编辑',
+        ws_edit_encoding: '该文件不是 UTF-8 编码，编辑会损坏内容',
+        ws_edit_conflict_title: '文件已被改动',
+        ws_edit_conflict_msg: '这个文件在你编辑期间被改动过（可能是 Agent 写入的）。覆盖保存会丢弃磁盘上的新内容。',
+        ws_edit_overwrite: '覆盖保存',
+        ws_edit_discard_title: '放弃未保存的修改？',
+        ws_edit_discard_msg: '当前文件有未保存的修改，继续操作会丢失这些内容。',
+        ws_edit_discard_ok: '放弃修改',
         today: '今天', yesterday: '昨天', earlier: '更早',
         session_pinned_group: '置顶',
         pin_session: '置顶',
         unpin_session: '取消置顶',
         project_rename: '重命名项目',
         project_delete: '删除项目',
-        project_new_chat: '新建会话',
         project_rename_title: '重命名项目',
         project_delete_title: '删除项目',
         project_delete_confirm: '确认删除项目「{name}」？仅移除项目记录，磁盘上的文件不会被删除，其下会话将回到默认空间。',
@@ -287,6 +380,7 @@ const I18N = {
         perm_denied_action: '调整权限',
         model_menu_title: '本次会话模型',
         model_follow_global: '跟随全局设置',
+        model_follow_agent: '跟随智能体默认模型',
         model_tip: '模型：{name}',
         model_unset: '未配置',
         session_settings_failed: '设置失败，请重试',
@@ -335,7 +429,70 @@ const I18N = {
 
         console: '控制台',
         nav_chat: '對話', nav_manage: '管理', nav_monitor: '監控',
-        menu_chat: '對話', menu_config: '設定', menu_skills: '技能',
+        menu_chat: '對話', menu_agents: '智慧體', menu_config: '設定', menu_skills: '技能',
+        agents_page_title: '智慧體團隊', agents_page_desc: '管理團隊中的智慧體成員',
+        agents_create: '建立智慧體',
+        agents_name_placeholder: '智慧體名稱',
+        agents_name_required: '請填寫名稱',
+        agents_stale: '列表已更新，請重新整理後再試',
+        agents_id_placeholder: '留空則自動產生',
+        agents_id_tip: '智慧體的唯一識別碼，建立後不可修改。僅支援小寫英文、數字與連字號（-），如 coding-agent。留空則依名稱自動產生。',
+        agents_id_invalid: 'ID 需以字母或數字開頭，僅支援字母、數字、底線與連字號，最長 64 位',
+        agents_avatar: '頭像',
+        agents_tab_profile: '概況',
+        agents_tab_skills: '能力',
+        agents_tab_files: '核心檔案',
+        agents_core_edit: '編輯',
+        agents_core_preview: '預覽',
+        agents_core_file_agent: '智慧體設定',
+        agents_core_file_user: '使用者資訊',
+        agents_core_file_rule: '工作空間規則',
+        agents_core_file_memory: '長期記憶',
+        agents_default: '預設',
+        agents_archived: '已封存',
+        agents_chat: '開始對話',
+        agents_delete: '刪除',
+        agents_delete_title: '刪除智慧體',
+        agents_delete_confirm: '確定刪除智慧體「{name}」嗎？其工作空間與會話將一併移除，且無法復原。',
+        agents_pick_hint: '選擇智慧體',
+        agents_clone_label: '從已有智慧體複製',
+        agents_clone_hint: '複製其設定、技能與知識作為起點',
+        agents_avatar_upload: '上傳圖片',
+        agents_clone_none: '空白',
+        agents_clone_from: '{name}',
+        agents_name: '名稱',
+        agents_saved: '已儲存',
+        agents_save_failed: '儲存失敗',
+        agents_no_desc: '暫無職責',
+        agents_description: '職責',
+        agents_description_placeholder: '該智慧體負責哪些工作、在什麼場景被使用',
+        agents_description_hint: '用於多智慧體協作時的任務分配',
+        agents_model: '預設模型',
+        agents_model_follows_global: '跟隨全域設定',
+        agents_model_default_hint: '預設使用主模型，於「模型設定」中修改。',
+        agents_skills_all: '使用全部已安裝技能',
+        agents_skills_pick: '只啟用勾選的技能',
+        agents_knowledge: '知識庫',
+        agents_knowledge_shared: '共享',
+        agents_knowledge_own: '獨立',
+        agents_knowledge_hint: '共享：與團隊讀寫同一個知識庫\n獨立：擁有專屬知識庫，互不影響',
+        agents_knowledge_working: '處理中…',
+        agents_knowledge_failed: '切換失敗',
+        agents_empty: '還沒有智慧體。建立一個，開始組團隊。',
+        agents_select_hint: '從左側選擇一個智能體進行設定',
+        agents_pick_tip: '切換當前智能體',
+        team_members: '當前會話成員',
+        team_invite: '新增到目前會話',
+        team_remove: '移出這個會話',
+        composer_agent_owner: '主',
+        channel_bound_agent: '綁定智慧體',
+        channel_bound_default: '預設',
+        channel_bound_agent_hint: '第一個為預設智慧體，負責接收訊息並可委派給其他成員',
+        channel_team_none: '未選擇',
+        channel_team_no_candidates: '暫無可選的智慧體',
+        settings_tab_basic: '基礎設定',
+        settings_tab_models: '模型設定',
+        knowledge_shared_hint: '知識庫預設全員共享，在側欄「知識」查看和編輯。',
         menu_memory: '記憶', menu_knowledge: '知識', menu_channels: '管道', menu_tasks: '定時',
         menu_logs: '日誌',
         models_title: '模型管理',
@@ -364,6 +521,14 @@ const I18N = {
         models_custom_add_title: '新增自定義廠商',
         models_capability_chat: '主模型',
         models_capability_chat_desc: '用於基礎對話和 Agent 推理',
+        models_capability_chat_fallback: '主模型兜底',
+        models_capability_chat_fallback_desc: '僅在主模型徹底失敗（重試耗盡）後接管',
+        models_fallback_enable: '啟用兜底模型',
+        models_fallback_config: '兜底模型',
+        models_fallback_config_tip: '設定主模型兜底：主模型徹底失敗後接管',
+        models_fallback_modal_title: '主模型兜底',
+        models_fallback_modal_desc: '當主模型重試次數用盡仍然失敗時，自動切換到兜底模型完成本輪回覆',
+        models_fallback_badge_on: '兜底已啟用',
         models_capability_vision: '影像理解',
         models_capability_vision_desc: '識別圖片內容，用於影像識別工具',
         models_capability_image: '影像生成',
@@ -389,6 +554,10 @@ const I18N = {
         models_search_add_desc: '選擇一個搜尋廠商進行設定',
         models_search_bocha_title: '設定博查 API Key',
         models_search_bocha_desc: '前往博查開放平臺建立 API Key',
+        models_search_anysearch_title: '設定 AnySearch API Key',
+        models_search_anysearch_desc: '前往 anysearch.com 控制台建立 API Key',
+        models_search_serply_title: '設定 Serply API Key',
+        models_search_serply_desc: '前往 serply.io 控制台建立 API Key',
         models_search_edit_hint: '點選修改設定',
         models_unavailable: '不可用',
         models_set_via_env: '透過環境變數啟用',
@@ -450,7 +619,7 @@ const I18N = {
         steer_active: '引導當前任務',
         slash_logs: '檢視最近日誌',
         slash_version: '檢視版本',
-        input_placeholder: '輸入訊息，/ 使用指令，@ 引用檔案',
+        input_placeholder: '輸入訊息，/ 使用指令，@ 引用智慧體或檔案',
         config_title: '設定管理', config_desc: '管理模型和 Agent 設定',
         config_model: '模型設定', config_agent: 'Agent 設定',
         config_language: '語言', config_language_hint: '介面展示、命令文案、系統提示詞等使用的語言（與右上角切換同步）',
@@ -461,8 +630,6 @@ const I18N = {
         notify_task_done: '任務完成',
         notify_task_error: '任務失敗',
         config_model_advanced: '高階設定',
-        settings_tab_basic: '基礎設定',
-        settings_tab_models: '模型設定',
         config_channel: '管道設定',
         config_agent_enabled: 'Agent 模式',
         config_max_tokens: '最大上下文 Token', config_max_tokens_hint: '對話中 Agent 能輸入的最大 Token 長度，超過後會智慧壓縮處理',
@@ -493,6 +660,10 @@ const I18N = {
         tools_section_title: '內建工具', tools_loading: '載入工具中...',
         skills_section_title: '技能', skill_enable: '啟用', skill_disable: '禁用',
         skill_toggle_error: '操作失敗，請稍後再試',
+        skill_open_hint: '點擊檢視技能內容',
+        skill_back: '返回列表',
+        skill_load_failed: '讀取技能內容失敗',
+        skill_builtin_readonly: '內建技能不可編輯（重啟會覆蓋）',
         memory_title: '記憶管理', memory_desc: '檢視 Agent 記憶檔案和內容',
         memory_tab_files: '記憶檔案', memory_tab_dreams: '自主進化',
         memory_loading: '載入記憶檔案中...', memory_loading_desc: '記憶檔案將顯示在此處',
@@ -565,10 +736,14 @@ const I18N = {
         logs_title: '日誌', logs_desc: '實時日誌輸出 (run.log)',
         logs_live: '實時', logs_coming_msg: '日誌流即將在此提供。將連線 run.log 實現類似 tail -f 的實時輸出。',
         new_chat: '新對話',
+        new_team_chat: '多智慧體對話',
+        new_team_chat_hint: '選擇參與本次對話的智慧體，第一個為會話的預設智慧體。',
+        new_team_chat_owner: '預設',
+        new_team_chat_start: '開始對話',
+        new_team_chat_min: '至少選擇兩個智慧體',
         session_history: '歷史會話',
         ws_toggle: '工作空間', ws_tab_preview: '預覽', ws_tab_files: '檔案',
         ws_default_workspace: '預設空間', ws_sel_title: '選擇工作空間',
-        ws_sel_system_space: '系統空間', ws_sel_project_space: '專案空間',
         ws_sel_default_hint: '使用預設工作空間（~/cow）', ws_sel_recents: '最近使用',
         ws_sel_open: '開啟專案…', ws_sel_new: '新建專案', ws_sel_new_placeholder: '專案名稱',
         ws_sel_create: '建立', ws_sel_up: '上一層',
@@ -585,13 +760,25 @@ const I18N = {
         ws_no_inline_preview: '該類型不支援內嵌預覽',
         ws_empty_dir: '空目錄', ws_no_results: '沒有符合的檔案',
         ws_truncated: '檔案過多，僅顯示部分',
+        ws_edit: '編輯', ws_edit_save: '儲存 (Ctrl+S)', ws_edit_cancel: '離開編輯',
+        ws_edit_saved: '已儲存',
+        ws_edit_load_failed: '開啟編輯器失敗',
+        ws_edit_save_failed: '儲存失敗',
+        ws_edit_too_large: '檔案過大，無法在面板中編輯',
+        ws_edit_unsupported: '該類型不支援編輯',
+        ws_edit_encoding: '該檔案不是 UTF-8 編碼，編輯會損壞內容',
+        ws_edit_conflict_title: '檔案已被變更',
+        ws_edit_conflict_msg: '這個檔案在你編輯期間被變更過（可能是 Agent 寫入的）。覆寫儲存會丟棄磁碟上的新內容。',
+        ws_edit_overwrite: '覆寫儲存',
+        ws_edit_discard_title: '放棄未儲存的變更？',
+        ws_edit_discard_msg: '目前檔案有未儲存的變更，繼續操作會遺失這些內容。',
+        ws_edit_discard_ok: '放棄變更',
         today: '今天', yesterday: '昨天', earlier: '更早',
         session_pinned_group: '置頂',
         pin_session: '置頂',
         unpin_session: '取消置頂',
         project_rename: '重新命名專案',
         project_delete: '刪除專案',
-        project_new_chat: '新建會話',
         project_rename_title: '重新命名專案',
         project_delete_title: '刪除專案',
         project_delete_confirm: '確認刪除專案「{name}」？僅移除專案記錄，磁碟上的檔案不會被刪除，其下會話將回到預設空間。',
@@ -608,6 +795,7 @@ const I18N = {
         perm_denied_action: '調整權限',
         model_menu_title: '本次會話模型',
         model_follow_global: '跟隨全域設定',
+        model_follow_agent: '跟隨智慧體預設模型',
         model_tip: '模型：{name}',
         model_unset: '未設定',
         session_settings_failed: '設定失敗，請重試',
@@ -651,7 +839,70 @@ const I18N = {
     en: {
         console: 'Console',
         nav_chat: 'Chat', nav_manage: 'Management', nav_monitor: 'Monitor',
-        menu_chat: 'Chat', menu_config: 'Config', menu_skills: 'Skills',
+        menu_chat: 'Chat', menu_agents: 'Agents', menu_config: 'Config', menu_skills: 'Skills',
+        agents_page_title: 'Agent Team', agents_page_desc: 'Manage the Agents on your team',
+        agents_create: 'New Agent',
+        agents_name_placeholder: 'Agent name',
+        agents_name_required: 'Please enter a name',
+        agents_stale: 'The list changed; please refresh and try again',
+        agents_id_placeholder: 'Auto-generated if left blank',
+        agents_id_tip: 'A unique identifier, fixed once created. Lowercase letters, digits and hyphens (-) only, e.g. ops-agent. Left blank, it is derived from the name.',
+        agents_id_invalid: 'The id must start with a letter or digit and use only letters, digits, underscores and hyphens (max 64)',
+        agents_avatar: 'Avatar',
+        agents_tab_profile: 'Profile',
+        agents_tab_skills: 'Skills',
+        agents_tab_files: 'Core files',
+        agents_core_edit: 'Edit',
+        agents_core_preview: 'Preview',
+        agents_core_file_agent: 'Persona',
+        agents_core_file_user: 'User info',
+        agents_core_file_rule: 'Workspace rules',
+        agents_core_file_memory: 'Long-term memory',
+        agents_default: 'Default',
+        agents_archived: 'Archived',
+        agents_chat: 'Start chat',
+        agents_delete: 'Delete',
+        agents_delete_title: 'Delete Agent',
+        agents_delete_confirm: 'Delete Agent "{name}"? Its workspace and conversations will be removed for good.',
+        agents_pick_hint: 'Pick Agents',
+        agents_clone_label: 'Copy from an existing agent',
+        agents_clone_hint: 'Copy its config, skills and knowledge as a starting point',
+        agents_avatar_upload: 'Upload image',
+        agents_clone_none: 'Blank',
+        agents_clone_from: '{name}',
+        agents_name: 'Name',
+        agents_saved: 'Saved',
+        agents_save_failed: 'Save failed',
+        agents_no_desc: 'No responsibilities yet',
+        agents_description: 'Responsibilities',
+        agents_description_placeholder: 'What this Agent handles and when it should be used',
+        agents_description_hint: 'Used for task assignment when Agents collaborate',
+        agents_model: 'Default model',
+        agents_model_follows_global: 'Follow the configured model',
+        agents_model_default_hint: 'Uses the primary model. Change it under Model config.',
+        agents_skills_all: 'Use every installed skill',
+        agents_knowledge: 'Knowledge base',
+        agents_knowledge_shared: 'Shared',
+        agents_knowledge_own: 'Own',
+        agents_knowledge_hint: 'Shared: read and write the same knowledge base as the team\nOwn: a private base, isolated from others',
+        agents_knowledge_working: 'Working…',
+        agents_knowledge_failed: 'Switch failed',
+        agents_skills_pick: 'Only the skills checked below',
+        agents_empty: 'No Agents yet. Create one to start a team.',
+        agents_select_hint: 'Pick an Agent on the left to configure it',
+        agents_pick_tip: 'Switch current Agent',
+        team_members: 'In this conversation',
+        team_invite: 'Add to current chat',
+        team_remove: 'Remove from this chat',
+        composer_agent_owner: 'Owner',
+        channel_bound_agent: 'Bind agent',
+        channel_bound_default: 'default',
+        channel_bound_agent_hint: 'first pick is the default agent: it receives messages and can delegate to the rest',
+        channel_team_none: 'None',
+        channel_team_no_candidates: 'No agents available',
+        settings_tab_basic: 'General',
+        settings_tab_models: 'Models',
+        knowledge_shared_hint: 'Knowledge is shared by every Agent. Open it from the Knowledge page.',
         menu_memory: 'Memory', menu_knowledge: 'Knowledge', menu_channels: 'Channels', menu_tasks: 'Tasks',
         menu_logs: 'Logs',
         models_title: 'Models',
@@ -680,6 +931,14 @@ const I18N = {
         models_custom_add_title: 'Add custom provider',
         models_capability_chat: 'Main Model',
         models_capability_chat_desc: 'Used for basic chat and agent reasoning',
+        models_capability_chat_fallback: 'Main Model Fallback',
+        models_capability_chat_fallback_desc: 'Takes over only after the main model fails for good',
+        models_fallback_enable: 'Enable the fallback model',
+        models_fallback_config: 'Fallback',
+        models_fallback_config_tip: 'Configure the main-model fallback (takes over after the main model fails)',
+        models_fallback_modal_title: 'Main Model Fallback',
+        models_fallback_modal_desc: 'When the main model still fails after exhausting its retries, automatically switch to the fallback model to finish the reply.',
+        models_fallback_badge_on: 'Fallback on',
         models_capability_vision: 'Image Understanding',
         models_capability_vision_desc: 'Recognizes image content, used by image recognition tools',
         models_capability_image: 'Image Generation',
@@ -705,6 +964,10 @@ const I18N = {
         models_search_add_desc: 'Pick a search provider to configure',
         models_search_bocha_title: 'Configure Bocha API Key',
         models_search_bocha_desc: 'Create a key at the Bocha open platform.',
+        models_search_anysearch_title: 'Configure AnySearch API Key',
+        models_search_anysearch_desc: 'Create a key at the AnySearch console (anysearch.com).',
+        models_search_serply_title: 'Configure Serply API Key',
+        models_search_serply_desc: 'Create a key at the Serply console (serply.io).',
         models_search_edit_hint: 'Click to edit',
         models_unavailable: 'unavailable',
         models_set_via_env: 'enable via environment variable',
@@ -766,7 +1029,7 @@ const I18N = {
         steer_active: 'Steer active task',
         slash_logs: 'Show recent logs',
         slash_version: 'Show version',
-        input_placeholder: 'Type a message, / for commands, @ to reference files',
+        input_placeholder: 'Type a message, / for commands, @ to mention an Agent or a file',
         config_title: 'Configuration', config_desc: 'Manage model and agent settings',
         config_model: 'Model Configuration', config_agent: 'Agent Configuration',
         config_language: 'Language', config_language_hint: 'Language for the UI, command text, system prompts and more (synced with the top-right switch)',
@@ -777,8 +1040,6 @@ const I18N = {
         notify_task_done: 'Task finished',
         notify_task_error: 'Task failed',
         config_model_advanced: 'Advanced',
-        settings_tab_basic: 'Basic',
-        settings_tab_models: 'Models',
         config_channel: 'Channel Configuration',
         config_agent_enabled: 'Agent Mode',
         config_max_tokens: 'Max Context Tokens', config_max_tokens_hint: 'Max tokens the Agent can input per conversation, auto-compressed when exceeded',
@@ -809,6 +1070,10 @@ const I18N = {
         tools_section_title: 'Built-in Tools', tools_loading: 'Loading tools...',
         skills_section_title: 'Skills', skill_enable: 'Enable', skill_disable: 'Disable',
         skill_toggle_error: 'Operation failed, please try again',
+        skill_open_hint: 'Click to view this skill',
+        skill_back: 'Back to list',
+        skill_load_failed: 'Could not read the skill',
+        skill_builtin_readonly: 'Built-in skill, read-only (replaced on restart)',
         memory_title: 'Memory', memory_desc: 'View agent memory files and contents',
         memory_tab_files: 'Memory Files', memory_tab_dreams: 'Self-Evolution',
         memory_loading: 'Loading memory files...', memory_loading_desc: 'Memory files will be displayed here',
@@ -881,10 +1146,14 @@ const I18N = {
         logs_title: 'Logs', logs_desc: 'Real-time log output (run.log)',
         logs_live: 'Live', logs_coming_msg: 'Log streaming will be available here. Connects to run.log for real-time output similar to tail -f.',
         new_chat: 'New Chat',
+        new_team_chat: 'Group chat',
+        new_team_chat_hint: 'Pick the Agents for this conversation; the first is its default Agent.',
+        new_team_chat_owner: 'Default',
+        new_team_chat_start: 'Start chat',
+        new_team_chat_min: 'Pick at least two Agents',
         session_history: 'History',
         ws_toggle: 'Workspace', ws_tab_preview: 'Preview', ws_tab_files: 'Files',
         ws_default_workspace: 'Default', ws_sel_title: 'Select workspace',
-        ws_sel_system_space: 'System space', ws_sel_project_space: 'Project space',
         ws_sel_default_hint: 'Use the default workspace (~/cow)', ws_sel_recents: 'Recent',
         ws_sel_open: 'Open project…', ws_sel_new: 'New project', ws_sel_new_placeholder: 'Project name',
         ws_sel_create: 'Create', ws_sel_up: 'Up',
@@ -901,13 +1170,25 @@ const I18N = {
         ws_no_inline_preview: 'No inline preview for this file type',
         ws_empty_dir: 'Empty directory', ws_no_results: 'No matching files',
         ws_truncated: 'Too many files, showing a subset',
+        ws_edit: 'Edit', ws_edit_save: 'Save (Ctrl+S)', ws_edit_cancel: 'Leave editor',
+        ws_edit_saved: 'Saved',
+        ws_edit_load_failed: 'Could not open the editor',
+        ws_edit_save_failed: 'Save failed',
+        ws_edit_too_large: 'File is too large to edit in the panel',
+        ws_edit_unsupported: 'This file type cannot be edited',
+        ws_edit_encoding: 'This file is not UTF-8; editing would corrupt it',
+        ws_edit_conflict_title: 'File changed on disk',
+        ws_edit_conflict_msg: 'This file changed while you were editing it, most likely written by the agent. Overwriting discards the newer content on disk.',
+        ws_edit_overwrite: 'Overwrite',
+        ws_edit_discard_title: 'Discard unsaved changes?',
+        ws_edit_discard_msg: 'This file has unsaved changes and continuing will lose them.',
+        ws_edit_discard_ok: 'Discard',
         today: 'Today', yesterday: 'Yesterday', earlier: 'Earlier',
         session_pinned_group: 'Pinned',
         pin_session: 'Pin',
         unpin_session: 'Unpin',
         project_rename: 'Rename project',
         project_delete: 'Delete project',
-        project_new_chat: 'New chat',
         project_rename_title: 'Rename project',
         project_delete_title: 'Delete project',
         project_delete_confirm: 'Delete project “{name}”? Only the project record is removed — files on disk are kept, and its chats revert to the default workspace.',
@@ -924,6 +1205,7 @@ const I18N = {
         perm_denied_action: 'Adjust permissions',
         model_menu_title: 'Model for this chat',
         model_follow_global: 'Follow global setting',
+        model_follow_agent: 'Follow the agent\u2019s default model',
         model_tip: 'Model: {name}',
         model_unset: 'Not set',
         session_settings_failed: 'Could not apply, please retry',
@@ -1022,6 +1304,9 @@ function applyI18n() {
     document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
         el.setAttribute('aria-label', t(el.dataset['i18nAriaLabel']));
     });
+    document.querySelectorAll('[data-i18n-tip]').forEach(el => {
+        el.setAttribute('data-tip', t(el.dataset['i18nTip']));
+    });
     document.querySelectorAll('[data-tip-key]').forEach(el => {
         el.setAttribute('data-tooltip', t(el.dataset.tipKey));
     });
@@ -1032,19 +1317,7 @@ function applyI18n() {
         el.classList.add('opacity-0');
     });
     
-    const langLabel = document.getElementById('lang-label');
-    if (langLabel) {
-        if (currentLang === 'zh-Hant') langLabel.textContent = '繁体';
-        else if (currentLang === 'zh') langLabel.textContent = '简体';
-        else langLabel.textContent = 'EN';
-    }
-    // Highlight the active option in the header language dropdown menu.
-    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
-        const active = item.dataset.lang === currentLang;
-        item.classList.toggle('text-blue-600', active);
-        item.classList.toggle('dark:text-blue-400', active);
-        item.classList.toggle('font-medium', active);
-    });
+    _syncLangControls();
     // Point the docs link to the locale-specific documentation site.
     const docsLink = document.getElementById('docs-link');
     if (docsLink) docsLink.href = currentLang === 'zh' ? 'https://docs.cowagent.ai/zh' : 'https://docs.cowagent.ai';
@@ -1066,10 +1339,6 @@ function setLanguage(lang) {
     localStorage.setItem('cow_lang', currentLang);
     applyI18n();
     _applyInputTooltips();
-    // Session-panel labels (default space, today/yesterday, pinned group) are
-    // produced via t() at render time, so repaint the list to pick up the new
-    // language instead of leaving stale text like "默认空间" under English.
-    if (sessionPanelOpen && _sessionItems.length) _renderSessionList();
     // Keep the language switch button and config selector visually in sync.
     try { updateLangControls(); } catch (e) {}
     
@@ -1099,19 +1368,7 @@ function syncLanguageToBackend(lang, callback) {
 // Reflect the current language on both the top-right toggle and the config
 // selector (if present), so the two entry points stay synchronized.
 function updateLangControls() {
-    const langLabel = document.getElementById('lang-label');
-    if (langLabel) {
-        if (currentLang === 'zh-Hant') langLabel.textContent = '繁体';
-        else if (currentLang === 'zh') langLabel.textContent = '简体';
-        else langLabel.textContent = 'EN';
-    }
-    // Highlight the active option in the header language dropdown menu.
-    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
-        const active = item.dataset.lang === currentLang;
-        item.classList.toggle('text-blue-600', active);
-        item.classList.toggle('dark:text-blue-400', active);
-        item.classList.toggle('font-medium', active);
-    });
+    _syncLangControls();
     // The config language picker is the custom .cfg-dropdown component. Only
     // sync it once it has been initialized (i.e. the config panel was opened).
     const sel = document.getElementById('cfg-lang-select');
@@ -1127,6 +1384,23 @@ function updateLangControls() {
             i.classList.toggle('active', i.dataset.value === currentLang);
         });
     }
+}
+
+// Reflect the current language on the header dropdown: short label on the
+// toggle (简 / 繁 / EN) plus the active item highlighted in the menu.
+function _syncLangControls() {
+    const langLabel = document.getElementById('lang-label');
+    if (langLabel) {
+        if (currentLang === 'zh-Hant') langLabel.textContent = '繁';
+        else if (currentLang === 'zh') langLabel.textContent = '简';
+        else langLabel.textContent = 'EN';
+    }
+    document.querySelectorAll('#lang-menu .lang-menu-item').forEach(item => {
+        const active = item.dataset.lang === currentLang;
+        item.classList.toggle('text-blue-600', active);
+        item.classList.toggle('dark:text-blue-400', active);
+        item.classList.toggle('font-medium', active);
+    });
 }
 
 // Toggle the header language dropdown menu open/closed.
@@ -1157,7 +1431,8 @@ document.addEventListener('click', (e) => {
 // Refresh JS-rendered views after a language switch. Each branch uses the
 // lightweight in-memory re-render path (no extra network round-trips).
 function rerenderDynamicViews() {
-    if (currentView === 'config' && _configModelsLoaded && typeof renderModelsView === 'function'
+    // Models are a tab of the config view, not a view of their own.
+    if (currentView === 'config' && typeof renderModelsView === 'function'
             && modelsState && (modelsState.providers || modelsState.capabilities)) {
         renderModelsView();
     }
@@ -1429,6 +1704,7 @@ document.addEventListener('DOMContentLoaded', initTaskNotifyToggles);
 // =====================================================================
 const VIEW_META = {
     chat:     { group: 'nav_chat',    page: 'menu_chat' },
+    agents:   { group: 'nav_manage',  page: 'menu_agents' },
     config:   { group: 'nav_manage',  page: 'menu_config' },
     skills:   { group: 'nav_manage',  page: 'menu_skills' },
     memory:   { group: 'nav_manage',  page: 'menu_memory' },
@@ -1453,7 +1729,23 @@ function navigateTo(viewId) {
     document.getElementById('breadcrumb-group').dataset.i18n = meta.group;
     document.getElementById('breadcrumb-page').textContent = t(meta.page);
     document.getElementById('breadcrumb-page').dataset.i18n = meta.page;
+    const leavingAgents = currentView === 'agents' && viewId !== 'agents';
     currentView = viewId;
+    // The Agent detail is a fixed drawer, so it would otherwise hang over
+    // whatever view you navigate to. It only belongs to the Agent Team page.
+    if (viewId !== 'agents') closeAgentDetail();
+    if (viewId === 'agents') {
+        // The team page is a wide two-pane workbench; the history panel on top
+        // of it would leave the detail cramped. Tuck it away on entry and put it
+        // back the way it was when the user leaves (only if they hadn't already
+        // toggled it themselves in the meantime).
+        _sessionPanelWasOpen = sessionPanelOpen;
+        if (sessionPanelOpen) closeSessionPanel(true);
+        loadAgentCatalog();
+    } else if (leavingAgents && _sessionPanelWasOpen) {
+        _sessionPanelWasOpen = false;
+        openSessionPanel();
+    }
     
     // Clear status messages when navigating away
     document.querySelectorAll('[id$="-status"]').forEach(el => {
@@ -1500,6 +1792,1409 @@ window.addEventListener('resize', () => {
         }
     }
 });
+
+// =====================================================================
+// Agents
+// =====================================================================
+let agentCatalog = [];
+let channelInstances = [];
+let rosterRevision = '';
+let defaultAgentId = localStorage.getItem('cow_default_agent') || 'default';
+let selectedAdminAgentId = '';
+let selectedCoreRevision = '';
+let installedSkills = [];
+
+function findAgent(agentId) {
+    return agentCatalog.find(a => a.id === agentId) || null;
+}
+
+function enabledAgents() {
+    return agentCatalog.filter(a => a.enabled);
+}
+
+/* An uploaded avatar reuses the same URL every time, so the browser would keep
+   serving the stale bytes. The roster revision only moves when the roster's
+   *content* changes, and re-uploading over an existing image leaves the field as
+   the same "image" token — so we stamp each successful upload with a fresh token
+   here and prefer it, which forces the one re-fetch that shows the new picture. */
+const avatarVersions = {};
+
+/* How many muted discs the initials fallback cycles through. */
+const AVATAR_TONES = 6;
+
+/* Which disc an Agent gets. Keyed off the id alone, so a face never changes
+   colour once the Agent exists, and so a draft in the create modal (no id yet)
+   sits on the neutral tone instead of shifting as its name is typed. */
+function avatarTone(agentId) {
+    const key = String(agentId || '');
+    let hash = 0;
+    for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0;
+    return hash % AVATAR_TONES;
+}
+
+/* The character an Agent is shown by when it has no picture. Array.from rather
+   than [0] so an astral-plane character is taken whole instead of as half a
+   surrogate pair; uppercased for latin, left alone for scripts without case. */
+function avatarInitial(name) {
+    return (Array.from(String(name || '').trim())[0] || '').toUpperCase();
+}
+
+/* Every Agent wears its own face: the image its owner uploaded, or a muted disc
+   carrying the first character of its name. Initials rather than the product
+   logo so a team is distinguishable at a glance, and low-saturation tones so a
+   roster of them stays quiet.
+
+   A null agent means the id no longer resolves - a conversation pinned to a
+   since-deleted Agent. Fall back to the default Agent's face rather than an
+   empty disc, so the deleted Agent visibly degrades to the default one. */
+function agentAvatarHTML(agent, size) {
+    const cls = `agent-avatar agent-avatar-${size || 32}`;
+    if (!agent && defaultAgentId) {
+        agent = findAgent(defaultAgentId);
+    }
+    if (agent && agent.avatar === 'image') {
+        const v = avatarVersions[agent.id] || rosterRevision || agent.id;
+        return `<img class="${cls}" src="/api/agents/${encodeURIComponent(agent.id)}/avatar?v=${encodeURIComponent(v)}" alt="">`;
+    }
+    const initial = avatarInitial(agent && (agent.name || agent.id));
+    return `<span class="${cls} agent-avatar-tone-${avatarTone(agent && agent.id)}">${escapeHtml(initial)}</span>`;
+}
+
+/* Repaint the faces on bubbles already on screen. Bubbles are rendered once and
+   left alone, so an avatar changed in Settings would otherwise keep showing the
+   old picture in the open conversation until reload. Each bot bubble remembers
+   its speaker; the loading indicator follows the active Agent. */
+function refreshBubbleAvatars() {
+    const container = document.getElementById('chat-messages');
+    if (!container) return;
+    container.querySelectorAll('.bot-face').forEach(face => {
+        const group = face.closest('.bot-message-group');
+        // A bubble knows its speaker; the loading indicator (no group) tracks the
+        // active Agent, the only one that can be mid-reply in a solo chat.
+        const id = (group && group.dataset.speakerAgent) || activeAgentId;
+        face.innerHTML = agentAvatarHTML(findAgent(id), 32);
+    });
+}
+
+// Derive the ascii slug from a name, or '' when there is no ascii to work with
+// (e.g. a name written in Chinese). Callers fall back to randomAgentId().
+function slugAgentId(name) {
+    return String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 32);
+}
+
+// An id for a name that yields no slug.
+function randomAgentId() {
+    return 'agent-' + Math.random().toString(36).slice(2, 8);
+}
+
+function loadAgentCatalog() {
+    return fetch('/api/agents')
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') throw new Error(data.message || 'Failed to load Agents');
+            agentCatalog = data.agents || [];
+            channelInstances = data.channel_instances || [];
+            rosterRevision = data.revision || '';
+            defaultAgentId = data.default_agent_id || (agentCatalog[0] && agentCatalog[0].id) || 'default';
+            localStorage.setItem('cow_default_agent', defaultAgentId);
+            // The default Agent leads every list it appears in — menus, the grid,
+            // the memory picker — so its position never depends on load order.
+            agentCatalog.sort((a, b) => (b.id === defaultAgentId) - (a.id === defaultAgentId));
+            const enabled = enabledAgents();
+            if (!enabled.some(a => a.id === activeAgentId)) {
+                activeAgentId = defaultAgentId;
+                localStorage.setItem('cow_active_agent', activeAgentId);
+            }
+            if (!selectedAdminAgentId || !agentCatalog.some(a => a.id === selectedAdminAgentId)) {
+                selectedAdminAgentId = '';
+            }
+            // Two-pane workbench: on a wide screen, land on the first Agent so the
+            // right pane is never a blank placeholder. On a phone the list shows
+            // first (the detail is a sheet), so leave nothing selected there.
+            if (!selectedAdminAgentId && currentView === 'agents'
+                    && agentCatalog.length && window.innerWidth > 900) {
+                openAgentDetail((enabledAgents()[0] || agentCatalog[0]).id);
+                return data;
+            }
+            renderAgentsGrid();
+            if (selectedAdminAgentId) renderAgentDetail();
+            else closeAgentDetail();
+            renderComposerIdentity();
+            renderMemoryAgentSelect();
+            // The new-chat button only sprouts a menu (and its caret) once there
+            // is more than one Agent to choose between.
+            document.getElementById('new-chat-caret')?.classList.toggle('hidden', !multiAgentMode());
+            // A name or avatar may have changed; keep faces already on screen in
+            // sync with the roster instead of only new bubbles.
+            refreshBubbleAvatars();
+            return data;
+        })
+        .catch(err => {
+            const status = document.getElementById('agent-editor-status');
+            if (status) status.textContent = err.message;
+        });
+}
+
+function renderAgentsGrid() {
+    const grid = document.getElementById('agents-grid');
+    if (!grid) return;
+    if (!agentCatalog.length) {
+        grid.innerHTML = `<div class="col-span-full text-sm text-slate-400 py-16 text-center">${escapeHtml(t('agents_empty'))}</div>`;
+        return;
+    }
+    grid.innerHTML = agentCatalog.map(agent => {
+        const selected = agent.id === selectedAdminAgentId;
+        const desc = (agent.description || '').trim();
+        // Status chips float in the top-right corner so a "default" or
+        // "archived" card is exactly as tall as every other card.
+        const corner = agent.id === defaultAgentId
+            ? `<span class="agent-card-badge agent-chip-on">${escapeHtml(t('agents_default'))}</span>`
+            : (!agent.enabled ? `<span class="agent-card-badge">${escapeHtml(t('agents_archived'))}</span>` : '');
+        return `<div class="agent-card${selected ? ' selected' : ''}${agent.enabled ? '' : ' archived'}" onclick="openAgentDetail('${escapeHtml(agent.id)}')">
+            ${corner}
+            <div class="agent-card-top">
+                ${agentAvatarHTML(agent, 32)}
+                <div class="min-w-0 flex-1">
+                    <div class="agent-card-name truncate">${escapeHtml(agent.name)}</div>
+                    <div class="agent-card-desc">${desc ? escapeHtml(desc) : `<span class="agent-card-desc-empty">${escapeHtml(t('agents_no_desc'))}</span>`}</div>
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+function openAgentDetail(agentId) {
+    selectedAdminAgentId = agentId;
+    document.getElementById('agent-detail')?.classList.remove('hidden');
+    renderAgentsGrid();
+    renderAgentDetail();
+    // Reset the core-file picker to a clean state per Agent, rather than
+    // carrying over whichever file/view mode was left selected for the
+    // previous one.
+    const fileDd = document.getElementById('agent-core-file');
+    if (fileDd) fileDd._ddValue = 'AGENT.md';
+    setAgentCoreViewMode('edit');
+    loadAgentCoreFile();
+    // The model picker is drawn from the same catalog the composer uses, which
+    // depends on which providers have keys. Re-render once it has arrived.
+    if (!_sessCfg) refreshSessionSettings().then(() => {
+        if (selectedAdminAgentId === agentId) renderAgentDetail();
+    });
+}
+
+function closeAgentDetail() {
+    selectedAdminAgentId = '';
+    const detail = document.getElementById('agent-detail');
+    if (detail) {
+        detail.classList.add('hidden');
+        // The empty pane's placeholder text (desktop two-pane layout).
+        detail.setAttribute('data-empty-label', t('agents_select_hint'));
+    }
+    renderAgentsGrid();
+}
+
+function selectAgentDetailTab(tab) {
+    document.querySelectorAll('.agent-detail-tab').forEach(el => {
+        el.classList.toggle('active', el.dataset.tab === tab);
+    });
+    ['profile', 'skills', 'files'].forEach(name => {
+        document.getElementById(`agent-detail-${name}`)?.classList.toggle('hidden', name !== tab);
+    });
+    if (tab === 'skills') renderAgentSkillsPane();
+    if (tab === 'files') loadAgentCoreFile();
+}
+
+// A field label followed by a small info icon whose help shows on hover, so a
+// form stays compact instead of carrying a paragraph of hint under every field.
+// The tip text may contain \n to force a line break (e.g. one line per option
+// of a shared/own choice) — rendered via the popup's `white-space: pre-line`.
+function fieldLabelWithTip(label, tip) {
+    return `<div class="agent-field-label-row">
+        <label class="agent-field-label">${escapeHtml(label)}</label>
+        <span class="agent-field-tip" data-tip="${escapeHtml(tip)}"><i class="fas fa-circle-info"></i></span>
+    </div>`;
+}
+
+// Single popup instance fixed to <body>, positioned relative to whichever
+// .agent-field-tip is hovered. Living outside every drawer/modal means it is
+// never clipped by an ancestor's `overflow: auto` (unlike a CSS ::after would
+// be inside the scrolling Agent detail pane).
+let _fieldTipEl = null;
+let _fieldTipIcon = null;  // which icon the popup currently belongs to
+function _ensureFieldTipEl() {
+    if (!_fieldTipEl) {
+        _fieldTipEl = document.createElement('div');
+        _fieldTipEl.className = 'agent-tip-popup';
+        document.body.appendChild(_fieldTipEl);
+    }
+    return _fieldTipEl;
+}
+
+function _showFieldTip(iconEl) {
+    const tip = iconEl.dataset.tip;
+    if (!tip) return;
+    // Already showing for this icon: don't re-measure/re-animate. Moving the
+    // cursor from the <span> onto its own <i> would otherwise re-trigger the
+    // whole show sequence and make the tip visibly flicker.
+    if (_fieldTipIcon === iconEl && _fieldTipEl && _fieldTipEl.classList.contains('show')) return;
+    _fieldTipIcon = iconEl;
+    const popup = _ensureFieldTipEl();
+    popup.textContent = tip;
+    popup.classList.remove('show');
+    popup.style.left = '0px';
+    popup.style.top = '0px';
+    // Measure after layout so width/height reflect the actual (possibly
+    // multi-line) content before we clamp it into the viewport.
+    requestAnimationFrame(() => {
+        const rect = iconEl.getBoundingClientRect();
+        const pw = popup.offsetWidth, ph = popup.offsetHeight;
+        let left = rect.left + rect.width / 2 - pw / 2;
+        const margin = 8;
+        left = Math.max(margin, Math.min(left, window.innerWidth - pw - margin));
+        let top = rect.top - ph - 8;
+        let arrowTop = false;
+        if (top < margin) { top = rect.bottom + 8; arrowTop = true; } // flip below if clipped above
+        popup.style.left = `${left}px`;
+        popup.style.top = `${top}px`;
+        popup.style.setProperty('--tip-arrow-x', `${rect.left + rect.width / 2 - left}px`);
+        popup.classList.toggle('tip-arrow-top', arrowTop);
+        popup.classList.add('show');
+    });
+}
+
+function _hideFieldTip() {
+    if (_fieldTipEl) _fieldTipEl.classList.remove('show');
+    _fieldTipIcon = null;
+}
+
+document.addEventListener('mouseover', (e) => {
+    const icon = e.target.closest ? e.target.closest('.agent-field-tip') : null;
+    if (icon) _showFieldTip(icon);
+});
+document.addEventListener('mouseout', (e) => {
+    const icon = e.target.closest ? e.target.closest('.agent-field-tip') : null;
+    if (!icon) return;
+    // mouseout fires when moving between the icon's own children (span -> <i>).
+    // Only hide when the cursor actually leaves this icon's subtree, i.e. the
+    // element it moved to isn't inside the same .agent-field-tip.
+    const to = e.relatedTarget;
+    if (to && icon.contains(to)) return;
+    _hideFieldTip();
+});
+document.addEventListener('scroll', _hideFieldTip, true);
+
+function renderAgentDetail() {
+    const agent = findAgent(selectedAdminAgentId);
+    const identity = document.getElementById('agent-detail-identity');
+    const profile = document.getElementById('agent-detail-profile');
+    if (!agent || !identity || !profile) return;
+    identity.innerHTML = `
+        ${agentAvatarHTML(agent, 56)}
+        <div class="min-w-0">
+            <div class="text-lg font-semibold text-slate-800 dark:text-slate-100 truncate">${escapeHtml(agent.name)}</div>
+            <div class="text-xs text-slate-400 font-mono truncate">${escapeHtml(agent.id)}</div>
+        </div>`;
+    const isDefault = agent.id === defaultAgentId;
+    profile.innerHTML = `
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_avatar'))}</label>
+            <div id="agent-edit-avatar" class="agent-avatar-picker"></div>
+        </div>
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_name'))}</label>
+            <input id="agent-edit-name" value="${escapeHtml(agent.name)}" class="agent-input">
+        </div>
+        <div class="agent-field">
+            ${fieldLabelWithTip(t('agents_description'), t('agents_description_hint'))}
+            <textarea id="agent-edit-description" rows="4"
+                   placeholder="${escapeHtml(t('agents_description_placeholder'))}"
+                   class="agent-input agent-textarea">${escapeHtml(agent.description || '')}</textarea>
+        </div>
+        <div class="agent-field">
+            <label class="agent-field-label">${escapeHtml(t('agents_model'))}</label>
+            ${isDefault
+                ? `<div class="agent-input-locked">${escapeHtml(t('agents_model_follows_global'))}</div>
+                   <p class="agent-field-hint">${escapeHtml(t('agents_model_default_hint'))}</p>`
+                : `<div id="agent-edit-model" class="cfg-dropdown" tabindex="0">
+                       <div class="cfg-dropdown-selected">
+                           <span class="cfg-dropdown-text">--</span>
+                           <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                       </div>
+                       <div class="cfg-dropdown-menu"></div>
+                   </div>`}
+        </div>
+        ${isDefault ? '' : `
+        <div class="agent-field">
+            ${fieldLabelWithTip(t('agents_knowledge'), t('agents_knowledge_hint'))}
+            <div class="flex items-center gap-3">
+                <div id="agent-knowledge-toggle" class="agent-seg" role="group">
+                    <button type="button" class="agent-seg-btn ${agent.knowledge_mode !== 'own' ? 'active' : ''}" data-mode="shared" onclick="setAgentKnowledgeMode('${escapeHtml(agent.id)}','shared')">
+                        <i class="fas fa-users mr-1"></i>${escapeHtml(t('agents_knowledge_shared'))}
+                    </button>
+                    <button type="button" class="agent-seg-btn ${agent.knowledge_mode === 'own' ? 'active' : ''}" data-mode="own" onclick="setAgentKnowledgeMode('${escapeHtml(agent.id)}','own')">
+                        <i class="fas fa-box-archive mr-1"></i>${escapeHtml(t('agents_knowledge_own'))}
+                    </button>
+                </div>
+                <span id="agent-knowledge-status" class="agent-field-hint" style="margin-top:0"></span>
+            </div>
+        </div>`}
+        <div class="agent-detail-actions">
+            <button type="button" onclick="saveAgentProfile()" class="agent-btn agent-btn-primary">${escapeHtml(t('save'))}</button>
+            <button type="button" onclick="startChatWithAgent('${escapeHtml(agent.id)}')" class="agent-btn agent-btn-ghost">${escapeHtml(t('agents_chat'))}</button>
+            ${isDefault ? '' : `<button type="button" onclick="deleteAgent('${escapeHtml(agent.id)}')" class="agent-btn agent-btn-danger agent-detail-delete">${escapeHtml(t('agents_delete'))}</button>`}
+        </div>
+        <div id="agent-profile-status" class="agent-field-hint mt-3"></div>`;
+
+    renderAvatarPicker('agent-edit-avatar', agent, (file) => uploadAgentAvatar(agent.id, file));
+
+    if (!isDefault) {
+        const dd = document.getElementById('agent-edit-model');
+        const opts = agentModelDropdownOptions();
+        const current = agent.model ? `${agent.bot_type || ''}|${agent.model}` : '';
+        initDropdown(dd, opts, current, () => {}, { placeholder: t('agents_model_follows_global') });
+    }
+    // A save may re-render this pane several times; re-apply an in-flight
+    // "saved" confirmation so it survives instead of being wiped.
+    paintAgentSavedFlash();
+}
+
+/* A live preview beside an upload button, in the page's own styling rather than
+   a raw file input. The default is the Agent's initial; uploading swaps it for
+   the chosen image. `onUpload` may be null when the Agent does not exist yet
+   (the create modal), leaving just the preview. */
+function renderAvatarPicker(containerId, agent, onUpload) {
+    const box = document.getElementById(containerId);
+    if (!box) return;
+    box.innerHTML = `
+        <div class="agent-avatar-picker-preview">${agentAvatarHTML(agent, 56)}</div>
+        <div class="agent-avatar-picker-body">
+            ${onUpload ? `<button type="button" class="agent-avatar-upload">
+                <i class="fas fa-arrow-up-from-bracket"></i><span>${escapeHtml(t('agents_avatar_upload'))}</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            </button>` : ''}
+        </div>`;
+    const upload = box.querySelector('.agent-avatar-upload');
+    if (upload && onUpload) {
+        const input = upload.querySelector('input');
+        upload.addEventListener('click', () => input.click());
+        input.addEventListener('change', () => onUpload(input.files && input.files[0]));
+    }
+}
+
+/* Flattened for the styled dropdown: one row per model, its provider carried in
+   the value (a model asked of the wrong vendor is an error), its brand shown as
+   a dim hint. The first row clears the choice back to the configured model. */
+function agentModelDropdownOptions() {
+    const opts = [{ value: '', label: t('agents_model_follows_global') }];
+    const providers = (_sessCfg && _sessCfg.model && _sessCfg.model.providers) || [];
+    providers.forEach(p => {
+        (p.models || []).forEach(m => {
+            opts.push({ value: `${p.id}|${m}`, label: m, hint: localizedLabel(p.label) });
+        });
+    });
+    return opts;
+}
+
+// Persist an Agent's skill selection. Writes are serialized per Agent and
+// coalesce to the latest desired state, so ticking several boxes quickly sends
+// them in order (each with the revision the previous one returned) instead of
+// racing and tripping the stale-roster guard. No catalog reload happens, so the
+// grid, composer and avatars never flicker and the checkboxes never jump.
+//   null  -> use every installed skill (the "use all" master toggle)
+//   [...] -> exactly this subset ([] means none)
+const _skillSaveState = {};  // agentId -> { inflight: bool, pending: skills|undefined }
+
+function saveAgentSkills(agent, skills) {
+    agent.skills = skills;  // optimistic; the pane already reflects it
+    const st = _skillSaveState[agent.id] || (_skillSaveState[agent.id] = { inflight: false, pending: undefined });
+    if (st.inflight) { st.pending = skills; return; }  // newest wins; drop stale intermediate
+    st.inflight = true;
+    fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id: agent.id, revision: rosterRevision, skills }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            if (data.revision) rosterRevision = data.revision;
+        } else {
+            const status = document.getElementById('agent-editor-status');
+            if (status) status.textContent = data.message || 'Update failed';
+        }
+    }).catch(() => {}).then(() => {
+        st.inflight = false;
+        if (st.pending !== undefined) {
+            const next = st.pending;
+            st.pending = undefined;
+            saveAgentSkills(agent, next);  // flush the latest queued state
+        }
+    });
+}
+
+// Switch an Agent between the shared knowledge base and its own. This is a
+// filesystem toggle (symlink vs a real knowledge/ dir), so it applies at once
+// rather than waiting for the profile "save".
+async function setAgentKnowledgeMode(agentId, mode) {
+    const agent = findAgent(agentId);
+    if (!agent || agent.knowledge_mode === mode) return;
+    const status = document.getElementById('agent-knowledge-status');
+    const paintActive = (m) => document.querySelectorAll('#agent-knowledge-toggle .agent-seg-btn')
+        .forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+    const prev = agent.knowledge_mode || 'shared';
+    agent.knowledge_mode = mode;  // optimistic
+    paintActive(mode);
+    if (status) status.textContent = t('agents_knowledge_working') || '...';
+    try {
+        const res = await fetch('/api/agents', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'set_knowledge_mode', id: agentId, mode }),
+        });
+        const data = await res.json();
+        if (data.status === 'success') {
+            agent.knowledge_mode = (data.mode || mode);
+            paintActive(agent.knowledge_mode);
+            if (status) status.textContent = '';
+        } else {
+            agent.knowledge_mode = prev;  // roll back
+            paintActive(prev);
+            if (status) status.textContent = data.message || t('agents_knowledge_failed') || 'Failed';
+        }
+    } catch (e) {
+        agent.knowledge_mode = prev;
+        paintActive(prev);
+        if (status) status.textContent = t('agents_knowledge_failed') || 'Failed';
+    }
+}
+
+function renderAgentSkillsPane() {
+    const pane = document.getElementById('agent-detail-skills');
+    const agent = findAgent(selectedAdminAgentId);
+    if (!pane || !agent) return;
+    const render = () => {
+        const all = agent.skills == null;
+        const picked = new Set(all ? [] : agent.skills);
+        pane.innerHTML = `
+            <label class="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300 mb-3">
+                <input type="checkbox" id="agent-skills-all" ${all ? 'checked' : ''}>
+                <span>${escapeHtml(t('agents_skills_all'))}</span>
+            </label>
+            <p class="text-xs text-slate-400 mb-3">${escapeHtml(t('agents_skills_pick'))}</p>
+            ${(installedSkills || []).map(skill => {
+                const name = skill.name || skill.id;
+                const checked = all || picked.has(name);
+                return `<label class="agent-skill-row">
+                    <input type="checkbox" class="agent-skill-item" value="${escapeHtml(name)}" ${checked ? 'checked' : ''} ${all ? 'disabled' : ''}>
+                    <div>
+                        <div class="text-sm text-slate-700 dark:text-slate-200">${escapeHtml(skill.display_name || name)}</div>
+                        <div class="text-xs text-slate-400">${escapeHtml(skill.description || '')}</div>
+                    </div>
+                </label>`;
+            }).join('')}`;
+        document.getElementById('agent-skills-all')?.addEventListener('change', (e) => {
+            // Toggle only flips ALL <-> empty subset. Turning it off starts from
+            // an empty list so the user picks up exactly what they want, and the
+            // stored value is [] rather than a full enumeration.
+            const next = e.target.checked ? null : [];
+            saveAgentSkills(agent, next);
+            render();  // repaint in place — no page-wide reload, no flicker
+        });
+        pane.querySelectorAll('.agent-skill-item').forEach(box => {
+            box.addEventListener('change', () => {
+                const names = Array.from(pane.querySelectorAll('.agent-skill-item:checked')).map(el => el.value);
+                saveAgentSkills(agent, names);
+            });
+        });
+    };
+    if (installedSkills.length) {
+        render();
+        return;
+    }
+    fetch('/api/skills').then(r => r.json()).then(data => {
+        installedSkills = data.skills || [];
+        render();
+    }).catch(() => {
+        pane.innerHTML = `<p class="text-sm text-slate-400">${escapeHtml(t('agents_skills_all'))}</p>`;
+    });
+}
+
+// Held between opening the create modal and a successful create: the chosen
+// avatar has nowhere to live server-side until the Agent exists, so we keep the
+// File and its preview URL client-side and upload once creation returns.
+let _pendingCreateAvatar = null;
+let _createKnowledgeMode = 'shared';
+
+// What the Agent being filled in would look like: no id yet, so the disc is the
+// neutral tone and only the initial follows the name.
+function createAvatarDraft() {
+    const name = document.getElementById('agent-create-name');
+    return { id: '', name: (name && name.value) || '', avatar: '' };
+}
+
+// Repaint just the preview disc as the name is typed. The whole picker is not
+// re-rendered because that would rebind the upload input on every keystroke.
+function refreshCreateAvatarPreview() {
+    if (_pendingCreateAvatar) return;
+    const slot = document.querySelector('#agent-create-avatar .agent-avatar-picker-preview');
+    if (slot) slot.innerHTML = agentAvatarHTML(createAvatarDraft(), 56);
+}
+
+// The create modal's avatar picker: same look as the edit one, but the upload
+// is staged locally (preview from an object URL) instead of POSTed immediately.
+function renderCreateAvatarPicker() {
+    const box = document.getElementById('agent-create-avatar');
+    if (!box) return;
+    const preview = _pendingCreateAvatar
+        ? `<img class="agent-avatar agent-avatar-56" src="${_pendingCreateAvatar.url}" alt="">`
+        : agentAvatarHTML(createAvatarDraft(), 56);
+    box.innerHTML = `
+        <div class="agent-avatar-picker-preview">${preview}</div>
+        <div class="agent-avatar-picker-body">
+            <button type="button" class="agent-avatar-upload">
+                <i class="fas fa-arrow-up-from-bracket"></i><span>${escapeHtml(t('agents_avatar_upload'))}</span>
+                <input type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+            </button>
+        </div>`;
+    const upload = box.querySelector('.agent-avatar-upload');
+    const input = upload.querySelector('input');
+    upload.addEventListener('click', () => input.click());
+    input.addEventListener('change', () => {
+        const file = input.files && input.files[0];
+        if (!file) return;
+        if (_pendingCreateAvatar && _pendingCreateAvatar.url) URL.revokeObjectURL(_pendingCreateAvatar.url);
+        _pendingCreateAvatar = { file, url: URL.createObjectURL(file) };
+        renderCreateAvatarPicker();
+    });
+}
+
+function openAgentCreateForm() {
+    const form = document.getElementById('agent-create-form');
+    if (!form) return;
+    form.classList.remove('hidden');
+    const name = document.getElementById('agent-create-name');
+    // The id is typed by hand or left blank on purpose; nothing writes to it
+    // while the form is open. A blank one is filled in once, at submit.
+    const id = document.getElementById('agent-create-id');
+    const description = document.getElementById('agent-create-description');
+    [name, id, description].forEach(el => { if (el) el.value = ''; });
+    document.getElementById('agent-create-status').textContent = '';
+
+    // The Agent has no home to store an avatar in yet, so the upload is held in
+    // memory and previewed locally; it is POSTed the moment creation succeeds.
+    _pendingCreateAvatar = null;
+    renderCreateAvatarPicker();
+    if (name && !name.dataset.avatarBound) {
+        name.dataset.avatarBound = '1';
+        // Without an upload the face is the name's first character, so the
+        // preview has to follow what is being typed.
+        name.addEventListener('input', refreshCreateAvatarPreview);
+    }
+
+    // Knowledge defaults to shared; reset the segmented control on every open.
+    _createKnowledgeMode = 'shared';
+    document.querySelectorAll('#agent-create-knowledge .agent-seg-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === 'shared');
+        if (!b.dataset.bound) {
+            b.dataset.bound = '1';
+            b.addEventListener('click', () => {
+                _createKnowledgeMode = b.dataset.mode;
+                document.querySelectorAll('#agent-create-knowledge .agent-seg-btn')
+                    .forEach(x => x.classList.toggle('active', x === b));
+            });
+        }
+    });
+
+    const clone = document.getElementById('agent-create-clone');
+    if (clone) {
+        // Options carry the agent so both the row and the trigger show its
+        // avatar + name; "blank" (no clone) has no face.
+        const opts = [{ value: '', label: t('agents_clone_none') }].concat(
+            enabledAgents().map(a => ({
+                value: a.id,
+                label: a.name || a.id,
+                agent: a,
+            }))
+        );
+        initDropdown(clone, opts, '', () => {});
+    }
+}
+
+function closeAgentCreateForm() {
+    document.getElementById('agent-create-form')?.classList.add('hidden');
+    if (_pendingCreateAvatar && _pendingCreateAvatar.url) URL.revokeObjectURL(_pendingCreateAvatar.url);
+    _pendingCreateAvatar = null;
+}
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('composer-agent-menu');
+    const btn = document.getElementById('composer-agent-btn');
+    if (menu && !menu.classList.contains('hidden') && !menu.contains(e.target) && btn && !btn.contains(e.target)) {
+        menu.classList.add('hidden');
+    }
+    const modal = document.getElementById('agent-create-form');
+    if (modal && !modal.classList.contains('hidden') && e.target === modal) {
+        closeAgentCreateForm();
+    }
+    const newMenu = document.getElementById('new-chat-menu');
+    const newWrap = document.querySelector('.session-panel-new-wrap');
+    if (newMenu && !newMenu.classList.contains('hidden') && newWrap && !newWrap.contains(e.target)) {
+        newMenu.classList.add('hidden');
+    }
+    const teamModal = document.getElementById('team-chat-modal');
+    if (teamModal && !teamModal.classList.contains('hidden') && e.target === teamModal) {
+        closeTeamChatModal();
+    }
+});
+
+function createAgentWorkspace() {
+    const name = document.getElementById('agent-create-name').value.trim();
+    const status = document.getElementById('agent-create-status');
+    if (!name) {
+        status.textContent = t('agents_name_required');
+        return;
+    }
+    // A hand-typed id is used as given; blank falls back to the name's slug,
+    // and then to a random one when the name has no ascii to slug (e.g. it is
+    // written in Chinese). Generated here rather than while typing so the field
+    // stays exactly as the user left it.
+    const typed = document.getElementById('agent-create-id').value.trim();
+    const id = typed || slugAgentId(name) || randomAgentId();
+    // Mirrors the server's rule, so a bad id is caught before the round trip.
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(id)) {
+        status.textContent = t('agents_id_invalid');
+        return;
+    }
+    fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'create',
+            id,
+            name,
+            description: document.getElementById('agent-create-description')?.value.trim() || '',
+            clone_from: getDropdownValue(document.getElementById('agent-create-clone')) || null,
+            knowledge_mode: _createKnowledgeMode,
+            revision: rosterRevision,
+        }),
+    }).then(r => r.json()).then(data => {
+        if (data.status !== 'success') {
+            throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Create failed'));
+        }
+        if (data.revision) rosterRevision = data.revision;
+        // Now that the workspace exists, push the staged avatar (if any) before
+        // reloading, so the roster arrives already carrying the new image.
+        const avatarStep = _pendingCreateAvatar
+            ? uploadAgentAvatar(id, _pendingCreateAvatar.file).catch(() => {})
+            : Promise.resolve();
+        closeAgentCreateForm();
+        return avatarStep.then(() => loadAgentCatalog()).then(() => openAgentDetail(id));
+    }).catch(err => { status.textContent = err.message; });
+}
+
+function saveAgentProfile() {
+    const agent = findAgent(selectedAdminAgentId);
+    if (!agent) return;
+    const payload = {
+        name: document.getElementById('agent-edit-name')?.value.trim(),
+        description: document.getElementById('agent-edit-description')?.value.trim() || '',
+    };
+    // Absent for the default Agent, which follows the configured model.
+    const picker = document.getElementById('agent-edit-model');
+    if (picker) {
+        const [provider, model] = (getDropdownValue(picker) || '').split('|');
+        payload.model = model || '';
+        payload.bot_type = provider || '';
+    }
+    // The write itself is quick; the follow-up catalog reload is what's slow
+    // (the default Agent carries a large skill list). Confirm optimistically so
+    // the feedback is instant, and only override it if the save actually fails.
+    flashAgentProfileStatus();
+    updateAgentWorkspace(agent.id, payload).then(ok => {
+        if (!ok) {
+            _agentSavedFlashUntil = 0;
+            const status = document.getElementById('agent-profile-status');
+            if (status) {
+                status.textContent = t('agents_save_failed');
+                status.classList.remove('agent-status-ok');
+            }
+        }
+    });
+}
+
+/* A brief inline confirmation on the detail pane's status line. A save reloads
+   the catalog and can re-render this pane more than once (the model catalog
+   arrives async), so the confirmation is kept as a deadline that every render
+   re-applies, rather than a one-shot write a later render would wipe. */
+let _agentSavedFlashUntil = 0;
+
+function paintAgentSavedFlash() {
+    const status = document.getElementById('agent-profile-status');
+    if (!status) return;
+    if (Date.now() < _agentSavedFlashUntil) {
+        status.textContent = t('agents_saved');
+        status.classList.add('agent-status-ok');
+    }
+}
+
+function flashAgentProfileStatus() {
+    _agentSavedFlashUntil = Date.now() + 2200;
+    paintAgentSavedFlash();
+    clearTimeout(flashAgentProfileStatus._t);
+    flashAgentProfileStatus._t = setTimeout(() => {
+        _agentSavedFlashUntil = 0;
+        const status = document.getElementById('agent-profile-status');
+        if (!status) return;
+        status.textContent = '';
+        status.classList.remove('agent-status-ok');
+    }, 2200);
+}
+
+function uploadAgentAvatar(agentId, file) {
+    if (!file) return;
+    const picker = document.getElementById('agent-edit-avatar');
+    if (picker) picker.classList.add('is-uploading');
+    const status = document.getElementById('agent-profile-status');
+    if (status) { status.classList.remove('agent-status-ok'); status.textContent = ''; }
+    const form = new FormData();
+    form.append('avatar', file);
+    return fetch(`/api/agents/${encodeURIComponent(agentId)}/avatar`, { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            if (data.status !== 'success') throw new Error(data.message || 'Upload failed');
+            // The image already persisted server-side. Patch the local catalog in
+            // place and repaint just the affected surfaces, rather than reloading
+            // the whole roster (slow when the default Agent carries many skills).
+            avatarVersions[agentId] = String(Date.now());
+            if (data.revision) rosterRevision = data.revision;
+            const agent = findAgent(agentId);
+            if (agent) agent.avatar = 'image';
+            renderAgentsGrid();
+            if (selectedAdminAgentId === agentId) renderAgentDetail();
+            renderComposerIdentity();
+            refreshBubbleAvatars();
+            flashAgentProfileStatus();
+        })
+        .catch(err => {
+            const s = document.getElementById('agent-profile-status');
+            if (s) { s.classList.remove('agent-status-ok'); s.textContent = err.message; }
+        })
+        .then(() => {
+            const p = document.getElementById('agent-edit-avatar');
+            if (p) p.classList.remove('is-uploading');
+        });
+}
+
+function updateAgentWorkspace(agentId, updates, _retried) {
+    return fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update', id: agentId, revision: rosterRevision, ...updates }),
+    }).then(r => r.json()).then(data => {
+        if (data.status !== 'success') {
+            // Two quick edits race: the second still carried the revision from
+            // before the first landed. Re-sync and retry once, silently, so a
+            // fast click just works instead of showing a lock error.
+            if (data.code === 'stale_roster' && !_retried) {
+                return loadAgentCatalog().then(() => updateAgentWorkspace(agentId, updates, true));
+            }
+            throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Update failed'));
+        }
+        return loadAgentCatalog().then(() => true);
+    }).catch(err => {
+        const status = document.getElementById('agent-profile-status') || document.getElementById('agent-editor-status');
+        if (status) status.textContent = err.message;
+        return false;
+    });
+}
+
+function deleteAgent(agentId) {
+    const agent = findAgent(agentId);
+    if (!agent) return;
+    if (agentId === defaultAgentId) return; // the default Agent is the instance
+    showConfirmDialog({
+        title: t('agents_delete_title'),
+        message: t('agents_delete_confirm').replace('{name}', agent.name || agentId),
+        okText: t('agents_delete'),
+        cancelText: t('cancel'),
+        onConfirm: () => _performAgentDelete(agentId),
+    });
+}
+
+function _performAgentDelete(agentId, _retried) {
+    return fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', id: agentId, revision: rosterRevision }),
+    }).then(r => r.json()).then(data => {
+        if (data.status !== 'success') {
+            if (data.code === 'stale_roster' && !_retried) {
+                return loadAgentCatalog().then(() => _performAgentDelete(agentId, true));
+            }
+            throw new Error(data.code === 'stale_roster' ? t('agents_stale') : (data.message || 'Delete failed'));
+        }
+        // Leaving the detail open on a now-deleted Agent would show a ghost.
+        if (selectedAdminAgentId === agentId) closeAgentDetail();
+        // A conversation owned by the deleted Agent falls back to the default.
+        if (activeAgentId === agentId) {
+            activeAgentId = defaultAgentId;
+            localStorage.setItem('cow_active_agent', activeAgentId);
+        }
+        // Drop the deleted Agent's remembered session id — its conversations
+        // went with the workspace, so the pinned id would only re-pin a ghost.
+        localStorage.removeItem(`${SESSION_ID_KEY}:${agentId}`);
+        return loadAgentCatalog().then(() => {
+            renderComposerIdentity();
+            // The Agent's sessions were removed server-side; refresh the open
+            // list so its rows don't linger until the next unrelated reload.
+            if (typeof loadSessionList === 'function') loadSessionList();
+            return true;
+        });
+    }).catch(err => {
+        const status = document.getElementById('agent-profile-status');
+        if (status) status.textContent = err.message;
+        else alert(err.message);
+        return false;
+    });
+}
+
+// The four core files an Agent can be edited through. BOOTSTRAP.md exists on
+// disk for internal use but isn't meant for hand-editing, so it's left out of
+// the picker entirely. Each option carries a short hint (rendered on the
+// right of the dropdown row) so the raw filename isn't the only clue to what
+// it holds.
+function _agentCoreFileOptions() {
+    return [
+        { value: 'AGENT.md', label: 'AGENT.md', hint: t('agents_core_file_agent') },
+        { value: 'USER.md', label: 'USER.md', hint: t('agents_core_file_user') },
+        { value: 'RULE.md', label: 'RULE.md', hint: t('agents_core_file_rule') },
+        { value: 'MEMORY.md', label: 'MEMORY.md', hint: t('agents_core_file_memory') },
+    ];
+}
+
+let agentCoreViewMode = 'edit';
+
+function initAgentCoreFileDropdown() {
+    const el = document.getElementById('agent-core-file');
+    if (!el) return;
+    const current = el._ddValue || 'AGENT.md';
+    initDropdown(el, _agentCoreFileOptions(), current, () => loadAgentCoreFile());
+}
+
+function currentAgentCoreFile() {
+    const el = document.getElementById('agent-core-file');
+    return (el && el._ddValue) || 'AGENT.md';
+}
+
+function setAgentCoreViewMode(mode) {
+    agentCoreViewMode = mode;
+    document.querySelectorAll('#agent-core-mode .agent-seg-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === mode);
+    });
+    const editor = document.getElementById('agent-core-editor');
+    const preview = document.getElementById('agent-core-preview');
+    if (!editor || !preview) return;
+    if (mode === 'preview') {
+        preview.innerHTML = renderMarkdown(editor.value || '');
+        // Same post-processing chat messages get: syntax highlighting plus the
+        // language label + copy button on each code block (renderMarkdown only
+        // produces the raw <pre>; the headers are added to the live DOM after).
+        if (typeof applyHighlighting === 'function') applyHighlighting(preview);
+        editor.classList.add('hidden');
+        preview.classList.remove('hidden');
+    } else {
+        preview.classList.add('hidden');
+        editor.classList.remove('hidden');
+    }
+}
+
+function loadAgentCoreFile() {
+    if (!selectedAdminAgentId) return;
+    initAgentCoreFileDropdown();
+    const filename = currentAgentCoreFile();
+    if (!filename) return;
+    _paintCoreFileStatus('pending', '…');
+    fetch(`/api/agents/${encodeURIComponent(selectedAdminAgentId)}/files/${encodeURIComponent(filename)}`)
+        .then(r => r.json()).then(data => {
+            if (data.status !== 'success') throw new Error(data.message || t('agents_save_failed'));
+            selectedCoreRevision = data.revision;
+            document.getElementById('agent-core-editor').value = data.content || '';
+            document.getElementById('agent-editor-label').textContent = `${selectedAdminAgentId} / ${filename}`;
+            // The revision hash meant nothing to a human reader; a blank status
+            // (nothing to report) reads better than a stray hex fragment.
+            _paintCoreFileStatus('pending', '');
+            // Refresh the preview in place if that's the active view, so
+            // switching files while in preview mode doesn't show stale content.
+            if (agentCoreViewMode === 'preview') setAgentCoreViewMode('preview');
+        }).catch(err => { _paintCoreFileStatus('error', err.message); });
+}
+
+// Paint the save status with a colour + icon, not just bare text, so success
+// and failure actually read differently at a glance. Success fades back to
+// blank after a bit; failure stays until the next attempt so it isn't missed.
+//
+// Every other `*-status` element in this console is hidden via the shared
+// `opacity-0` convention (see navigateTo/setLanguage, which blanket-fade any
+// `[id$="-status"]` element on navigation). This one has the same id suffix
+// so it gets caught by that same sweep — it must toggle `opacity-0` itself
+// too, or a stray earlier sweep leaves it permanently invisible no matter
+// what innerHTML is painted into it afterwards.
+function _paintCoreFileStatus(kind, text) {
+    const status = document.getElementById('agent-editor-status');
+    if (!status) return;
+    clearTimeout(_paintCoreFileStatus._t);
+    status.classList.remove('agent-status-ok', 'agent-status-error');
+    if (kind === 'ok') {
+        status.innerHTML = `<i class="fas fa-check mr-1"></i>${escapeHtml(text)}`;
+        status.classList.add('agent-status-ok');
+        status.classList.remove('opacity-0');
+        _paintCoreFileStatus._t = setTimeout(() => {
+            status.textContent = '';
+            status.classList.remove('agent-status-ok');
+            status.classList.add('opacity-0');
+        }, 2200);
+    } else if (kind === 'error') {
+        status.innerHTML = `<i class="fas fa-triangle-exclamation mr-1"></i>${escapeHtml(text)}`;
+        status.classList.add('agent-status-error');
+        status.classList.remove('opacity-0');
+    } else {
+        status.textContent = text || '';
+        if (text) status.classList.remove('opacity-0');
+    }
+}
+
+function saveAgentCoreFile() {
+    if (!selectedAdminAgentId) return;
+    const filename = currentAgentCoreFile();
+    const btn = document.querySelector('#agent-detail-files button[onclick="saveAgentCoreFile()"]');
+    _paintCoreFileStatus('pending', '…');
+    if (btn) btn.disabled = true;
+    fetch(`/api/agents/${encodeURIComponent(selectedAdminAgentId)}/files/${encodeURIComponent(filename)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: document.getElementById('agent-core-editor').value, revision: selectedCoreRevision }),
+    }).then(async r => ({ ok: r.ok, data: await r.json() })).then(({ ok, data }) => {
+        if (!ok || data.status !== 'success') throw new Error(data.message || t('agents_save_failed'));
+        selectedCoreRevision = data.revision;
+        _paintCoreFileStatus('ok', t('agents_saved'));
+    }).catch(err => {
+        _paintCoreFileStatus('error', err.message);
+    }).finally(() => {
+        if (btn) btn.disabled = false;
+    });
+}
+
+function startChatWithAgent(agentId) {
+    if (!agentId) return;
+    activeAgentId = agentId;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    newChat(true);
+    navigateTo('chat');
+    renderComposerIdentity();
+}
+
+function conversationHasMessages() {
+    return !!document.querySelector('#chat-messages .user-message-group, #chat-messages .bot-message-group');
+}
+
+/** A roster of one behaves exactly like the console did before Agents existed:
+ *  no face on the composer, no faces in the session list, no @ mentions. */
+function multiAgentMode() {
+    return enabledAgents().length > 1;
+}
+
+/** True once this conversation holds more than its owner. Until then it is an
+ *  ordinary chat and is drawn like one. */
+function sharedConversation() {
+    return multiAgentMode() && currentTeamIds().length > 0;
+}
+
+// Who is answering each in-flight request, as reported when it was accepted.
+// Lets a streaming bubble carry the right name before anything is persisted.
+const _liveSpeakers = {};
+
+function rememberLiveSpeaker(data) {
+    if (data && data.request_id && data.speaker) {
+        _liveSpeakers[data.request_id] = data.speaker;
+    }
+}
+
+/** Repaint a still-visible loading indicator with the resolved speaker's face,
+ *  once /message has said who took the turn. No-op if streaming already
+ *  replaced the dots with a bubble. */
+function setLoadingSpeaker(loadingEl, requestId) {
+    if (!loadingEl || !loadingEl.isConnected) return;
+    const face = loadingEl.querySelector('.bot-face');
+    if (face) face.innerHTML = agentAvatarHTML(liveSpeakerAgent(requestId), 32);
+}
+
+/** The Agent to draw on a reply, or null to keep the product's own face. */
+function botSpeakerAgent(msg, requestId) {
+    if (!sharedConversation()) return null;
+    const id = (msg && msg.extras && msg.extras.agent_id)
+        || (requestId && _liveSpeakers[requestId])
+        || activeAgentId;
+    return findAgent(id) || null;
+}
+
+/** The Agent answering a live request, for the streaming bubble and the loading
+ *  dots. Unlike botSpeakerAgent this also resolves in a solo chat, so a single
+ *  Agent's own uploaded avatar shows while it streams instead of the logo. */
+function liveSpeakerAgent(requestId) {
+    const id = (requestId && _liveSpeakers[requestId]) || activeAgentId;
+    return findAgent(id) || null;
+}
+
+/** Turn a written-out mention into a chip, so a name reads as a name instead
+ *  of as an id someone pasted. Runs on the rendered bubble rather than on the
+ *  markdown source, which keeps code spans untouched. */
+function highlightMentions(root) {
+    const roster = sessionRoster();
+    if (!root || roster.length < 2) return;
+    const byLabel = new Map();
+    roster.forEach(agent => {
+        [agent.name, agent.id].forEach(label => {
+            if (label) byLabel.set(String(label).toLowerCase(), agent);
+        });
+    });
+    const alternation = Array.from(byLabel.keys())
+        .sort((a, b) => b.length - a.length)
+        .map(label => label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .join('|');
+    const re = new RegExp('@(' + alternation + ')(?=[\\s，,：:、]|$)', 'gi');
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: node => node.parentElement
+            && node.parentElement.closest('code, pre, .mention-tag')
+            ? NodeFilter.FILTER_REJECT
+            : NodeFilter.FILTER_ACCEPT,
+    });
+    const targets = [];
+    let node;
+    while ((node = walker.nextNode())) {
+        re.lastIndex = 0;
+        if (re.test(node.nodeValue)) targets.push(node);
+    }
+    targets.forEach(text => {
+        const value = text.nodeValue;
+        const frag = document.createDocumentFragment();
+        let cursor = 0;
+        let match;
+        re.lastIndex = 0;
+        while ((match = re.exec(value))) {
+            if (match.index > cursor) {
+                frag.appendChild(document.createTextNode(value.slice(cursor, match.index)));
+            }
+            const agent = byLabel.get(match[1].toLowerCase());
+            const tag = document.createElement('span');
+            tag.className = 'mention-tag';
+            if (agent) {
+                // A chip that looks like the teammate it names: their face, then
+                // their name. Falls back to plain text for an unknown label.
+                tag.innerHTML = `<span class="mention-tag-face">${agentAvatarHTML(agent, 16)}</span><span class="mention-tag-name">${escapeHtml(agent.name || agent.id)}</span>`;
+            } else {
+                tag.textContent = '@' + match[1];
+            }
+            frag.appendChild(tag);
+            cursor = match.index + match[0].length;
+        }
+        if (cursor < value.length) {
+            frag.appendChild(document.createTextNode(value.slice(cursor)));
+        }
+        text.parentNode.replaceChild(frag, text);
+    });
+}
+
+function renderComposerIdentity() {
+    const wrap = document.getElementById('composer-identity');
+    const btn = document.getElementById('composer-agent-btn');
+    if (!wrap || !btn) return;
+    // A single-Agent install keeps the composer exactly as it always was: no
+    // avatar, no menu. The identity chip only appears once there is more than
+    // one Agent and thus an actual choice to make.
+    if (!multiAgentMode()) {
+        wrap.classList.add('hidden');
+        document.getElementById('composer-agent-menu')?.classList.add('hidden');
+        return;
+    }
+    wrap.classList.remove('hidden');
+    const agent = findAgent(activeAgentId) || { id: activeAgentId || defaultAgentId, name: activeAgentId || 'Agent' };
+    const others = currentTeamIds().length;
+    btn.innerHTML = agentAvatarHTML(agent, 22)
+        + (others ? `<span class="composer-agent-count">${others + 1}</span>` : '');
+    const face = btn.querySelector('.agent-avatar');
+    if (face) face.id = 'composer-agent-avatar';
+    // The owner can only be swapped before the first turn, but joining is
+    // allowed at any point, so the button itself never goes dead.
+    btn.classList.toggle('locked', conversationHasMessages());
+    btn.dataset.tooltip = agent.name || agent.id;
+}
+
+function toggleComposerAgentMenu(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('composer-agent-menu');
+    if (!menu) return;
+    if (!menu.classList.contains('hidden')) {
+        menu.classList.add('hidden');
+        return;
+    }
+    _closeComposerMenus(menu);
+    renderComposerAgentMenu();
+    menu.classList.remove('hidden');
+}
+
+/** Paint the agent menu's body from the current roster / team. Kept separate
+ *  from the open/close toggle so an invite or removal can refresh the list in
+ *  place — the menu stays open, the +/× flips, and the user can keep going. */
+function renderComposerAgentMenu() {
+    const menu = document.getElementById('composer-agent-menu');
+    if (!menu) return;
+    const taken = new Set(currentTeamIds());
+    const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
+    const sections = [];
+
+    // Once a conversation has teammates it is a group, and the only sensible
+    // actions are adding and removing members - "switch the current Agent" would
+    // silently abandon the group for a fresh solo chat. So the switch list only
+    // appears in an ordinary (not-yet-shared) chat, where it opens a clean
+    // conversation owned by the chosen Agent.
+    if (!sharedConversation()) {
+        sections.push(
+            `<div class="composer-menu-title">${escapeHtml(t('agents_pick_tip'))}</div>`
+            + enabledAgents().map(agent => `
+                <button type="button" class="composer-menu-item agent-row${agent.id === activeAgentId ? ' current' : ''}"
+                        onclick="pickComposerAgent('${escapeHtml(agent.id)}')">
+                    ${agentAvatarHTML(agent, 24)}
+                    <span>${escapeHtml(agent.name)}</span>
+                    ${agent.id === activeAgentId ? '<i class="fas fa-check ml-auto text-[11px]"></i>' : ''}
+                </button>`).join('')
+        );
+    }
+
+    const candidates = enabledAgents().filter(a => a.id !== activeAgentId && !taken.has(a.id));
+
+    // A group chat first lists the teammates already in the conversation (the
+    // owner is implicit and not shown), then, in a separate section below, who
+    // can still be pulled in. Splitting the two makes it obvious these rows are
+    // members to remove, not options to pick.
+    if (sharedConversation()) {
+        const joined = members.filter(m => m.id !== activeAgentId).map(m => `
+            <button type="button" class="composer-menu-item agent-row joined"
+                    onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
+                ${agentAvatarHTML(m, 24)}
+                <span>${escapeHtml(m.name || m.id)}</span>
+                <i class="fas fa-check ml-auto text-[11px] joined-check"></i>
+                <i class="fas fa-xmark ml-auto text-[11px] joined-remove"></i>
+            </button>`).join('');
+        if (joined) {
+            sections.push(
+                `<div class="composer-menu-title">${escapeHtml(t('team_members'))}</div>${joined}`
+            );
+        }
+    }
+
+    const invitable = candidates.map(agent => `
+        <button type="button" class="composer-menu-item agent-row"
+                onclick="inviteTeamMember('${escapeHtml(agent.id)}')">
+            ${agentAvatarHTML(agent, 24)}
+            <span>${escapeHtml(agent.name)}</span>
+            <i class="fas fa-plus ml-auto text-[11px] text-slate-400"></i>
+        </button>`).join('');
+    if (invitable) {
+        sections.push(
+            `<div class="composer-menu-title">${escapeHtml(t('team_invite'))}</div>${invitable}`
+        );
+    }
+
+    // Always offer a way to make a new Agent, so a single-Agent user discovers
+    // the team feature straight from the composer.
+    sections.push(
+        `<button type="button" class="composer-menu-item agent-row composer-menu-create"
+                onclick="openAgentCreateFromComposer()">
+            <span class="composer-menu-create-icon"><i class="fas fa-plus"></i></span>
+            <span>${escapeHtml(t('agents_create'))}</span>
+        </button>`
+    );
+
+    menu.innerHTML = sections.join('<div class="composer-menu-sep"></div>');
+}
+
+/** Jump from the composer straight into agent creation: close the menu, land on
+ *  the team tab, and open the create form. */
+function openAgentCreateFromComposer() {
+    document.getElementById('composer-agent-menu')?.classList.add('hidden');
+    navigateTo('agents');
+    if (typeof openAgentCreateForm === 'function') openAgentCreateForm();
+}
+
+function pickComposerAgent(agentId) {
+    document.getElementById('composer-agent-menu')?.classList.add('hidden');
+    if (!agentId || agentId === activeAgentId) return;
+    activeAgentId = agentId;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    // Switching starts a clean conversation owned by the chosen Agent rather
+    // than rewriting the current one, so it works at any point in a chat.
+    newChat(true);
+    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
+    renderComposerIdentity();
+}
+
+function inviteTeamMember(agentId) {
+    // Keep the menu open so the invited Agent visibly moves from "+ add" to the
+    // "× remove" list, and the user can invite several in a row without having
+    // to reopen it each time.
+    addTeamMember(agentId).then(refreshComposerAgentMenuIfOpen);
+}
+
+/** Everyone addressable in this conversation, owner first. */
+function sessionRoster() {
+    const owner = findAgent(activeAgentId);
+    const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
+    const roster = owner ? [owner] : [];
+    members.forEach(m => {
+        if (!roster.some(a => a.id === m.id)) roster.push(findAgent(m.id) || m);
+    });
+    return roster;
+}
+
+/** The teammate a message hands the turn to, or '' for nobody.
+ *  Mirrors the server's rule: a leading mention only. */
+function addressedAgentId(text) {
+    const stripped = String(text || '').replace(/^\s+/, '');
+    if (!stripped.startsWith('@')) return '';
+    const labels = [];
+    sessionRoster().forEach(agent => {
+        [agent.name, agent.id].forEach(label => {
+            if (label) labels.push([String(label), agent.id]);
+        });
+    });
+    labels.sort((a, b) => b[0].length - a[0].length);
+    for (const [label, id] of labels) {
+        const re = new RegExp('^@' + label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=[\\s，,：:、]|$)', 'i');
+        // The owner is addressable too; the server treats "@owner" as the owner
+        // simply taking the turn, so no special-casing here.
+        if (re.test(stripped)) return id;
+    }
+    return '';
+}
+
+function mentionedAgentIds(text) {
+    const id = addressedAgentId(text);
+    return id ? [id] : [];
+}
+
+function currentTeamIds() {
+    return ((_sessCfg && _sessCfg.team && _sessCfg.team.members) || []).map(m => m.id);
+}
+
+function setTeamMembers(ids) {
+    const unique = Array.from(new Set(ids.filter(id => id && id !== activeAgentId)));
+    return fetch(`/api/sessions/${encodeURIComponent(sessionId)}/settings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ members: unique.length ? unique : null }),
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
+            _sessCfg = { model: data.model, permission: data.permission, team: data.team };
+            renderComposerIdentity();
+            // Inviting or removing someone changes whether one model can speak
+            // for this conversation.
+            _renderModelChip();
+        }
+    });
+}
+
+function addTeamMember(agentId) {
+    if (!agentId || agentId === activeAgentId) return Promise.resolve();
+    const ids = currentTeamIds();
+    if (ids.includes(agentId)) return Promise.resolve();
+    return setTeamMembers([...ids, agentId]);
+}
+
+function removeTeamMember(agentId) {
+    return setTeamMembers(currentTeamIds().filter(id => id !== agentId))
+        .then(refreshComposerAgentMenuIfOpen);
+}
+
+/** Repaint the agent menu if it is still open, so add/remove show immediately. */
+function refreshComposerAgentMenuIfOpen() {
+    const menu = document.getElementById('composer-agent-menu');
+    if (menu && !menu.classList.contains('hidden')) renderComposerAgentMenu();
+}
+
+async function syncTeamFromText(text) {
+    const extra = mentionedAgentIds(text);
+    if (!extra.length) return;
+    await setTeamMembers([...currentTeamIds(), ...extra]);
+}
+
+// Point a channel instance at an Agent. Binding lives on the instance itself
+// (channel_instances[].agent_id); an empty agentId means "follow the default
+// Agent". instanceId defaults to the channel type for a single-instance channel.
+function bindChannelAgent(channelType, agentId, instanceId, members) {
+    const defaultId = defaultAgentId;
+    const bound = (agentId && agentId !== defaultId) ? agentId : '';
+    const iid = instanceId || channelType;
+    const payload = {
+        action: 'bind_channel_instance',
+        channel_type: channelType,
+        instance_id: iid,
+        agent_id: bound,
+    };
+    // Only send members when we mean to set the team; omitting it leaves the
+    // stored roster untouched (a plain owner-only rebind).
+    if (Array.isArray(members)) payload.members = members;
+    return fetch('/api/agents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    }).then(r => r.json()).then(data => {
+        if (data.status !== 'success') throw new Error(data.message || 'Save failed');
+        // Rebinding is a hot swap on the server (no channel restart), and the
+        // dropdown already reflects the new value locally, so only the roster
+        // catalog needs refreshing. Re-rendering the channels view here would
+        // rebuild the cards and reset the scan/manual tab state for no reason.
+        if (Array.isArray(channelInstancesView)) {
+            const rec = channelInstancesView.find(i => i.instance_id === iid);
+            if (rec) {
+                rec.agent_id = bound;
+                if (data.result && Array.isArray(data.result.members)) {
+                    rec.members = data.result.members.slice();
+                }
+            }
+        }
+        return loadAgentCatalog();
+    }).catch(err => _wsToast(err.message));
+}
+
+function channelBoundAgentId(channelType) {
+    const inst = channelInstances.find(i =>
+        (i.channel_type || '').toLowerCase() === channelType
+    );
+    return inst ? (inst.agent_id || '') : '';
+}
+
+let memoryAgentId = localStorage.getItem('cow_memory_agent') || '';
+
+function viewingMemoryAgentId() {
+    return memoryAgentId || activeAgentId || defaultAgentId;
+}
+
+function renderMemoryAgentSelect() {
+    const el = document.getElementById('memory-agent-select');
+    if (!el) return;
+    const current = viewingMemoryAgentId();
+    const list = agentCatalog.length ? agentCatalog : enabledAgents();
+    const options = list.map(a => ({ value: a.id, label: a.name || a.id, agent: a }));
+    initDropdown(el, options, current, (value) => selectMemoryAgent(value), { withAvatar: true });
+}
+
+function selectMemoryAgent(agentId) {
+    memoryAgentId = agentId;
+    localStorage.setItem('cow_memory_agent', agentId);
+    closeMemoryViewer();
+    loadMemoryView(1);
+}
+
+loadAgentCatalog();
 
 // =====================================================================
 // Markdown Renderer
@@ -1611,6 +3306,21 @@ function createMd() {
             token.attrPush(['rel', 'noopener noreferrer']);
         }
         return defaultLinkOpen(tokens, idx, options, env, self);
+    };
+    // A table can't shrink below its columns' minimum content width, so a wide
+    // comparison table would run past the bubble. Wrap it in a scroller: it
+    // still fills the bubble when it fits and scrolls sideways when it doesn't.
+    const defaultTableOpen = md.renderer.rules.table_open || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+    };
+    const defaultTableClose = md.renderer.rules.table_close || function(tokens, idx, options, env, self) {
+        return self.renderToken(tokens, idx, options);
+    };
+    md.renderer.rules.table_open = function(tokens, idx, options, env, self) {
+        return '<div class="table-wrap">' + defaultTableOpen(tokens, idx, options, env, self);
+    };
+    md.renderer.rules.table_close = function(tokens, idx, options, env, self) {
+        return defaultTableClose(tokens, idx, options, env, self) + '</div>';
     };
     return md;
 }
@@ -1780,13 +3490,17 @@ let isPolling = false;
 let pollGeneration = 0;   // incremented on each restart to cancel stale poll loops
 let loadingContainers = {};
 let activeStreams = {};   // request_id -> EventSource
-let sessionActiveRequest = {};   // session_id -> request_id (in-flight stream per session)
+let sessionActiveRequest = {};   // agent_id + session_id -> request_id
 const PENDING_VOICE_ATTACH_TTL_MS = 2 * 60 * 1000;
 const PENDING_VOICE_ATTACH_MAX = 100;
 const pendingVoiceAttachments = new Map(); // session_id:bot_seq -> pending audio
 
+function runtimeSessionKey(sid, agentId = activeAgentId) {
+    return `${agentId || defaultAgentId || 'default'}::${sid}`;
+}
+
 function isCurrentSessionConversationActive() {
-    return !!sessionActiveRequest[sessionId];
+    return !!sessionActiveRequest[runtimeSessionKey(sessionId)];
 }
 
 function updateEditButtonsState() {
@@ -1808,7 +3522,50 @@ let streamBuffers = {};   // request_id -> { items: [event...], timestamp } for 
 let isComposing = false;
 let appConfig = { use_agent: false, title: 'CowAgent', subtitle: '', providers: {}, api_bases: {} };
 
+let activeAgentId = localStorage.getItem('cow_active_agent') || '';
 const SESSION_ID_KEY = 'cow_session_id';
+
+function activeSessionStorageKey() {
+    return activeAgentId && activeAgentId !== defaultAgentId && activeAgentId !== 'default'
+        ? `${SESSION_ID_KEY}:${activeAgentId}`
+        : SESSION_ID_KEY;
+}
+
+// Carry the selected Agent through existing console requests without forcing
+// every feature panel to implement its own routing glue.
+const _nativeFetch = window.fetch.bind(window);
+window.fetch = function(input, init) {
+    init = init ? { ...init } : {};
+    let url = typeof input === 'string' ? input : input.url;
+    if (activeAgentId && typeof url === 'string' && url.startsWith('/')) {
+        if (!/[?&]agent_id=/.test(url)) {
+            const joiner = url.includes('?') ? '&' : '?';
+            url = `${url}${joiner}agent_id=${encodeURIComponent(activeAgentId)}`;
+        }
+        if (typeof input !== 'string') input = new Request(url, input);
+        else input = url;
+
+        // JSON bodies read agent_id from the payload, so inject it there too.
+        // Multipart (FormData) uploads must NOT get a body copy: the query
+        // string above already carries it, and web.py merges query + body,
+        // collapsing the duplicate into a list (agent_id=['x','x']). That list
+        // then reaches handlers expecting a plain string and raises
+        // "unhashable type: 'list'", silently killing every file upload.
+        if (typeof init.body === 'string') {
+            const contentType = new Headers(init.headers || {}).get('Content-Type') || '';
+            if (contentType.includes('application/json')) {
+                try {
+                    const body = JSON.parse(init.body);
+                    if (body && typeof body === 'object' && !Array.isArray(body) && !body.agent_id) {
+                        body.agent_id = activeAgentId;
+                        init.body = JSON.stringify(body);
+                    }
+                } catch (_) {}
+            }
+        }
+    }
+    return _nativeFetch(input, init);
+};
 
 function generateSessionId() {
     return 'session_' + ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
@@ -1819,10 +3576,10 @@ function generateSessionId() {
 // Restore session_id from localStorage so conversation history survives page refresh.
 // A new id is only generated when the user explicitly starts a new chat.
 function loadOrCreateSessionId() {
-    const stored = localStorage.getItem(SESSION_ID_KEY);
+    const stored = localStorage.getItem(activeSessionStorageKey());
     if (stored) return stored;
     const fresh = generateSessionId();
-    localStorage.setItem(SESSION_ID_KEY, fresh);
+    localStorage.setItem(activeSessionStorageKey(), fresh);
     return fresh;
 }
 
@@ -2671,6 +4428,10 @@ function _wsSelUpdateLabel() {
     }
     const btn = _wsSelBtn();
     if (btn) {
+        // The default workspace is the resting state, so it collapses to just
+        // the folder icon (matching the desktop composer); a picked workspace
+        // shows its name so the user knows they've moved off the default.
+        btn.classList.toggle('composer-chip-icon-only', !_wsSelState.current);
         const full = _wsSelState.current
             ? _wsSelState.current.path
             : _wsSelState.defaultWorkspace;
@@ -2708,7 +4469,7 @@ function renderWorkspaceSelectorMenu() {
 
     const parts = [];
     const isDefault = !_wsSelState.current;
-    parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_system_space'))}</div>`);
+    parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_title'))}</div>`);
     // Default workspace: hovering shows the full ~/cow absolute path.
     parts.push(`
         <button class="ws-sel-item ${isDefault ? 'active' : ''}" onclick="selectWorkspaceProject(null)"
@@ -2718,22 +4479,21 @@ function renderWorkspaceSelectorMenu() {
             ${isDefault ? '<i class="fas fa-check ws-sel-check"></i>' : ''}
         </button>`);
 
-    // Project space: recent projects plus the open/new actions share one
-    // heading, separated from the system space above by a divider.
-    parts.push(`<div class="ws-sel-divider"></div>`);
-    parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_project_space'))}</div>`);
-    (_wsSelState.recents || []).forEach(r => {
-        const active = _wsSelState.current && _wsSelState.current.path === r.path;
-        parts.push(`
-            <button class="ws-sel-item ${active ? 'active' : ''}" onclick="selectWorkspaceProject('${_wsAttr(r.path)}')"
-                    data-tip-float data-tooltip="${escapeHtml(r.path)}" data-tooltip-pos="bottom">
-                <i class="fas fa-folder"></i>
-                <span class="ws-sel-name">${escapeHtml(r.name)}</span>
-                ${active ? '<i class="fas fa-check ws-sel-check"></i>' : ''}
-            </button>`);
-    });
+    if ((_wsSelState.recents || []).length) {
+        parts.push(`<div class="ws-sel-divider"></div>`);
+        parts.push(`<div class="ws-sel-section-title">${escapeHtml(t('ws_sel_recents'))}</div>`);
+        _wsSelState.recents.forEach(r => {
+            const active = _wsSelState.current && _wsSelState.current.path === r.path;
+            parts.push(`
+                <button class="ws-sel-item ${active ? 'active' : ''}" onclick="selectWorkspaceProject('${_wsAttr(r.path)}')"
+                        data-tip-float data-tooltip="${escapeHtml(r.path)}" data-tooltip-pos="bottom">
+                    <i class="fas fa-folder"></i>
+                    <span class="ws-sel-name">${escapeHtml(r.name)}</span>
+                    ${active ? '<i class="fas fa-check ws-sel-check"></i>' : ''}
+                </button>`);
+        });
+    }
 
-    // Divider between the project list and the open/new-project actions.
     parts.push(`<div class="ws-sel-divider"></div>`);
     parts.push(`
         <button class="ws-sel-item" onclick="wsSelOpenProjectDialog()">
@@ -2883,40 +4643,8 @@ async function _wsSelApply(url, body) {
         if (data.default_workspace) _wsSelState.defaultWorkspace = data.default_workspace;
         _wsSelUpdateLabel();
         _wsSelRevealFiles();
-        // Surface the change in the history sidebar too: opening/creating a
-        // project should immediately show its group with the current session
-        // filed inside it. Open the panel if closed, uncollapse the target
-        // group, then reload so grouping/counts reflect the new binding.
-        _revealSpaceInSessionPanel(_wsSelState.current ? _wsSelState.current.path : DEFAULT_SPACE_KEY);
         return true;
     } catch (e) { _wsToast(String(e.message || e)); return false; }
-}
-
-// Ensure the history sidebar is open and the given space's group is expanded,
-// then reload the session list so the just-bound session shows under it.
-function _revealSpaceInSessionPanel(spaceKey) {
-    const panel = document.getElementById('session-panel');
-    if (panel && !sessionPanelOpen) {
-        sessionPanelOpen = true;
-        panel.classList.remove('hidden');
-        _showSessionOverlay();
-        _persistPanelState();
-    }
-    if (spaceKey && _collapsedProjects.has(spaceKey)) {
-        _collapsedProjects.delete(spaceKey);
-        _saveCollapsed(_collapsedProjects);
-    }
-    // Keep the current session visible even if it has no backend record yet
-    // (a fresh chat that just got a workspace but no first message): re-add it
-    // as an optimistic item so it appears inside the newly opened space.
-    const curSid = sessionId;
-    loadSessionList(() => {
-        if (!_sessionItems.some(s => s.session_id === curSid)) {
-            _addOptimisticSessionItem(curSid);
-        }
-        // Select the current session in the reloaded list and scroll to it.
-        _revealActiveSession();
-    });
 }
 
 // Open (or refresh) the right-hand file panel on the Files tab so the newly
@@ -2982,6 +4710,8 @@ function _closeComposerMenus(keep) {
             menu.classList.add('hidden');
             if (btn) btn.classList.remove('open');
         });
+    const agentMenu = document.getElementById('composer-agent-menu');
+    if (agentMenu && agentMenu !== keep) agentMenu.classList.add('hidden');
 }
 
 // Fetch this session's effective model + permission and repaint both chips.
@@ -2990,13 +4720,14 @@ async function refreshSessionSettings() {
         const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/settings`);
         const data = await res.json();
         if (data.status !== 'success') return;
-        _sessCfg = { model: data.model, permission: data.permission };
+        _sessCfg = { model: data.model, permission: data.permission, team: data.team };
     } catch (e) {
         // Keep whatever the chips already show rather than blanking them.
         return;
     }
     _renderPermissionChip();
     _renderModelChip();
+    renderComposerIdentity();
 }
 
 function _renderPermissionChip() {
@@ -3026,6 +4757,16 @@ function _renderPermissionChip() {
 function _renderModelChip() {
     const btn = _modelBtn();
     if (!btn || !_sessCfg) return;
+    // Once a conversation has more than one Agent there is no single model to
+    // show: each answers on its own. Pinning one here would silently apply to
+    // whoever happens to own the conversation.
+    const shared = sharedConversation();
+    btn.classList.toggle('hidden', shared);
+    if (shared) {
+        _modelMenu()?.classList.add('hidden');
+        btn.classList.remove('open');
+        return;
+    }
     const state = _sessCfg.model || {};
     const model = state.model || '';
 
@@ -3033,7 +4774,8 @@ function _renderModelChip() {
     if (label) label.textContent = model || t('model_unset');
 
     const tip = t('model_tip').replace('{name}', model || t('model_unset'))
-        + (state.source === 'global' ? ` · ${t('model_follow_global')}` : '');
+        + (state.source === 'global' ? ` · ${t('model_follow_global')}` : '')
+        + (state.source === 'agent' ? ` · ${t('model_follow_agent')}` : '');
     btn.setAttribute('data-tooltip', tip);
     btn.setAttribute('data-tooltip-pos', 'top');
     btn.setAttribute('data-tip-float', '');
@@ -3623,6 +5365,8 @@ function sendVoiceMessage(text, audioUrl) {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
+                rememberLiveSpeaker(data);
+                setLoadingSpeaker(loadingEl, data.request_id);
                 if (data.inline_reply) {
                     // Synchronous fast-path reply (e.g. /cancel); skip SSE.
                     loadingEl.remove();
@@ -3809,6 +5553,8 @@ async function regenerateResponse(botMsgEl) {
     // Resend the message
     const timestamp = new Date();
     const body = { session_id: sessionId, message: userContent, stream: true, timestamp: timestamp.toISOString(), lang: currentLang };
+    const regenAddressed = addressedAgentId(userContent);
+    if (regenAddressed) body.speaker_agent_id = regenAddressed;
 
     const MAX_RETRIES = 2;
     const RETRY_DELAY_MS = 1000;
@@ -3822,6 +5568,8 @@ async function regenerateResponse(botMsgEl) {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
+                rememberLiveSpeaker(data);
+                setLoadingSpeaker(loadingEl, data.request_id);
                 if (data.inline_reply) {
                     loadingEl.remove();
                     addBotMessage(data.inline_reply, new Date());
@@ -3877,6 +5625,8 @@ function sendMessage() {
     if (ws) ws.remove();
 
     const titleInfo = (isFirstMessage && text) ? { sid: sessionId, userMsg: text } : null;
+    syncTeamFromText(text);
+    renderComposerIdentity();
 
     const timestamp = new Date();
     const attachments = [...pendingAttachments];
@@ -3892,6 +5642,10 @@ function sendMessage() {
     if (typeof resetTurnArtifacts === 'function') resetTurnArtifacts();
 
     const body = { session_id: sessionId, message: text, stream: true, timestamp: timestamp.toISOString(), lang: currentLang };
+    // Naming somebody hands them the turn. Sent explicitly because the composer
+    // already knows who it wrote, and the server re-checks it either way.
+    const addressed = addressedAgentId(text);
+    if (addressed) body.speaker_agent_id = addressed;
     if (attachments.length > 0) {
         body.attachments = attachments.map(a => ({
             file_path: a.file_path,
@@ -3913,6 +5667,8 @@ function sendMessage() {
         .then(r => r.json())
         .then(data => {
             if (data.status === 'success') {
+                rememberLiveSpeaker(data);
+                setLoadingSpeaker(loadingEl, data.request_id);
                 if (data.inline_reply) {
                     // Channel handled synchronously (e.g. /cancel fast-path);
                     // render as a bot bubble and skip SSE entirely.
@@ -3985,15 +5741,17 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     // every event into a buffer, so returning to the session can rebuild the
     // bubble by replaying the buffer and then resume live rendering.
     const ownerSession = sessionId;
-    const isActive = () => ownerSession === sessionId;
-    sessionActiveRequest[ownerSession] = requestId;
+    const ownerAgent = activeAgentId;
+    const ownerKey = runtimeSessionKey(ownerSession, ownerAgent);
+    const isActive = () => ownerSession === sessionId && ownerAgent === activeAgentId;
+    sessionActiveRequest[ownerKey] = requestId;
     updateEditButtonsState();
     // Per-request event buffer used to rebuild the bubble on re-attach.
     const buffer = streamBuffers[requestId] || { items: [], timestamp };
     streamBuffers[requestId] = buffer;
     const clearOwnerRequest = () => {
-        if (sessionActiveRequest[ownerSession] === requestId) {
-            delete sessionActiveRequest[ownerSession];
+        if (sessionActiveRequest[ownerKey] === requestId) {
+            delete sessionActiveRequest[ownerKey];
             updateEditButtonsState();
         }
         delete streamBuffers[requestId];
@@ -4011,9 +5769,20 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
         botEl.dataset.requestId = requestId;
         // Regenerate button starts hidden; it's revealed in the "done"
         // event handler once seq metadata arrives from the backend.
+        // The streaming face is whoever is answering this request: the addressed
+        // teammate if one was named, else the conversation's own Agent. Wrapped
+        // in .bot-face so a later avatar change repaints it like any bubble.
+        const speaker = liveSpeakerAgent(requestId);
+        if (speaker && speaker.id) botEl.dataset.speakerAgent = speaker.id;
+        // In a group the bubble is labelled with its author while it streams,
+        // exactly as the replayed history shows it — a solo chat stays unlabelled.
+        const speakerName = (sharedConversation() && speaker)
+            ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
+            : '';
         botEl.innerHTML = `
-            <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+            <span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>
             <div class="min-w-0 flex-1 max-w-[85%]">
+                ${speakerName}
                 <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                     <div class="agent-steps"></div>
                     <div class="answer-content sse-streaming"></div>
@@ -4723,6 +6492,7 @@ function createUserMessageEl(content, timestamp, attachments) {
     `;
     // Store raw content for editing
     el.dataset.rawContent = content || '';
+    highlightMentions(el.querySelector('.msg-content'));
     return el;
 }
 
@@ -4941,9 +6711,23 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
            </div>`
         : '';
 
+    // The reply's face is whichever Agent spoke: its uploaded image, or the
+    // product logo by default. A shared conversation also labels the bubble,
+    // since consecutive bubbles can come from different Agents; a solo chat
+    // stays unlabelled but still reflects that Agent's own avatar.
+    const speaker = botSpeakerAgent(msg, requestId) || findAgent(activeAgentId);
+    // Remember who spoke, so a later avatar change can repaint this exact face
+    // without re-rendering the whole bubble.
+    if (speaker && speaker.id) el.dataset.speakerAgent = speaker.id;
+    const faceHtml = `<span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>`;
+    const speakerName = (sharedConversation() && speaker)
+        ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
+        : '';
+
     el.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+        ${faceHtml}
         <div class="min-w-0 flex-1 max-w-[85%]">
+            ${speakerName}
             <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3 text-sm leading-relaxed msg-content text-slate-700 dark:text-slate-200">
                 ${evolutionBadge}
                 ${stepsHtml ? `<div class="agent-steps">${stepsHtml}</div>` : ''}
@@ -5186,7 +6970,14 @@ function loadHistory(page) {
     historyLoading = true;
     const historySessionId = sessionId;
 
-    fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
+    // A shared conversation labels each bubble with its author and paints the
+    // right face. That resolution needs this session's team roster (_sessCfg),
+    // which loads asynchronously; without it every replayed bubble falls back
+    // to the owner's avatar and loses its name. Make sure the roster is in hand
+    // before rendering so a reload looks exactly like the live conversation.
+    const ready = _sessCfg ? Promise.resolve() : refreshSessionSettings().catch(() => {});
+
+    ready.then(() => fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
         .then(r => r.json())
         .then(data => {
             // A response from a session we have since left must never render
@@ -5288,14 +7079,19 @@ function loadHistory(page) {
             }
         })
         .catch(() => {})
-        .finally(() => { historyLoading = false; });
+        .finally(() => {
+            historyLoading = false;
+            renderComposerIdentity();
+        }));
 }
 
 function addLoadingIndicator() {
     const el = document.createElement('div');
-    el.className = 'flex gap-3 px-4 sm:px-6 py-3';
+    el.className = 'flex gap-3 px-4 sm:px-6 py-3 loading-indicator';
+    // Starts on the conversation's own Agent; setLoadingSpeaker swaps the face
+    // once the server says who actually took the turn (an addressed teammate).
     el.innerHTML = `
-        <img src="assets/logo.jpg" alt="CowAgent" class="w-8 h-8 rounded-lg flex-shrink-0">
+        <span class="bot-face">${agentAvatarHTML(findAgent(activeAgentId), 32)}</span>
         <div class="bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 rounded-2xl px-4 py-3">
             <div class="flex items-center gap-1.5">
                 <span class="w-2 h-2 rounded-full bg-primary-400 animate-pulse-dot" style="animation-delay: 0s"></span>
@@ -5309,22 +7105,116 @@ function addLoadingIndicator() {
     return el;
 }
 
+/* The session-panel "新对话" button. With a single Agent there is nobody to
+   choose between, so it just starts a chat. With several, it opens a menu: pick
+   an Agent for a solo chat, or open the team picker for a group chat. */
+function onNewChatButton(event) {
+    if (!multiAgentMode()) { newChat(true); return; }
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('new-chat-menu');
+    if (!menu) { newChat(true); return; }
+    if (!menu.classList.contains('hidden')) { menu.classList.add('hidden'); return; }
+    const rows = enabledAgents().map(agent => `
+        <button type="button" class="new-chat-item" onclick="startSoloChat('${escapeHtml(agent.id)}')">
+            ${agentAvatarHTML(agent, 22)}
+            <span>${escapeHtml(agent.name)}</span>
+        </button>`).join('');
+    menu.innerHTML = `
+        <div class="new-chat-section">${rows}</div>
+        <div class="new-chat-sep"></div>
+        <button type="button" class="new-chat-item new-chat-team" onclick="openTeamChatModal()">
+            <span class="new-chat-team-ico"><i class="fas fa-user-group"></i></span>
+            <span>${escapeHtml(t('new_team_chat'))}</span>
+        </button>`;
+    menu.classList.remove('hidden');
+}
+
+function startSoloChat(agentId) {
+    document.getElementById('new-chat-menu')?.classList.add('hidden');
+    if (!agentId) { newChat(true); return; }
+    activeAgentId = agentId;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    newChat(true);
+    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
+    renderComposerIdentity();
+}
+
+// The first checked Agent owns the conversation; the rest are invited as guests.
+let _teamChatPicks = [];
+
+function openTeamChatModal() {
+    document.getElementById('new-chat-menu')?.classList.add('hidden');
+    _teamChatPicks = [activeAgentId || defaultAgentId];
+    const status = document.getElementById('team-chat-status');
+    if (status) status.textContent = '';
+    renderTeamChatList();
+    document.getElementById('team-chat-modal')?.classList.remove('hidden');
+}
+
+function closeTeamChatModal() {
+    document.getElementById('team-chat-modal')?.classList.add('hidden');
+}
+
+/** From the group-chat picker, jump to creating a new Agent. */
+function openAgentCreateFromModal() {
+    closeTeamChatModal();
+    navigateTo('agents');
+    if (typeof openAgentCreateForm === 'function') openAgentCreateForm();
+}
+
+function toggleTeamChatPick(agentId) {
+    const i = _teamChatPicks.indexOf(agentId);
+    if (i === -1) _teamChatPicks.push(agentId);
+    else _teamChatPicks.splice(i, 1);
+    renderTeamChatList();
+}
+
+function renderTeamChatList() {
+    const list = document.getElementById('team-chat-list');
+    if (!list) return;
+    list.innerHTML = enabledAgents().map(agent => {
+        const rank = _teamChatPicks.indexOf(agent.id);
+        const on = rank !== -1;
+        const owner = rank === 0;
+        return `<button type="button" class="team-chat-row${on ? ' on' : ''}" onclick="toggleTeamChatPick('${escapeHtml(agent.id)}')">
+            ${agentAvatarHTML(agent, 28)}
+            <span class="team-chat-name">${escapeHtml(agent.name)}</span>
+            ${owner ? `<span class="team-chat-owner">${escapeHtml(t('new_team_chat_owner'))}</span>` : ''}
+            <span class="team-chat-check"><i class="fas ${on ? 'fa-circle-check' : 'fa-circle'}"></i></span>
+        </button>`;
+    }).join('');
+}
+
+function startTeamChat() {
+    const picks = _teamChatPicks.filter(id => enabledAgents().some(a => a.id === id));
+    if (picks.length < 2) {
+        const status = document.getElementById('team-chat-status');
+        if (status) status.textContent = t('new_team_chat_min');
+        return;
+    }
+    closeTeamChatModal();
+    const [owner, ...guests] = picks;
+    activeAgentId = owner;
+    localStorage.setItem('cow_active_agent', activeAgentId);
+    newChat(true);
+    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
+    // The fresh session exists client-side; invite the guests onto it so the
+    // very first message already goes to a group.
+    setTeamMembers(guests).then(() => renderComposerIdentity());
+}
+
 function newChat(optimistic = true, inherit = true) {
+    // A fresh session resets the preview panel, discarding an open editor.
+    if (typeof wsGuardUnsaved === 'function'
+        && !wsGuardUnsaved(() => newChat(optimistic, inherit))) return;
+
     // Do NOT close active streams: other sessions keep streaming in the
     // background (each stream self-guards against the foreign view) and their
     // replies still complete and persist.
 
-    // Inherit the current session's project so a new chat stays in the same
-    // space; captured before we switch ids / refresh the selector to default.
-    // `inherit=false` forces the default workspace (used by the "+" on the
-    // default-space header, and by newChatInSpace which binds explicitly).
-    const _inheritProject = inherit && _wsSelState.current
-        ? { path: _wsSelState.current.path, name: _wsSelState.current.name }
-        : null;
-
     // Generate a fresh session and persist it so the next page load also starts clean
     sessionId = generateSessionId();
-    localStorage.setItem(SESSION_ID_KEY, sessionId);
+    localStorage.setItem(activeSessionStorageKey(), sessionId);
     refreshWorkspaceSelector();  // a fresh session starts on the default workspace
     refreshSessionSettings();    // ... and on the global model / permission
     if (typeof wsOnSessionSwitch === 'function') wsOnSessionSwitch();
@@ -5397,6 +7287,7 @@ function newChat(optimistic = true, inherit = true) {
         </div>
     `;
     messagesDiv.appendChild(ws);
+    renderComposerIdentity();
     ws.querySelectorAll('.example-card').forEach(card => {
         card.addEventListener('click', () => {
             const sendText = card.dataset.send;
@@ -5434,87 +7325,6 @@ function newChat(optimistic = true, inherit = true) {
     } else {
         loadSessionList();
     }
-
-    // If the previous session was inside a project, bind the fresh one to the
-    // same project so it stays in that space (not the default workspace).
-    if (optimistic && _inheritProject) {
-        _bindNewChatToProject(newSid, _inheritProject);
-    }
-}
-
-// Bind a freshly created session to a project and reflect it locally, so the
-// optimistic item lands in that project group instead of the default space.
-async function _bindNewChatToProject(newSid, project) {
-    try {
-        const res = await fetch('/api/projects/select', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session: newSid, project_dir: project.path }),
-        });
-        const data = await res.json();
-        if (data.status !== 'success') return;
-        // Only apply if the user hasn't switched away from this new session.
-        if (sessionId !== newSid) return;
-        _wsSelState.current = data.current || null;
-        if (Array.isArray(data.recents)) _wsSelState.recents = data.recents;
-        if (data.default_workspace) _wsSelState.defaultWorkspace = data.default_workspace;
-        _wsSelUpdateLabel();
-        const entry = _sessionItems.find(s => s.session_id === newSid);
-        if (entry && _wsSelState.current) {
-            entry.project = { path: _wsSelState.current.path, name: _wsSelState.current.name };
-        }
-        _sessionGroupMode = 'project';
-        _renderSessionList();
-        _revealActiveSession();
-    } catch (e) { /* transient; optimistic item still visible */ }
-}
-
-// Start a fresh conversation filed under a given space (project path, or null
-// for the default workspace), triggered by the "+" on a session-group header.
-// The default case is just newChat(); a project also binds the fresh session to
-// that project so the optimistic item lands under the right group.
-async function newChatInSpace(projectPath) {
-    // newChat() resets the view, auto-opens the history panel, and prepends an
-    // optimistic item. Pass inherit=false so it starts on the default space;
-    // this function then binds the explicit project below (or leaves it on the
-    // default space when projectPath is null).
-    newChat(true, false);
-    if (!projectPath) return;
-
-    const newSid = sessionId;
-    try {
-        const res = await fetch('/api/projects/select', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ session: newSid, project_dir: projectPath }),
-        });
-        const data = await res.json();
-        if (data.status !== 'success') { _wsToast(data.message || 'failed'); return; }
-        // Reflect the binding in the composer selector state + label.
-        _wsSelState.current = data.current || null;
-        if (Array.isArray(data.recents)) _wsSelState.recents = data.recents;
-        if (data.default_workspace) _wsSelState.defaultWorkspace = data.default_workspace;
-        _wsSelUpdateLabel();
-        _wsSelRevealFiles();
-        // Make sure the target group is expanded so the new session is visible.
-        if (_collapsedProjects.has(projectPath)) {
-            _collapsedProjects.delete(projectPath);
-            _saveCollapsed(_collapsedProjects);
-        }
-        // Re-file the optimistic item under the bound project and re-render so it
-        // appears immediately inside that group, without waiting for a reload.
-        const entry = _sessionItems.find(s => s.session_id === newSid);
-        if (entry && _wsSelState.current) {
-            entry.project = { path: _wsSelState.current.path, name: _wsSelState.current.name };
-        }
-        _sessionGroupMode = 'project';
-        _renderSessionList();
-        _revealActiveSession();
-        // newChat() fired refreshWorkspaceSelector() before this bind existed;
-        // that in-flight GET could resolve late and reset the label to default.
-        // Re-sync from the backend (now bound) so the final label is correct.
-        refreshWorkspaceSelector();
-    } catch (e) { _wsToast(String(e.message || e)); }
 }
 
 // =====================================================================
@@ -5523,6 +7333,9 @@ async function newChatInSpace(projectPath) {
 
 const SESSION_PANEL_KEY = 'cow_session_panel_open';
 let sessionPanelOpen = localStorage.getItem(SESSION_PANEL_KEY) === '1';
+// Whether the history panel was open before entering the team page, so it can
+// be restored on the way out (the team page force-closes it for room).
+let _sessionPanelWasOpen = false;
 
 function _persistPanelState() {
     localStorage.setItem(SESSION_PANEL_KEY, sessionPanelOpen ? '1' : '0');
@@ -5543,13 +7356,15 @@ function _hideSessionOverlay() {
     if (overlay) overlay.classList.add('hidden');
 }
 
-function closeSessionPanel() {
+function closeSessionPanel(skipPersist) {
     const panel = document.getElementById('session-panel');
     if (!panel || !sessionPanelOpen) return;
     sessionPanelOpen = false;
     panel.classList.add('hidden');
     _hideSessionOverlay();
-    _persistPanelState();
+    // When the team page tucks the panel away it shouldn't overwrite the user's
+    // own preference; only real user closes persist.
+    if (!skipPersist) _persistPanelState();
 }
 
 function toggleSessionPanel() {
@@ -5641,15 +7456,7 @@ function _addOptimisticSessionItem(sid) {
             ? { path: _wsSelState.current.path, name: _wsSelState.current.name }
             : null,
     });
-    // Make sure the space the new session lands in is expanded, otherwise a
-    // collapsed group (default space included) would hide the new conversation.
-    const spaceKey = _wsSelState.current ? _wsSelState.current.path : DEFAULT_SPACE_KEY;
-    if (_collapsedProjects.has(spaceKey)) {
-        _collapsedProjects.delete(spaceKey);
-        _saveCollapsed(_collapsedProjects);
-    }
     _renderSessionList();
-    _revealActiveSession();
 }
 
 function _sessionTimeGroup(ts) {
@@ -5708,7 +7515,7 @@ function _fetchSessionPage(page, clear, onDone) {
     const container = document.getElementById('session-list');
     if (!container) { _sessionLoading = false; return; }
 
-    fetch(`/api/sessions?page=${page}&page_size=${_SESSION_PAGE_SIZE}`)
+    fetch(`/api/sessions?page=${page}&page_size=${_SESSION_PAGE_SIZE}&scope=all`)
         .then(r => r.json())
         .then(data => {
             _sessionLoading = false;
@@ -5722,10 +7529,12 @@ function _fetchSessionPage(page, clear, onDone) {
             _sessionGroupMode = data.group_mode === 'project' ? 'project' : 'time';
             if (Array.isArray(data.project_order)) _projectOrder = data.project_order;
 
-            const seen = new Set(_sessionItems.map(s => s.session_id));
+            const sessionKey = s => `${(s.agent && s.agent.id) || ''}::${s.session_id}`;
+            const seen = new Set(_sessionItems.map(sessionKey));
             sessions.forEach(s => {
-                if (seen.has(s.session_id)) return;
-                seen.add(s.session_id);
+                const key = sessionKey(s);
+                if (seen.has(key)) return;
+                seen.add(key);
                 _sessionItems.push(s);
             });
 
@@ -5759,21 +7568,16 @@ function _sessionGroups() {
             const icon = s.project ? 'fa-folder' : 'fa-house';
             bucket(key, name, icon, s.project ? s.project.path : '', !!s.project).items.push(s);
         });
-        // Sort groups by the user's chosen order. Group order must be
-        // independent of the session array order: creating a new chat unshifts
-        // a session to the top, which would otherwise float its project group
-        // to the front. Groups without a saved position fall back to their
-        // "birth time" (earliest session created_at/last_active) — a stable key
-        // an optimistic (now-timestamped) session never changes.
-        const rank = new Map(_projectOrder.map((k, i) => [k, i]));
-        const birthOf = g => Math.min.apply(null, g.items.map(s => s.created_at || s.last_active || 0));
-        const birth = new Map(groups.map(g => [g.key, birthOf(g)]));
-        groups.sort((a, b) => {
-            const ra = rank.has(a.key) ? rank.get(a.key) : Infinity;
-            const rb = rank.has(b.key) ? rank.get(b.key) : Infinity;
-            if (ra !== rb) return ra - rb;
-            return (birth.get(a.key) || 0) - (birth.get(b.key) || 0);
-        });
+        // Sort groups by the user's chosen order; spaces without a saved
+        // position keep their natural (recency) order after the ordered ones.
+        if (_projectOrder.length) {
+            const rank = new Map(_projectOrder.map((k, i) => [k, i]));
+            groups.sort((a, b) => {
+                const ra = rank.has(a.key) ? rank.get(a.key) : Infinity;
+                const rb = rank.has(b.key) ? rank.get(b.key) : Infinity;
+                return ra - rb;
+            });
+        }
         return groups;
     }
 
@@ -5814,25 +7618,15 @@ function _renderSessionList() {
             header.draggable = true;
             header.dataset.spaceKey = group.key;
             const isDefault = group.key === DEFAULT_SPACE_KEY;
-            // "New chat" starts a fresh conversation inside this space. The
-            // default space passes null (no project binding); a project passes
-            // its path so the new chat lands under it.
-            const newArg = isDefault ? 'null' : `'${_wsAttr(group.key)}'`;
-            const newBtn = `
-                <button class="session-group-action" data-tip-float data-tooltip="${escapeHtml(t('project_new_chat'))}" data-tooltip-pos="top"
-                        onclick="event.stopPropagation(); newChatInSpace(${newArg})">
-                    <i class="fas fa-plus"></i>
-                </button>`;
-            const manageBtns = isDefault ? '' : `
-                <button class="session-group-action" data-tip-float data-tooltip="${escapeHtml(t('project_rename'))}" data-tooltip-pos="top"
+            const actions = isDefault ? '' : `
+                <button class="session-group-action" title="${escapeHtml(t('project_rename'))}"
                         onclick="event.stopPropagation(); renameProject('${_wsAttr(group.key)}','${_wsAttr(group.label)}')">
                     <i class="fas fa-pen"></i>
                 </button>
-                <button class="session-group-action" data-tip-float data-tooltip="${escapeHtml(t('project_delete'))}" data-tooltip-pos="top"
+                <button class="session-group-action" title="${escapeHtml(t('project_delete'))}"
                         onclick="event.stopPropagation(); deleteProject('${_wsAttr(group.key)}','${_wsAttr(group.label)}')">
                     <i class="fas fa-trash-can"></i>
                 </button>`;
-            const actions = newBtn + manageBtns;
             header.innerHTML = `
                 <i class="fas fa-chevron-down session-group-caret ${collapsed ? 'collapsed' : ''}"></i>
                 <i class="fas ${group.icon} session-group-icon"></i>
@@ -5859,40 +7653,6 @@ function _toggleProjectCollapse(key) {
     else _collapsedProjects.add(key);
     _saveCollapsed(_collapsedProjects);
     _renderSessionList();
-}
-
-// Which space (project path or the default sentinel) a session is filed under.
-function _sessionSpaceKey(s) {
-    return s && s.project ? s.project.path : DEFAULT_SPACE_KEY;
-}
-
-// Make the currently-active session visible in the list: expand its space if
-// collapsed, re-render if needed, then scroll the active item into view. Called
-// after new chat / switch session / project switch so the user always sees
-// which conversation is selected. No-op when the panel is closed or the active
-// session isn't in the loaded list.
-function _revealActiveSession() {
-    if (!sessionPanelOpen) return;
-    const active = _sessionItems.find(s => s.session_id === sessionId);
-    if (!active) return;
-
-    // Expand the active session's group if the user (or a stale state) collapsed it.
-    if (_sessionGroupMode === 'project') {
-        const key = _sessionSpaceKey(active);
-        if (_collapsedProjects.has(key)) {
-            _collapsedProjects.delete(key);
-            _saveCollapsed(_collapsedProjects);
-            _renderSessionList();
-        }
-    }
-
-    // Scroll after layout settles so getBoundingClientRect is accurate. Use
-    // 'center' so a newly created project (which lands at the bottom of the
-    // list) is clearly brought into view rather than just peeking at the edge.
-    requestAnimationFrame(() => {
-        const el = document.querySelector(`.session-item[data-session-id="${sessionId}"]`);
-        if (el) el.scrollIntoView({ block: 'center' });
-    });
 }
 
 // --- Project group drag-to-reorder -------------------------------------------
@@ -5957,8 +7717,6 @@ function renameProject(path, currentName) {
             .then(data => {
                 if (data.status !== 'success') { _wsToast(data.message || t('session_settings_failed')); return; }
                 loadSessionList();
-                // Keep the composer's recents in sync with the sidebar change.
-                refreshWorkspaceSelector();
             })
             .catch(() => _wsToast(t('session_settings_failed')));
     });
@@ -5980,8 +7738,6 @@ function deleteProject(path, name) {
                 .then(data => {
                     if (data.status !== 'success') { _wsToast(data.message || t('session_settings_failed')); return; }
                     loadSessionList();
-                    // Keep the composer's recents in sync with the sidebar change.
-                    refreshWorkspaceSelector();
                 })
                 .catch(() => _wsToast(t('session_settings_failed')));
         }
@@ -5990,28 +7746,44 @@ function deleteProject(path, name) {
 
 function _sessionItemEl(s, indent) {
     const item = document.createElement('div');
-    const isActive = s.session_id === sessionId;
+    const ownerId = (s.agent && s.agent.id) || '';
+    const isActive = s.session_id === sessionId && (!ownerId || ownerId === activeAgentId);
     item.className = 'session-item' + (isActive ? ' active' : '') + (s.pinned ? ' pinned' : '')
         + (indent ? ' session-item-indent' : '');
     item.dataset.sessionId = s.session_id;
+    if (ownerId) item.dataset.agentId = ownerId;
 
     const title = s.title || t('untitled_session');
     const sid = _wsAttr(s.session_id);
+    const owner = ownerId ? _wsAttr(ownerId) : '';
+    // Faces mark a conversation that has several Agents in it, the way a group
+    // chat is distinguishable from a direct one. A conversation with a single
+    // Agent stays a plain row, whatever the roster looks like elsewhere. We show
+    // at most three overlapping faces to keep the row tidy; when more took part,
+    // a small "+N" caps the stack so the group's size is still legible.
+    const roster = s.participants || [];
+    const crowd = roster.length > 1 ? roster.slice(0, 3) : null;
+    const overflow = roster.length - 3;
+    const face = crowd
+        ? `<span class="session-faces">${crowd.map(a => agentAvatarHTML(a, 20)).join('')}`
+            + (overflow > 0 ? `<span class="session-face-more">+${overflow}</span>` : '')
+            + `</span>`
+        : `<i class="fas ${s.pinned ? 'fa-thumbtack' : 'fa-message'} session-icon"></i>`;
     item.innerHTML = `
-        <i class="fas ${s.pinned ? 'fa-thumbtack' : 'fa-message'} session-icon"></i>
+        ${face}
         <span class="session-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
-        <button class="session-pin" onclick="event.stopPropagation(); toggleSessionPin('${sid}')"
+        <button class="session-pin" onclick="event.stopPropagation(); toggleSessionPin('${sid}', '${owner}')"
                 title="${escapeHtml(t(s.pinned ? 'unpin_session' : 'pin_session'))}">
             <i class="fas fa-thumbtack"></i>
         </button>
         <button class="session-rename" onclick="event.stopPropagation(); renameSession('${sid}')" title="${escapeHtml(t('rename_session'))}">
             <i class="fas fa-pen"></i>
         </button>
-        <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${sid}')" title="Delete">
+        <button class="session-delete" onclick="event.stopPropagation(); deleteSession('${sid}', '${owner}')" title="Delete">
             <i class="fas fa-trash-can"></i>
         </button>
     `;
-    item.addEventListener('click', () => switchSession(s.session_id));
+    item.addEventListener('click', () => switchSession(s.session_id, ownerId || undefined));
     return item;
 }
 
@@ -6028,8 +7800,8 @@ function _sortSessionItems() {
     });
 }
 
-function toggleSessionPin(sid) {
-    const entry = _sessionItems.find(s => s.session_id === sid);
+function toggleSessionPin(sid, agentId) {
+    const entry = _sessionItems.find(s => s.session_id === sid && (!agentId || (s.agent && s.agent.id) === agentId));
     if (!entry) return;
     const pinned = !entry.pinned;
 
@@ -6042,10 +7814,11 @@ function toggleSessionPin(sid) {
     _sortSessionItems();
     _renderSessionList();
 
-    fetch(`/api/sessions/${encodeURIComponent(sid)}`, {
+    const owner = agentId || (entry.agent && entry.agent.id) || activeAgentId;
+    fetch(`/api/sessions/${encodeURIComponent(sid)}?agent_id=${encodeURIComponent(owner || '')}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pinned }),
+        body: JSON.stringify({ pinned, agent_id: owner }),
     })
         .then(r => r.json())
         .then(data => {
@@ -6094,7 +7867,8 @@ function _onSessionListScroll() {
 // was re-attached. The user's own bubble is already in history (persisted
 // eagerly), so it was rendered by loadHistory before this runs.
 function _reattachStream(sid) {
-    const requestId = sessionActiveRequest[sid];
+    const key = runtimeSessionKey(sid);
+    const requestId = sessionActiveRequest[key];
     if (!requestId) return false;
     const buffer = streamBuffers[requestId];
     if (!buffer) return false;
@@ -6109,7 +7883,7 @@ function _reattachStream(sid) {
         const oldEs = activeStreams[requestId];
         if (oldEs) { try { oldEs.close(); } catch (_) {} delete activeStreams[requestId]; }
         delete streamBuffers[requestId];
-        delete sessionActiveRequest[sid];
+        delete sessionActiveRequest[key];
         resetSendBtnSendMode();
         return false;
     }
@@ -6134,11 +7908,21 @@ function _reattachStream(sid) {
     return true;
 }
 
-function switchSession(newSessionId) {
+function switchSession(newSessionId, agentId) {
+    if (agentId && agentId !== activeAgentId) {
+        activeAgentId = agentId;
+        localStorage.setItem('cow_active_agent', activeAgentId);
+    }
     if (newSessionId === sessionId) {
         if (currentView !== 'chat') navigateTo('chat');
+        renderComposerIdentity();
         return;
     }
+
+    // The preview panel is scoped to a session's workspace, so switching tears
+    // down an open editor. Settle unsaved edits before committing to the switch.
+    if (typeof wsGuardUnsaved === 'function'
+        && !wsGuardUnsaved(() => switchSession(newSessionId))) return;
 
     // Do NOT close active streams here: sessions run in parallel, so any
     // in-flight reply for another session must keep streaming in the
@@ -6147,7 +7931,7 @@ function switchSession(newSessionId) {
 
     sessionId = newSessionId;
     updateEditButtonsState();
-    localStorage.setItem(SESSION_ID_KEY, sessionId);
+    localStorage.setItem(activeSessionStorageKey(), sessionId);
     refreshWorkspaceSelector();
     refreshSessionSettings();
     // Reset the file/preview panel so it reflects the new session's root.
@@ -6164,7 +7948,7 @@ function switchSession(newSessionId) {
     // Restore the send button to match this session's stream state, and if a
     // reply is still streaming in the background, re-attach to resume showing
     // it live (the user turn itself comes from history above).
-    const pendingReq = sessionActiveRequest[sessionId];
+    const pendingReq = sessionActiveRequest[runtimeSessionKey(sessionId)];
     if (pendingReq) {
         setSendBtnCancelMode(pendingReq);
         _reattachStream(sessionId);
@@ -6175,11 +7959,10 @@ function switchSession(newSessionId) {
     document.querySelectorAll('.session-item').forEach(el => {
         el.classList.toggle('active', el.dataset.sessionId === sessionId);
     });
-    // Expand the target session's group (if collapsed) and scroll it into view.
-    _revealActiveSession();
 
     if (_isMobileView()) closeSessionPanel();
     if (currentView !== 'chat') navigateTo('chat');
+    renderComposerIdentity();
 }
 
 // In-place rename a session title: replace the title <span> with an <input>,
@@ -6261,30 +8044,24 @@ function renameSession(sid) {
     input.addEventListener('blur', commit);
 }
 
-function deleteSession(sid) {
+function deleteSession(sid, agentId) {
     showConfirmModal(t('delete_session_title'), t('delete_session_confirm'), () => {
-        // Before deleting, find the next real session to fall back to when the
-        // current one is removed (the sibling item in the list, which is sorted
-        // newest-first). Falls back to the welcome screen if none remain.
-        const nextSid = sid === sessionId ? _findNextSessionId(sid) : null;
+        const owner = agentId || activeAgentId;
+        const deletingCurrent = sid === sessionId && (!owner || owner === activeAgentId);
+        const next = deletingCurrent ? _findNextSession(sid, owner) : null;
 
-        fetch(`/api/sessions/${encodeURIComponent(sid)}`, { method: 'DELETE' })
+        fetch(`/api/sessions/${encodeURIComponent(sid)}?agent_id=${encodeURIComponent(owner || '')}`, { method: 'DELETE' })
             .then(r => r.json())
             .then(data => {
                 if (data.status !== 'success') return;
-                if (sid !== sessionId) {
+                if (!deletingCurrent) {
                     loadSessionList();
                     return;
                 }
-                if (nextSid) {
-                    // Switch to an existing session; refresh the list afterwards
-                    // so the deleted item disappears.
-                    switchSession(nextSid);
+                if (next) {
+                    switchSession(next.sessionId, next.agentId);
                     loadSessionList();
                 } else {
-                    // No other sessions: reset to a fresh empty session without
-                    // inserting an optimistic placeholder (it has no backend
-                    // record and would be an empty, undeletable item).
                     newChat(false);
                 }
             })
@@ -6295,15 +8072,15 @@ function deleteSession(sid) {
 // Pick the session to show after deleting `sid` (the current session): prefer
 // the next item below it in the list, otherwise the previous one. Returns null
 // if no other session exists.
-function _findNextSessionId(sid) {
+function _findNextSession(sid, agentId) {
     const items = Array.from(document.querySelectorAll('.session-item[data-session-id]'));
-    const idx = items.findIndex(el => el.dataset.sessionId === sid);
+    const same = el => el.dataset.sessionId === sid && (!agentId || el.dataset.agentId === agentId);
+    const idx = items.findIndex(same);
+    const pick = el => el ? { sessionId: el.dataset.sessionId, agentId: el.dataset.agentId || '' } : null;
     if (idx === -1) {
-        const other = items.find(el => el.dataset.sessionId !== sid);
-        return other ? other.dataset.sessionId : null;
+        return pick(items.find(el => !same(el)));
     }
-    const next = items[idx + 1] || items[idx - 1];
-    return next ? next.dataset.sessionId : null;
+    return pick(items[idx + 1] || items[idx - 1]);
 }
 
 function showConfirmModal(title, message, onConfirm) {
@@ -6564,6 +8341,17 @@ let cfgProviderValue = '';
 let cfgModelValue = '';
 let cfgReasoningEffortValue = 'high';
 let configReasoningByModel = {};
+// Remembers the custom model name the user typed per provider, so switching
+// away from a provider (which rebuilds its model dropdown) and back does not
+// lose an unsaved custom model. Keyed by provider id.
+let configCustomModelByProvider = {};
+// Same idea for the Models tab capability cards: remember the custom model the
+// user typed per (capability, provider) and the provider active before the
+// last switch, so switching vendors and back restores the custom model.
+// Keyed by `${capabilityId}:${providerId}` -> custom model string.
+let capabilityCustomModelMemory = {};
+// Keyed by capabilityId -> provider id active before the current switch.
+let capabilityLastProviderId = {};
 
 // --- Custom dropdown helper ---
 function initDropdown(el, options, selectedValue, onChange, opts) {
@@ -6575,9 +8363,17 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
     const textEl = el.querySelector('.cfg-dropdown-text');
     const menuEl = el.querySelector('.cfg-dropdown-menu');
     const selEl = el.querySelector('.cfg-dropdown-selected');
+    // Optional avatar face in the trigger (opts.withAvatar). Each option then
+    // carries an `agent` object so both the row and the trigger can paint it.
+    const faceEl = el.querySelector('.cfg-dropdown-face');
 
     el._ddValue = selectedValue || '';
     el._ddOnChange = onChange;
+
+    function paintFace(opt) {
+        if (!faceEl) return;
+        faceEl.innerHTML = (opt && opt.agent) ? agentAvatarHTML(opt.agent, 20) : '';
+    }
 
     function render() {
         menuEl.innerHTML = '';
@@ -6589,7 +8385,24 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
             // side of the row (e.g. friendly brand name next to a technical
             // model id). When absent the row degrades to the original
             // single-string layout.
-            if (opt.hint) {
+            if (opt.agent) {
+                const face = document.createElement('span');
+                face.className = 'cfg-dropdown-item-face';
+                face.innerHTML = agentAvatarHTML(opt.agent, 20);
+                const labelEl = document.createElement('span');
+                labelEl.className = 'cfg-dropdown-label';
+                labelEl.textContent = opt.label;
+                item.appendChild(face);
+                item.appendChild(labelEl);
+                // Optional trailing pill (e.g. a "default" marker) rendered
+                // dim after the name.
+                if (opt.badge) {
+                    const badgeEl = document.createElement('span');
+                    badgeEl.className = 'cfg-dropdown-badge';
+                    badgeEl.textContent = opt.badge;
+                    item.appendChild(badgeEl);
+                }
+            } else if (opt.hint) {
                 const labelEl = document.createElement('span');
                 labelEl.className = 'cfg-dropdown-label';
                 labelEl.textContent = opt.label;
@@ -6605,6 +8418,12 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
                 e.stopPropagation();
                 el._ddValue = opt.value;
                 textEl.textContent = opt.label;
+                // Now that a real option is picked, drop the muted placeholder
+                // style — otherwise the chosen label stays grey (visible on
+                // dropdowns that start in a placeholder state, e.g. the chat
+                // fallback pickers).
+                textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
+                paintFace(opt);
                 menuEl.querySelectorAll('.cfg-dropdown-item').forEach(i => i.classList.remove('active'));
                 item.classList.add('active');
                 el.classList.remove('open');
@@ -6615,15 +8434,18 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
         const sel = options.find(o => o.value === el._ddValue);
         if (sel) {
             textEl.textContent = sel.label;
+            paintFace(sel);
             textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
         } else if (opts.placeholder && !el._ddValue) {
             // No selection yet — show the placeholder in muted style.
             // Do NOT write a fallback value, so the dropdown stays
             // "unsaved" until the user explicitly picks.
             textEl.textContent = opts.placeholder;
+            paintFace(null);
             textEl.classList.add('text-slate-400', 'dark:text-slate-500');
         } else {
             textEl.textContent = options[0] ? options[0].label : '--';
+            paintFace(options[0]);
             textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
             if (options[0]) el._ddValue = options[0].value;
         }
@@ -6635,6 +8457,16 @@ function initDropdown(el, options, selectedValue, onChange, opts) {
         selEl.addEventListener('click', (e) => {
             e.stopPropagation();
             document.querySelectorAll('.cfg-dropdown.open').forEach(d => { if (d !== el) d.classList.remove('open'); });
+            const willOpen = !el.classList.contains('open');
+            if (willOpen) {
+                // Flip the menu above the control when it would otherwise be
+                // clipped against the viewport bottom (e.g. the last channel's
+                // config dropdown sitting near the window edge).
+                const rect = el.getBoundingClientRect();
+                const below = window.innerHeight - rect.bottom;
+                const menuH = Math.min(menuEl.scrollHeight || 240, 280) + 8;
+                el.classList.toggle('drop-up', below < menuH && rect.top > below);
+            }
             el.classList.toggle('open');
         });
         el._ddBound = true;
@@ -6681,7 +8513,14 @@ function initConfigView(data) {
     }
     const customModelEl = document.getElementById('cfg-model-custom');
     if (customModelEl && !customModelEl._cfgReasoningBound) {
-        customModelEl.addEventListener('input', syncReasoningEffortOptions);
+        customModelEl.addEventListener('input', () => {
+            // Remember the typed custom model for the current provider so a
+            // provider switch and switch-back doesn't lose it.
+            if (cfgModelValue === '__custom__') {
+                configCustomModelByProvider[cfgProviderValue] = customModelEl.value.trim();
+            }
+            syncReasoningEffortOptions();
+        });
         customModelEl._cfgReasoningBound = true;
     }
     syncReasoningEffortOptions();
@@ -6764,7 +8603,17 @@ function onProviderChange(pid) {
     const modelOpts = (p.models || []).map(m => ({ value: m, label: m }));
     modelOpts.push({ value: '__custom__', label: t('config_custom_option') });
 
-    initDropdown(modelEl, modelOpts, modelOpts[0] ? modelOpts[0].value : '', onModelSelectChange);
+    // Restore a custom model the user typed for this provider earlier in the
+    // session (kept in configCustomModelByProvider). Fall back to the first
+    // preset. For a custom provider with no preset models the picker only has
+    // the "__custom__" entry, so a remembered value is the only way its model
+    // survives a provider switch.
+    const rememberedCustom = configCustomModelByProvider[cfgProviderValue];
+    const initialModelValue = rememberedCustom
+        ? '__custom__'
+        : (modelOpts[0] ? modelOpts[0].value : '');
+
+    initDropdown(modelEl, modelOpts, initialModelValue, onModelSelectChange);
 
     // API Key
     const keyField = p.api_key_field;
@@ -6826,19 +8675,27 @@ function onProviderChange(pid) {
         apiBaseInput.placeholder = 'https://...';
     }
 
-    onModelSelectChange(modelOpts[0] ? modelOpts[0].value : '');
+    onModelSelectChange(initialModelValue, { restoredCustom: rememberedCustom });
     syncReasoningEffortOptions();
 }
 
-function onModelSelectChange(val) {
+function onModelSelectChange(val, opts) {
+    opts = opts || {};
     cfgModelValue = val || getDropdownValue(document.getElementById('cfg-model-select'));
     const customWrap = document.getElementById('cfg-model-custom-wrap');
+    const customInput = document.getElementById('cfg-model-custom');
     if (cfgModelValue === '__custom__') {
         customWrap.classList.remove('hidden');
-        document.getElementById('cfg-model-custom').focus();
+        // When switching back to a provider we restore the remembered value;
+        // otherwise this is a fresh pick of "custom" and we focus for input.
+        if (opts.restoredCustom) {
+            customInput.value = opts.restoredCustom;
+        } else {
+            customInput.focus();
+        }
     } else {
         customWrap.classList.add('hidden');
-        document.getElementById('cfg-model-custom').value = '';
+        customInput.value = '';
     }
     syncReasoningEffortOptions();
 }
@@ -6861,6 +8718,8 @@ function syncModelSelection(model) {
         initDropdown(modelEl, modelOpts, '__custom__', onModelSelectChange);
         document.getElementById('cfg-model-custom-wrap').classList.remove('hidden');
         document.getElementById('cfg-model-custom').value = model;
+        // Seed the per-provider memory so switching away and back keeps it.
+        if (model) configCustomModelByProvider[cfgProviderValue] = model;
     }
     syncReasoningEffortOptions();
 }
@@ -7120,6 +8979,18 @@ function loadConfigView() {
     }).catch(() => {});
 }
 
+function switchConfigTab(tab) {
+    ['basic', 'models'].forEach(name => {
+        document.getElementById(`config-tab-${name}`)?.classList.toggle('active', name === tab);
+        document.getElementById(`config-panel-${name}`)?.classList.toggle('hidden', name !== tab);
+    });
+    if (tab === 'models') loadModelsView();
+    // Re-pull /config when returning to Basic: a provider added on the Models
+    // tab must show up in the basic main-model provider picker without a manual
+    // page refresh. loadConfigView re-renders from the fresh provider list.
+    if (tab === 'basic') loadConfigView();
+}
+
 // =====================================================================
 // Skills View
 // =====================================================================
@@ -7210,9 +9081,12 @@ function loadSkillsSection() {
 
         skills.forEach(sk => {
             const card = document.createElement('div');
-            card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-4 flex items-start gap-3 transition-opacity';
+            card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 '
+                + 'p-4 flex items-start gap-3 transition-opacity cursor-pointer '
+                + 'hover:border-slate-300 dark:hover:border-white/20';
             card.dataset.skillName = sk.name;
             card.dataset.skillDesc = sk.description || '';
+            card.dataset.skillDisplayName = sk.display_name || '';
             card.dataset.enabled = sk.enabled ? '1' : '0';
             renderSkillCard(card, sk);
             listEl.appendChild(card);
@@ -7236,8 +9110,8 @@ function renderSkillCard(card, sk) {
                 <span class="font-medium text-sm text-slate-700 dark:text-slate-200 truncate flex-1">${escapeHtml(sk.display_name || sk.name)}</span>
                 <button
                     role="switch"
+                    data-skill-switch
                     aria-checked="${enabled}"
-                    onclick="toggleSkill('${escapeHtml(sk.name)}', ${enabled})"
                     class="relative inline-flex h-4 w-7 flex-shrink-0 cursor-pointer rounded-full transition-colors duration-200 ease-in-out focus:outline-none ${trackClass}"
                     title="${enabled ? (currentLang === 'zh' ? '点击禁用' : 'Click to disable') : (currentLang === 'zh' ? '点击启用' : 'Click to enable')}"
                 >
@@ -7246,6 +9120,19 @@ function renderSkillCard(card, sk) {
             </div>
             <p class="text-xs text-slate-400 dark:text-slate-500 line-clamp-2">${escapeHtml(sk.description || '--')}</p>
         </div>`;
+
+    // Bound here rather than written into the markup above: a skill name comes
+    // from its own frontmatter, and one containing a quote would break out of
+    // an inline onclick attribute.
+    card.title = t('skill_open_hint');
+    card.onclick = () => openSkillFile(sk.name);
+    const sw = card.querySelector('[data-skill-switch]');
+    if (sw) {
+        sw.onclick = (e) => {
+            e.stopPropagation();
+            toggleSkill(sk.name, enabled);
+        };
+    }
 }
 
 function toggleSkill(name, currentlyEnabled) {
@@ -7262,10 +9149,14 @@ function toggleSkill(name, currentlyEnabled) {
     .then(data => {
         if (data.status === 'success') {
             if (card) {
-                const desc = card.dataset.skillDesc || '';
                 card.dataset.enabled = currentlyEnabled ? '0' : '1';
                 card.style.opacity = '1';
-                renderSkillCard(card, { name, description: desc, enabled: !currentlyEnabled });
+                renderSkillCard(card, {
+                    name: name,
+                    description: card.dataset.skillDesc || '',
+                    display_name: card.dataset.skillDisplayName || '',
+                    enabled: !currentlyEnabled,
+                });
             }
         } else {
             if (card) card.style.opacity = '1';
@@ -7276,6 +9167,94 @@ function toggleSkill(name, currentlyEnabled) {
         if (card) card.style.opacity = '1';
         alert(currentLang === 'zh' ? '操作失败，请稍后再试' : 'Operation failed, please try again');
     });
+}
+
+// ---------------------------------------------------------------------
+// Skill viewer / editor
+// ---------------------------------------------------------------------
+
+/**
+ * Skills are addressed by name, not by path: which file a name resolves to is
+ * the loader's business, and a builtin skill lives outside the workspace that
+ * the file APIs are confined to.
+ */
+async function skillReadContent(name) {
+    const res = await fetch(`/api/skills/content?name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+    if (data.status !== 'success') throw new Error(data.message || 'read failed');
+    return data;
+}
+
+/** Save a skill's definition. Returns the raw response, a conflict included. */
+async function skillWriteContent(name, content, expectedMtime) {
+    const res = await fetch('/api/skills/content', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, content: content, expected_mtime: expectedMtime }),
+    });
+    return res.json();
+}
+
+/** The i18n key explaining why a skill cannot be edited, or null if it can. */
+function skillReadonlyReason(data) {
+    if (data.editable) return null;
+    // Not `source === 'builtin'`: the workspace copy of a builtin skill reads
+    // back as `custom` and is refused all the same, so the server says so.
+    if (data.ships_with_install) return 'skill_builtin_readonly';
+    return docUneditableReason(data);
+}
+
+const skillEditor = createDocEditor({
+    body: () => document.getElementById('skill-viewer-content'),
+    buttons: () => ({
+        edit: document.getElementById('skill-btn-edit'),
+        save: document.getElementById('skill-btn-save'),
+        cancel: document.getElementById('skill-btn-cancel'),
+    }),
+    read: (doc) => skillReadContent(doc.name),
+    write: (doc, content, mtime) => skillWriteContent(doc.name, content, mtime),
+    render: (doc) => docRenderBody('skill-viewer-content', doc.content),
+    canEdit: (doc) => !doc.readonlyKey,
+    refusal: skillReadonlyReason,
+    onState: (state) => docRenderTitle('skill-viewer-title', skillEditor.current()?.name, state),
+});
+
+function openSkillFile(name) {
+    skillReadContent(name).then(data => {
+        const badge = document.getElementById('skill-viewer-readonly');
+        const readonlyKey = skillReadonlyReason(data);
+        if (badge) {
+            badge.classList.toggle('hidden', !readonlyKey);
+            if (readonlyKey) {
+                // Keep data-i18n in step so a language switch re-translates it.
+                badge.dataset.i18n = readonlyKey;
+                badge.textContent = t(readonlyKey);
+                badge.title = t(readonlyKey);
+            }
+        }
+        document.getElementById('skills-panel-list').classList.add('hidden');
+        document.getElementById('skills-panel-viewer').classList.remove('hidden');
+        skillEditor.open({
+            name: data.name || name,
+            content: data.content || '',
+            readonlyKey: readonlyKey,
+        });
+    }).catch(e => _wsToast(`${t('skill_load_failed')}: ${e.message}`));
+}
+
+function closeSkillViewer() {
+    if (!skillEditor.guard(closeSkillViewer)) return;
+    resetSkillViewer();
+    // A saved edit can change the name and description in the frontmatter, so
+    // the cards behind this panel may be out of date.
+    loadSkillsSection();
+}
+
+/** Drop the viewer and show the list, without asking about unsaved edits. */
+function resetSkillViewer() {
+    skillEditor.forget();
+    document.getElementById('skills-panel-viewer')?.classList.add('hidden');
+    document.getElementById('skills-panel-list')?.classList.remove('hidden');
 }
 
 // =====================================================================
@@ -7293,32 +9272,11 @@ function switchMemoryTab(tab) {
     loadMemoryView(1);
 }
 
-// Tracks whether the "模型配置" tab has fetched its data at least once, so we
-// only hit /api/models when the user actually opens that tab.
-let _configModelsLoaded = false;
-
-function switchConfigTab(tab) {
-    document.querySelectorAll('.config-tab').forEach(el => el.classList.remove('active'));
-    const tabBtn = document.getElementById('config-tab-' + tab);
-    if (tabBtn) tabBtn.classList.add('active');
-
-    const basicPanel = document.getElementById('config-panel-basic');
-    const modelsPanel = document.getElementById('config-panel-models');
-    if (basicPanel) basicPanel.classList.toggle('hidden', tab !== 'basic');
-    if (modelsPanel) modelsPanel.classList.toggle('hidden', tab !== 'models');
-
-    if (tab === 'models' && !_configModelsLoaded) {
-        // Lazy-load the advanced vendor/capability data on first open only;
-        // afterwards the rendered content persists in the DOM.
-        loadModelsView();
-        _configModelsLoaded = true;
-    }
-}
-
 function loadMemoryView(page) {
     page = page || 1;
     memoryPage = page;
-    fetch(`/api/memory?page=${page}&page_size=${memoryPageSize}&category=${memoryCategory}`).then(r => r.json()).then(data => {
+    const agent = viewingMemoryAgentId();
+    fetch(`/api/memory?page=${page}&page_size=${memoryPageSize}&category=${memoryCategory}&agent_id=${encodeURIComponent(agent || '')}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const emptyEl = document.getElementById('memory-empty');
         const listEl = document.getElementById('memory-list');
@@ -7382,23 +9340,110 @@ function loadMemoryView(page) {
     }).catch(() => {});
 }
 
+// =====================================================================
+// Document viewers (memory files, skill definitions)
+// =====================================================================
+
+/**
+ * Read one file's text for an editor. Throws on an API error so the editor can
+ * report it.
+ *
+ * No session is passed on purpose. Memory files are anchored to the agent's
+ * state root, and a session with a project open would resolve the same relative
+ * path against that project instead.
+ */
+async function docReadFile(relPath) {
+    const res = await fetch(`/api/workspace/read?path=${encodeURIComponent(relPath)}`);
+    const data = await res.json();
+    if (data.status !== 'success') throw new Error(data.message || 'read failed');
+    return data;
+}
+
+/** Save one file's text. Returns the raw response, a conflict included. */
+async function docWriteFile(relPath, content, expectedMtime) {
+    const res = await fetch('/api/workspace/write', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: relPath, content: content, expected_mtime: expectedMtime }),
+    });
+    return res.json();
+}
+
+/** Render Markdown into a viewer body. */
+function docRenderBody(id, content) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML = renderMarkdown(content || '');
+    applyHighlighting(el);
+}
+
+/** Put a document's name in a viewer title, with a dot while it is unsaved. */
+function docRenderTitle(id, name, state) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = name || '';
+    if (state && state.dirty) {
+        el.insertAdjacentHTML('beforeend', ' <span class="doc-dirty-dot">•</span>');
+    }
+}
+
+/**
+ * Ask about any unsaved document edit before something tears its page down.
+ *
+ * @param {function} next - retried once the user agrees to lose the edits.
+ * @returns {boolean} true when nothing is at stake and the caller may proceed.
+ */
+function docGuardUnsaved(next) {
+    return memoryEditor.guard(next) && skillEditor.guard(next);
+}
+
+const memoryEditor = createDocEditor({
+    body: () => document.getElementById('memory-viewer-content'),
+    buttons: () => ({
+        edit: document.getElementById('memory-btn-edit'),
+        save: document.getElementById('memory-btn-save'),
+        cancel: document.getElementById('memory-btn-cancel'),
+    }),
+    read: (doc) => docReadFile(doc.relPath),
+    write: (doc, content, mtime) => docWriteFile(doc.relPath, content, mtime),
+    render: (doc) => docRenderBody('memory-viewer-content', doc.content),
+    onState: (state) => docRenderTitle('memory-viewer-title', memoryEditor.current()?.filename, state),
+});
+
 function openMemoryFile(filename, category) {
     category = category || 'memory';
-    fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}`).then(r => r.json()).then(data => {
+    const agent = viewingMemoryAgentId();
+    fetch(`/api/memory/content?filename=${encodeURIComponent(filename)}&category=${category}&agent_id=${encodeURIComponent(agent || '')}`).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         document.getElementById('memory-panel-list').classList.add('hidden');
-        const panel = document.getElementById('memory-panel-viewer');
-        document.getElementById('memory-viewer-title').textContent = filename;
-        document.getElementById('memory-viewer-content').innerHTML = renderMarkdown(data.content || '');
-        panel.classList.remove('hidden');
-        applyHighlighting(panel);
+        document.getElementById('memory-panel-viewer').classList.remove('hidden');
+        memoryEditor.open({
+            filename: filename,
+            // The memory API reports where the file sits under the workspace
+            // root; the editor addresses it there rather than rebuilding the
+            // path from filename plus category.
+            relPath: data.rel_path || filename,
+            content: data.content || '',
+        });
     }).catch(() => {});
 }
 
 function closeMemoryViewer() {
+    if (!memoryEditor.guard(closeMemoryViewer)) return;
+    memoryEditor.forget();
     document.getElementById('memory-panel-viewer').classList.add('hidden');
     document.getElementById('memory-panel-list').classList.remove('hidden');
+    // A save changed the size and timestamp the list shows.
+    loadMemoryView(memoryPage);
 }
+
+// Reloading or closing the tab drops an unsaved edit. All the browser allows
+// here is its own generic prompt, which still beats losing the text in silence.
+window.addEventListener('beforeunload', (e) => {
+    if (!memoryEditor.isDirty() && !skillEditor.isDirty()) return;
+    e.preventDefault();
+    e.returnValue = '';
+});
 
 // =====================================================================
 // Custom Confirm Dialog
@@ -7444,8 +9489,12 @@ function showConfirmDialog({ title, message, okText, cancelText, onConfirm, hide
 // see the literal class names — dynamic `bg-${color}-50` strings would not
 // be picked up reliably.
 const MODELS_CAPABILITY_DEFS = [
-    { id: 'chat',      icon: 'fa-microchip',        editable: true,  needsModel: true,  titleKey: 'models_capability_chat',      descKey: 'models_capability_chat_desc',
+    { id: 'chat',      icon: 'fa-microchip',        editable: true,  needsModel: true,  toggleable: false, titleKey: 'models_capability_chat',      descKey: 'models_capability_chat_desc',
       iconChip: 'bg-primary-50 dark:bg-primary-900/30',  iconGlyph: 'text-primary-500' },
+    // NOTE: the chat fallback is deliberately NOT a top-level card. It is a
+    // rarely-touched safety net, so it lives behind a small gear on the main
+    // model card (see renderCapabilityHeaderTag / openChatFallbackModal) and
+    // is edited in a modal that reuses the same picker machinery.
     { id: 'vision',    icon: 'fa-eye',              editable: true,  needsModel: true,  titleKey: 'models_capability_vision',    descKey: 'models_capability_vision_desc',
       iconChip: 'bg-blue-50 dark:bg-blue-900/30',        iconGlyph: 'text-blue-500' },
     { id: 'image',     icon: 'fa-image',            editable: true,  needsModel: true,  titleKey: 'models_capability_image',     descKey: 'models_capability_image_desc',
@@ -7552,11 +9601,6 @@ function renderVendorsSection() {
                 <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_section_vendors')}</h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">${t('models_section_vendors_desc')}</p>
             </div>
-            <button onclick="openVendorModal('')"
-                    class="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
-                           bg-primary-500 hover:bg-primary-600 text-white cursor-pointer transition-colors duration-150">
-                <i class="fas fa-plus text-[10px]"></i>${t('models_add_vendor')}
-            </button>
         </div>`;
 
     let body;
@@ -7564,10 +9608,26 @@ function renderVendorsSection() {
         body = `
             <div class="flex flex-col items-center justify-center py-8 px-4 rounded-lg border border-dashed border-slate-200 dark:border-white/10">
                 <p class="text-sm text-slate-500 dark:text-slate-400 text-center">${t('models_not_configured')}</p>
+                <button onclick="openVendorModal('')"
+                        class="mt-3 px-3 py-1.5 rounded-lg text-xs font-medium bg-primary-50 dark:bg-primary-900/30 text-primary-600 dark:text-primary-400 hover:bg-primary-100 dark:hover:bg-primary-900/50 cursor-pointer transition-colors">
+                    <i class="fas fa-plus text-[10px] mr-1"></i>${t('models_add_vendor')}
+                </button>
             </div>`;
     } else {
+        // Existing vendors as chips, plus a trailing "add" tile so a new
+        // built-in or custom provider can still be added once at least one is
+        // already configured (otherwise the add entry only showed on the empty
+        // state). openVendorModal('') opens the picker → built-in or custom.
+        const addTile = `
+            <button onclick="openVendorModal('')"
+                    class="flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg border border-dashed
+                           border-slate-300 dark:border-white/15 text-slate-500 dark:text-slate-400
+                           hover:border-primary-400 hover:text-primary-500 cursor-pointer transition-colors text-sm">
+                <i class="fas fa-plus text-[11px]"></i>${t('models_add_vendor')}
+            </button>`;
         body = `<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             ${configured.map(renderVendorChip).join('')}
+            ${addTile}
         </div>`;
     }
 
@@ -7650,7 +9710,86 @@ function renderCapabilityCard(def) {
 }
 
 function renderCapabilityHeaderTag(def, cap) {
+    // The main model card carries a small gear that opens the chat-fallback
+    // modal. The fallback is a rarely-touched safety net, so it stays out of
+    // the card body; a badge appears next to the gear only while it is on, so
+    // an active fallback is still discoverable at a glance.
+    if (def.id === 'chat') {
+        const fb = modelsState.capabilities.chat_fallback || {};
+        // A single entry point that also reflects state: green + "on" label
+        // when the fallback is enabled, muted + "configure" label when off.
+        const on = !!fb.enabled;
+        const cls = on
+            ? 'text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30 hover:bg-primary-100 dark:hover:bg-primary-900/50'
+            : 'text-slate-500 dark:text-slate-400 hover:text-primary-600 dark:hover:text-primary-300 hover:bg-slate-100 dark:hover:bg-white/5';
+        const label = on ? t('models_fallback_badge_on') : t('models_fallback_config');
+        return `
+            <button type="button" onclick="openChatFallbackModal()"
+                    title="${escapeHtml(t('models_fallback_config_tip'))}"
+                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs flex-shrink-0
+                           cursor-pointer transition-colors ${cls}">
+                <i class="fas fa-shield-halved text-[11px]"></i>${label}
+            </button>`;
+    }
     return '';
+}
+
+// The chat fallback is configured in a modal rather than as a top-level card
+// (it is a rarely-touched safety net). The modal body reuses the exact same
+// picker machinery as a capability card — `renderCapabilityBody` keys every
+// element off `cap-chat_fallback-*`, so we hand it a def with that id and let
+// the existing provider/model/toggle/save code run unchanged. No such card is
+// registered in MODELS_CAPABILITY_DEFS, so the ids never collide.
+const CHAT_FALLBACK_DEF = {
+    id: 'chat_fallback', editable: true, needsModel: true, toggleable: true,
+    titleKey: 'models_fallback_modal_title', descKey: 'models_capability_chat_fallback_desc',
+};
+
+// Resolve a capability def by id. The chat fallback is intentionally absent
+// from MODELS_CAPABILITY_DEFS (it renders in a modal, not as a card), so the
+// shared save/toggle handlers look it up here too.
+function capabilityDefById(capId) {
+    if (capId === 'chat_fallback') return CHAT_FALLBACK_DEF;
+    return MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
+}
+
+function openChatFallbackModal() {
+    closeChatFallbackModal(); // never stack two
+
+    const overlay = document.createElement('div');
+    overlay.id = 'chat-fallback-modal-overlay';
+    overlay.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4';
+    overlay.innerHTML = `
+        <div class="w-full max-w-md rounded-2xl bg-white dark:bg-[#1A1A1A] border border-slate-200 dark:border-white/10 shadow-xl">
+            <div class="flex items-start gap-3 px-6 pt-6 pb-4 border-b border-slate-100 dark:border-white/5">
+                <div class="w-9 h-9 rounded-lg bg-primary-50 dark:bg-primary-900/30 flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-shield-halved text-primary-500 text-sm"></i>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <h3 class="font-semibold text-slate-800 dark:text-slate-100">${t('models_fallback_modal_title')}</h3>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">${t('models_fallback_modal_desc')}</p>
+                </div>
+                <button type="button" onclick="closeChatFallbackModal()"
+                        class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors flex-shrink-0">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div class="px-6 py-5 space-y-4" data-cap-body="chat_fallback"></div>
+        </div>`;
+
+    // Close on backdrop click (but not when clicking inside the dialog).
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) closeChatFallbackModal(); });
+
+    document.body.appendChild(overlay);
+
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const body = overlay.querySelector('[data-cap-body="chat_fallback"]');
+    renderCapabilityBody(CHAT_FALLBACK_DEF, cap, body);
+}
+
+function closeChatFallbackModal() {
+    const overlay = document.getElementById('chat-fallback-modal-overlay');
+    if (overlay) overlay.remove();
 }
 
 function _searchProviderLabel(cap, providerId) {
@@ -7863,8 +10002,8 @@ function openSearchAddProviderPicker(missingProviders) {
 }
 
 function _launchSearchProviderConfig(providerId, providerMeta) {
-    if (providerId === 'bocha') {
-        openSearchBochaModal(providerMeta);
+    if (providerId === 'bocha' || providerId === 'anysearch' || providerId === 'serply') {
+        openSearchKeyModal(providerId, providerMeta);
     } else {
         openVendorModal(providerId, () => loadModelsView({ preserveScroll: true }));
     }
@@ -7898,19 +10037,21 @@ function saveSearchCapability() {
 // Minimal bocha API-key modal. Reuses the existing vendor-modal markup
 // helpers would be nice, but bocha isn't in PROVIDER_MODELS (it's not a
 // model vendor), so we render a tiny dedicated dialog.
-function openSearchBochaModal(providerMeta) {
-    const existing = document.getElementById('search-bocha-modal');
+// For search vendors that hold their own keys.
+
+function openSearchKeyModal(providerId, providerMeta) {
+    const existing = document.getElementById('search-key-modal');
     if (existing) existing.remove();
 
     let masked = (providerMeta && providerMeta.api_key_masked) || '';
     if (!masked) {
         const searchCap = (modelsState && modelsState.capabilities && modelsState.capabilities.search) || {};
-        const bocha = (searchCap.providers || []).find(p => p.id === 'bocha');
+        const bocha = (searchCap.providers || []).find(p => p.id === providerId);
         if (bocha && bocha.api_key_masked) masked = bocha.api_key_masked;
     }
     const hasKey = !!masked;
     const clearBtnHtml = hasKey
-        ? `<button type="button" id="search-bocha-clear"
+        ? `<button type="button" id="search-key-clear"
                   class="px-3 py-1.5 rounded-md text-xs text-red-500 dark:text-red-400
                          hover:bg-red-50 dark:hover:bg-red-900/20 cursor-pointer transition-colors">
               ${t('models_clear_credential')}
@@ -7918,16 +10059,16 @@ function openSearchBochaModal(providerMeta) {
         : '';
 
     const modal = document.createElement('div');
-    modal.id = 'search-bocha-modal';
+    modal.id = 'search-key-modal';
     modal.className = 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm';
     modal.innerHTML = `
-        <div id="search-bocha-modal-card"
+        <div id="search-key-modal-card"
              class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10
                     w-full max-w-md mx-4 p-6 shadow-xl">
-            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_bocha_title')}</h3>
-            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_bocha_desc')}</p>
+            <h3 class="text-lg font-semibold text-slate-800 dark:text-slate-100 mb-1">${t('models_search_' + providerId + '_title')}</h3>
+            <p class="text-xs text-slate-500 dark:text-slate-400 mb-4">${t('models_search_' + providerId + '_desc')}</p>
             <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Key</label>
-            <input id="search-bocha-key" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
+            <input id="search-key-input" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
                    class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
                           bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
                           focus:outline-none focus:border-primary-500 font-mono ${hasKey ? 'cfg-key-masked' : ''}"
@@ -7937,12 +10078,12 @@ function openSearchBochaModal(providerMeta) {
             <div class="flex items-center justify-between gap-3 mt-5">
                 <div>${clearBtnHtml}</div>
                 <div class="flex items-center gap-3">
-                    <button type="button" onclick="document.getElementById('search-bocha-modal').remove()"
+                    <button type="button" onclick="document.getElementById('search-key-modal').remove()"
                             class="px-3 py-1.5 rounded-md text-sm text-slate-600 dark:text-slate-300
                                    hover:bg-slate-100 dark:hover:bg-white/5 transition-colors">
                         ${t('cancel')}
                     </button>
-                    <button type="button" onclick="_saveBochaKey()"
+                    <button type="button" onclick="_saveSearchKey('${providerId}')"
                             class="px-4 py-1.5 rounded-md bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
                                    cursor-pointer transition-colors">
                         ${t('save')}
@@ -7955,7 +10096,7 @@ function openSearchBochaModal(providerMeta) {
 
     // Reset masked sentinel as soon as the user starts editing so the save
     // handler can tell apart "kept the existing key" vs "typed a new one".
-    const input = document.getElementById('search-bocha-key');
+    const input = document.getElementById('search-key-input');
     if (input) {
         const unmask = () => {
             if (input.dataset.masked === '1') {
@@ -7971,8 +10112,8 @@ function openSearchBochaModal(providerMeta) {
         input.addEventListener('paste', unmask);
         if (!hasKey) setTimeout(() => input.focus(), 50);
     }
-    const clearBtn = document.getElementById('search-bocha-clear');
-    if (clearBtn) clearBtn.addEventListener('click', _clearBochaKey);
+    const clearBtn = document.getElementById('search-key-clear');
+    if (clearBtn) clearBtn.addEventListener('click', () => _clearSearchKey(providerId));
 
     modal.addEventListener('mousedown', (e) => {
         if (e.target === modal) modal.remove();
@@ -7986,12 +10127,12 @@ function openSearchBochaModal(providerMeta) {
     document.addEventListener('keydown', onKey);
 }
 
-function _saveBochaKey() {
-    const input = document.getElementById('search-bocha-key');
+function _saveSearchKey(providerId) {
+    const input = document.getElementById('search-key-input');
     if (!input) return;
     // Untouched masked value => no change requested; close silently.
     if (input.dataset.masked === '1') {
-        const modal = document.getElementById('search-bocha-modal');
+        const modal = document.getElementById('search-key-modal');
         if (modal) modal.remove();
         return;
     }
@@ -8003,24 +10144,24 @@ function _saveBochaKey() {
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set_search_credential', api_key: apiKey }),
+        body: JSON.stringify({ action: 'set_search_credential', provider: providerId, api_key: apiKey }),
     }).then(r => r.json()).then(data => {
         if (data.status === 'success') {
-            const modal = document.getElementById('search-bocha-modal');
+            const modal = document.getElementById('search-key-modal');
             if (modal) modal.remove();
             loadModelsView({ preserveScroll: true });
         }
     });
 }
 
-function _clearBochaKey() {
+function _clearSearchKey(providerId) {
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'set_search_credential', api_key: '' }),
+        body: JSON.stringify({ action: 'set_search_credential', provider: providerId, api_key: '' }),
     }).then(r => r.json()).then(data => {
         if (data.status === 'success') {
-            const modal = document.getElementById('search-bocha-modal');
+            const modal = document.getElementById('search-key-modal');
             if (modal) modal.remove();
             loadModelsView({ preserveScroll: true });
         }
@@ -8074,6 +10215,20 @@ function renderCapabilityBody(def, cap, body) {
             <i class="fas fa-cube text-[10px] mr-1"></i>${t('models_dim_label')}: <span class="font-mono">${cap.current_dim}</span>
         </p>` : '';
 
+    // Opt-in capabilities get an on/off switch above the pickers. Everything
+    // below it is hidden while off, so a disabled fallback never looks like an
+    // unconfigured one — it is simply not part of the setup.
+    const toggleHtml = def.toggleable ? `
+        <div id="cap-${def.id}-toggle-wrap" class="flex items-center justify-between gap-3">
+            <label class="text-sm font-medium text-slate-600 dark:text-slate-400">${t('models_fallback_enable')}</label>
+            <button type="button" id="cap-${def.id}-toggle" role="switch"
+                    aria-checked="${cap.enabled ? 'true' : 'false'}"
+                    onclick="toggleCapabilityEnabled('${def.id}')"
+                    class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${cap.enabled ? 'bg-primary-500' : 'bg-slate-200 dark:bg-slate-700'}">
+                <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cap.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'}"></span>
+            </button>
+        </div>` : '';
+
     // Footer layout: a "hint slot" (filled later by renderCapabilityHints for
     // auto-mode cards) sits on the left while status + save stay anchored on
     // the right. Keeping them on the same row means the save button hugs the
@@ -8091,7 +10246,13 @@ function renderCapabilityBody(def, cap, body) {
             </div>
         </div>`;
 
-    body.innerHTML = providerHtml + modelHtml + dimHtml + footer;
+    // Pickers live in their own wrapper so a disabled opt-in capability can
+    // hide them as a group (the toggle itself stays visible above). The
+    // wrapper carries its own `space-y-4` because the body's `space-y-4` only
+    // applies to *direct* children: without it the provider/model rows would
+    // collapse against each other (and against the label above them).
+    const pickersHtml = `<div id="cap-${def.id}-pickers" class="space-y-4">${providerHtml + modelHtml + dimHtml}</div>`;
+    body.innerHTML = toggleHtml + pickersHtml + footer;
 
     // TTS: mount reply-mode above provider; defer off-mode toggle to the end.
     if (def.id === 'tts') {
@@ -8165,6 +10326,20 @@ function renderCapabilityBody(def, cap, body) {
             dropdownPlaceholder = { placeholder: t('models_pick_provider') };
         }
     }
+    // Seed the "provider active before the last switch" tracker so the very
+    // first vendor switch can still stash the initial provider's custom model.
+    capabilityLastProviderId[def.id] = initialProviderValue;
+    // If the initially selected model is a custom one, remember it against the
+    // initial provider so a switch-away-and-back keeps it too.
+    if (initialProviderValue && cap.current_model) {
+        const provList = (cap.provider_models && cap.provider_models[initialProviderValue])
+            || (initialProviderValue.startsWith('custom:') && cap.provider_models && cap.provider_models['custom'])
+            || [];
+        const presetValues = provList.map(e => (typeof e === 'string' ? e : e.value));
+        if (!presetValues.includes(cap.current_model)) {
+            capabilityCustomModelMemory[`${def.id}:${initialProviderValue}`] = cap.current_model;
+        }
+    }
     initDropdown(
         provDd,
         ddOpts,
@@ -8193,6 +10368,12 @@ function renderCapabilityBody(def, cap, body) {
 
     // Inject auto/router-pending hint banners before the action footer.
     renderCapabilityHints(def, cap, body, initialProviderValue);
+
+    // Opt-in capabilities start collapsed when disabled, so an inactive
+    // fallback reads as "off" rather than as a half-configured capability.
+    if (def.toggleable) {
+        _setCapabilityPickersVisible(def, body, !!cap.enabled);
+    }
 
     if (def.id === 'tts') {
         _setTtsConfigVisible(body, (cap.reply_mode || 'off') !== 'off');
@@ -8607,11 +10788,28 @@ function rebuildCapabilityVoiceDropdown(providerId, selectedVoice, scope, modelI
 
 function onCapabilityProviderChange(def, providerId, scope) {
     if (def.needsModel) {
+        // Before rebuilding the model picker for the newly picked provider,
+        // stash the custom model the user had typed under the *previous*
+        // provider, so switching back to it later restores that value.
+        const prevProvider = capabilityLastProviderId[def.id];
+        if (prevProvider && prevProvider !== providerId) {
+            const prevDd = document.getElementById(`cap-${def.id}-model`);
+            const prevInput = document.getElementById(`cap-${def.id}-model-custom`);
+            if (prevDd && prevInput && getDropdownValue(prevDd) === '__custom__') {
+                const typed = prevInput.value.trim();
+                if (typed) capabilityCustomModelMemory[`${def.id}:${prevProvider}`] = typed;
+            }
+        }
+        capabilityLastProviderId[def.id] = providerId;
+
         // Embedding: hide model picker when no provider is selected.
         const showModel = def.id === 'embedding' ? providerId !== '' :
             !(providerId === '' && capabilitySupportsAuto(def.id));
         if (showModel) {
-            rebuildCapabilityModelDropdown(def, providerId, '', scope);
+            // Restore a remembered custom model for this provider (if any) so
+            // switching vendors and back does not drop it.
+            const remembered = capabilityCustomModelMemory[`${def.id}:${providerId}`] || '';
+            rebuildCapabilityModelDropdown(def, providerId, remembered, scope);
         }
         setCapabilityModelPickerVisible(def, showModel, scope);
     }
@@ -8637,8 +10835,41 @@ function getCapabilityModelValue(def) {
     return v || '';
 }
 
+// Opt-in capabilities: show/hide the pickers under the toggle without
+// touching config. Mirrors the TTS reply-mode pattern — the toggle itself is
+// pure UI state until the user presses Save.
+function _setCapabilityPickersVisible(def, body, visible) {
+    const wrap = body.querySelector(`#cap-${def.id}-pickers`);
+    if (wrap) wrap.classList.toggle('hidden', !visible);
+}
+
+// Clicking the toggle flips the local switch. Persisting is a separate act
+// (Save), so a user can flip back without ever writing to config.
+function toggleCapabilityEnabled(capId) {
+    const def = capabilityDefById(capId);
+    if (!def || !def.toggleable) return;
+    const cap = modelsState.capabilities[capId] || {};
+    cap.enabled = !cap.enabled;
+    modelsState.capabilities[capId] = cap;
+    const btn = document.getElementById(`cap-${capId}-toggle`);
+    if (btn) {
+        btn.setAttribute('aria-checked', cap.enabled ? 'true' : 'false');
+        btn.classList.toggle('bg-primary-500', cap.enabled);
+        btn.classList.toggle('bg-slate-200', !cap.enabled);
+        btn.classList.toggle('dark:bg-slate-700', !cap.enabled);
+        const knob = btn.querySelector('span');
+        if (knob) {
+            knob.classList.toggle('translate-x-[18px]', cap.enabled);
+            knob.classList.toggle('translate-x-[3px]', !cap.enabled);
+        }
+    }
+    // Same lookup the rest of the file uses for a capability body.
+    const body = document.querySelector(`[data-cap-body="${capId}"]`);
+    if (body) _setCapabilityPickersVisible(def, body, cap.enabled);
+}
+
 function saveCapability(capId) {
-    const def = MODELS_CAPABILITY_DEFS.find(d => d.id === capId);
+    const def = capabilityDefById(capId);
     if (!def || !def.editable) return;
     // Search has its own form (strategy + provider, no model picker).
     if (capId === 'search') { saveSearchCapability(); return; }
@@ -8702,12 +10933,26 @@ function saveCapability(capId) {
             return;
         }
     }
-    _persistCapability(capId, provider, model, undefined, { voice });
+    // Opt-in capabilities persist their on/off switch alongside the pickers.
+    // It is sent even when turning off, so a broken entry can always be
+    // cleared — and the backend refuses to enable a half-filled one.
+    let enabled = undefined;
+    if (def.toggleable) {
+        const cap = modelsState.capabilities[capId] || {};
+        enabled = !!cap.enabled;
+    }
+    // The chat fallback is edited inside a modal; close it once the save
+    // lands so the user drops straight back to the models page (already
+    // reloaded by _persistCapability, which refreshes the main-card badge).
+    const onAfterSuccess = capId === 'chat_fallback' ? closeChatFallbackModal : undefined;
+    _persistCapability(capId, provider, model, onAfterSuccess, { voice, enabled });
 }
 
 function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
     const payload = { action: 'set_capability', capability: capId, provider_id: provider, model: model };
     if (extras && extras.voice !== undefined) payload.voice = extras.voice;
+    // Opt-in capabilities (the chat fallback) carry their on/off switch.
+    if (extras && extras.enabled !== undefined) payload.enabled = extras.enabled;
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -9045,18 +11290,25 @@ function saveCustomProviderModal() {
         return;
     }
 
-    // Untouched masked key => no change (omit from payload).
-    let apiKey = keyInput.value.trim();
-    if (keyInput.dataset.masked === '1' && apiKey === (keyInput.dataset.maskedVal || '')) {
-        apiKey = '';
-    }
+    // Key handling (the custom provider's key is optional):
+    //  - masked + untouched  => keep existing, omit from payload
+    //  - non-empty typed value => set it
+    //  - explicitly cleared on edit => send "" so the backend clears it
+    const untouchedMasked =
+        keyInput.dataset.masked === '1' && keyInput.value.trim() === (keyInput.dataset.maskedVal || '');
+    const apiKey = untouchedMasked ? '' : keyInput.value.trim();
 
     const payload = {
         action: 'set_custom_provider',
         name: name,
         api_base: apiBase,
     };
-    if (apiKey) payload.api_key = apiKey;
+    if (untouchedMasked) {
+        // omit api_key entirely => backend keeps the stored key
+    } else {
+        // Send the value (possibly "") so an explicit clear is honored.
+        payload.api_key = apiKey;
+    }
     if (editing) payload.id = customProviderModalState.editId;
 
     const btn = document.getElementById('custom-provider-modal-save');
@@ -9104,19 +11356,52 @@ function deleteCustomProvider(providerId) {
 // Channels View
 // =====================================================================
 let channelsData = [];
+// Multi-Agent mode: the multi-instance-ready types (feishu) render one card per
+// channel_instances record. These mirror the extra fields the API returns.
+let channelInstancesView = [];
+let multiInstanceTypes = [];
+let channelsMultiAgent = false;
+
+function isMultiInstanceType(name) {
+    return channelsMultiAgent && multiInstanceTypes.indexOf(name) !== -1;
+}
 
 function loadChannelsView() {
     const container = document.getElementById('channels-content');
+    if (!container) return Promise.resolve();
     container.innerHTML = `<div class="flex items-center gap-2 py-8 justify-center text-slate-400 dark:text-slate-500 text-sm">
         <i class="fas fa-spinner fa-spin text-xs"></i><span>Loading...</span></div>`;
 
-    fetch('/api/channels').then(r => r.json()).then(data => {
+    const roster = agentCatalog.length ? Promise.resolve() : loadAgentCatalog();
+    return roster.then(() => fetch('/api/channels').then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         channelsData = data.channels || [];
+        channelsMultiAgent = !!data.multi_agent;
+        multiInstanceTypes = data.multi_instance_types || [];
+        channelInstancesView = data.instances || [];
         renderActiveChannels();
     }).catch(() => {
         container.innerHTML = '<p class="text-sm text-red-400 py-8 text-center">Failed to load channels</p>';
+    }));
+}
+
+// Build the list of cards to render. In multi-Agent mode the multi-instance
+// types (feishu) contribute one card per channel_instances record (from
+// data.instances); everything else contributes its single per-type card. Each
+// item carries an `iid` (instance id) that keys its DOM and actions: for legacy
+// per-type cards it is just the channel name.
+function channelRenderList() {
+    const list = [];
+    channelsData.forEach(ch => {
+        if (isMultiInstanceType(ch.name)) return;  // rendered from instances
+        if (ch.active) list.push(Object.assign({}, ch, { iid: ch.name }));
     });
+    if (channelsMultiAgent) {
+        channelInstancesView.forEach(inst => {
+            list.push(Object.assign({}, inst, { iid: inst.instance_id }));
+        });
+    }
+    return list;
 }
 
 function renderActiveChannels() {
@@ -9126,7 +11411,7 @@ function renderActiveChannels() {
     container.innerHTML = '';
     closeAddChannelPanel();
 
-    const activeChannels = channelsData.filter(ch => ch.active);
+    const activeChannels = channelRenderList();
 
     if (activeChannels.length === 0) {
         container.innerHTML = `
@@ -9141,18 +11426,22 @@ function renderActiveChannels() {
     }
 
     activeChannels.forEach(ch => {
+        const iid = ch.iid;
         const label = (typeof ch.label === 'object') ? (ch.label[currentLang] || ch.label.en) : ch.label;
         const card = document.createElement('div');
         card.className = 'bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6';
-        card.id = `channel-card-${ch.name}`;
+        card.id = `channel-card-${iid}`;
 
-        const fieldsHtml = buildChannelFieldsHtml(ch.name, ch.fields || []);
+        const fieldsHtml = buildChannelFieldsHtml(iid, ch.fields || []);
         const hasFields = (ch.fields || []).length > 0;
 
         const weixinWaiting = ch.name === 'weixin' && ch.login_status && ch.login_status !== 'logged_in';
         const wecomNeedsCreds = ch.name === 'wecom_bot' && !_wecomBotHasCreds(ch);
         // 飞书 active 卡片渲染带 Tab 的 panel：手动填写 + 扫码重建（覆盖现有配置）
         const isFeishu = ch.name === 'feishu';
+        // An instance card (multi-Agent feishu) shows the bound agent inline and
+        // uses the instance id as its subtitle instead of the bare type name.
+        const isInstance = isMultiInstanceType(ch.name) && !!ch.instance_id;
         let statusDot, statusText;
         if (weixinWaiting) {
             statusDot = 'bg-amber-400 animate-pulse';
@@ -9168,7 +11457,7 @@ function renderActiveChannels() {
         }
 
         card.innerHTML = `
-            <div class="flex items-center gap-4${hasFields || weixinWaiting || wecomNeedsCreds || isFeishu ? ' mb-5' : ''}">
+            <div class="flex items-center gap-4${hasFields || weixinWaiting || wecomNeedsCreds || isFeishu || multiAgentMode() ? ' mb-5' : ''}">
                 <div class="w-10 h-10 rounded-xl bg-${ch.color}-50 dark:bg-${ch.color}-900/20 flex items-center justify-center flex-shrink-0">
                     <i class="fas ${ch.icon} text-${ch.color}-500 text-base"></i>
                 </div>
@@ -9178,9 +11467,9 @@ function renderActiveChannels() {
                         <span class="w-2 h-2 rounded-full ${statusDot}"></span>
                         ${statusText}
                     </div>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">${escapeHtml(ch.name)}</p>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono">${escapeHtml(iid)}</p>
                 </div>
-                <button onclick="disconnectChannel('${ch.name}')"
+                <button onclick="disconnectChannel('${ch.name}', '${isInstance ? iid : ''}')"
                     class="px-3 py-1.5 rounded-lg text-xs font-medium
                            bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400
                            hover:bg-red-100 dark:hover:bg-red-900/40
@@ -9188,6 +11477,17 @@ function renderActiveChannels() {
                     ${t('channels_disconnect')}
                 </button>
             </div>
+            ${multiAgentMode() ? `<div class="channel-agent-bind">
+                <span class="text-xs text-slate-500 whitespace-nowrap" title="${escapeHtml(t('channel_bound_agent_hint'))}">${escapeHtml(t('channel_bound_agent'))}</span>
+                <div id="ch-members-${iid}" class="cfg-dropdown cfg-dropdown-avatar cfg-dropdown-sm cfg-dropdown-multi" tabindex="0" style="width: 200px;">
+                    <div class="cfg-dropdown-selected">
+                        <span class="cfg-dropdown-faces"></span>
+                        <span class="cfg-dropdown-text">--</span>
+                        <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                    </div>
+                    <div class="cfg-dropdown-menu"></div>
+                </div>
+            </div>` : ''}
             ${weixinWaiting ? `<div id="weixin-active-qr" class="flex flex-col items-center py-2">
                 <button onclick="showWeixinActiveQr()"
                     class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
@@ -9207,21 +11507,114 @@ function renderActiveChannels() {
             ${isFeishu ? buildFeishuPanel(ch, true) : (hasFields ? `<div class="space-y-4">
                 ${fieldsHtml}
                 <div class="flex items-center justify-end gap-3 pt-1">
-                    <span id="ch-status-${ch.name}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
-                    <button onclick="saveChannelConfig('${ch.name}')"
+                    <span id="ch-status-${iid}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                    <button onclick="saveChannelConfig('${ch.name}', '${isInstance ? iid : ''}')"
                         class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
                                cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                        id="ch-save-${ch.name}">${t('channels_save')}</button>
+                        id="ch-save-${iid}">${t('channels_save')}</button>
                 </div>
             </div>` : '')}`;
 
         container.appendChild(card);
         bindSecretFieldEvents(card);
+        initChannelTeam(ch);
 
         if (weixinWaiting) {
             startWeixinActiveStatusPoll();
         }
     });
+}
+
+// One multi-select per channel card, same idea as creating a team in the chat
+// history: pick a set of Agents; the first pick is the owner (receives every
+// message and can delegate), the rest are teammates. An ordered list, so the
+// first checked stays the owner. Empty = follow the default Agent, solo.
+let _channelTeam = {};  // iid -> ordered [ownerId, ...memberIds]
+
+function initChannelTeam(ch) {
+    const iid = ch.iid || ch.name;
+    if (!multiAgentMode()) return;
+    const box = document.getElementById(`ch-members-${iid}`);
+    if (!box) return;
+    // Seed the ordered team: owner first, then its members. A legacy per-type
+    // card has no instance fields, so fall back to its channel-type binding.
+    const owner = ch.instance_id ? (ch.agent_id || '') : (channelBoundAgentId(ch.name) || '');
+    const members = Array.isArray(ch.members) ? ch.members : [];
+    _channelTeam[iid] = [owner, ...members].filter((id, i, arr) => id && arr.indexOf(id) === i);
+    box.dataset.channelName = ch.name;
+    renderChannelTeam(iid);
+    if (!box._ddBound) {
+        box.querySelector('.cfg-dropdown-selected').addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelectorAll('.cfg-dropdown.open').forEach(d => { if (d !== box) d.classList.remove('open'); });
+            box.classList.toggle('open');
+        });
+        box._ddBound = true;
+    }
+}
+
+function renderChannelTeam(iid) {
+    const box = document.getElementById(`ch-members-${iid}`);
+    if (!box) return;
+    const team = _channelTeam[iid] || [];
+    const ownerId = team[0] || '';
+    const agents = enabledAgents();
+    const chosen = team.map(id => findAgent(id)).filter(Boolean);
+
+    const faces = box.querySelector('.cfg-dropdown-faces');
+    const textEl = box.querySelector('.cfg-dropdown-text');
+    const MAX_FACES = 3;
+    if (chosen.length) {
+        // Trigger: up to MAX_FACES avatars; any beyond that become a "+N" pill
+        // so the count always matches how many are hidden, never the total.
+        const shown = chosen.slice(0, MAX_FACES);
+        const extra = chosen.length - shown.length;
+        faces.innerHTML = shown.map(a => agentAvatarHTML(a, 18)).join('')
+            + (extra > 0 ? `<span class="cfg-dropdown-more">+${extra}</span>` : '');
+        textEl.textContent = chosen[0].name || chosen[0].id;
+        textEl.classList.remove('text-slate-400', 'dark:text-slate-500');
+    } else {
+        // Nothing picked: this channel follows the default Agent. Show it
+        // (dim) rather than an empty "none", so the receiver is always clear.
+        const def = findAgent(defaultAgentId);
+        faces.innerHTML = def ? agentAvatarHTML(def, 18) : '';
+        textEl.textContent = def ? (def.name || def.id) : t('channel_team_none');
+        textEl.classList.add('text-slate-400', 'dark:text-slate-500');
+    }
+
+    // Menu: a checklist. The first-picked carries a small "default" badge so it
+    // is clear which Agent receives and delegates. The selected tick is the
+    // dropdown's global .active::after, so no per-row tick element is needed.
+    const menu = box.querySelector('.cfg-dropdown-menu');
+    if (!agents.length) {
+        menu.innerHTML = `<div class="cfg-dropdown-item cfg-dropdown-empty">${escapeHtml(t('channel_team_no_candidates'))}</div>`;
+        return;
+    }
+    menu.innerHTML = agents.map(a => {
+        const on = team.includes(a.id);
+        const isOwner = a.id === ownerId;
+        return `<div class="cfg-dropdown-item cfg-dropdown-check${on ? ' active' : ''}"
+            onclick="event.stopPropagation(); toggleChannelTeam('${iid}','${a.id}')">
+            <span class="cfg-dropdown-item-face">${agentAvatarHTML(a, 20)}</span>
+            <span class="cfg-dropdown-label">${escapeHtml(a.name || a.id)}</span>
+            ${isOwner ? `<span class="cfg-dropdown-badge">${escapeHtml(t('channel_bound_default'))}</span>` : ''}
+        </div>`;
+    }).join('');
+}
+
+function toggleChannelTeam(iid, agentId) {
+    const box = document.getElementById(`ch-members-${iid}`);
+    const chName = box ? (box.dataset.channelName || '') : '';
+    const team = _channelTeam[iid] || [];
+    const i = team.indexOf(agentId);
+    if (i === -1) team.push(agentId);       // append: order = pick order
+    else team.splice(i, 1);                 // remove; if it was owner, next becomes owner
+    _channelTeam[iid] = team;
+    renderChannelTeam(iid);
+    // Persist: first pick is the owner (empty -> default Agent), rest members.
+    const ownerId = team[0] || '';
+    const members = team.slice(1);
+    bindChannelAgent(chName, ownerId, iid, members);
 }
 
 function buildChannelFieldsHtml(chName, fields) {
@@ -9284,12 +11677,15 @@ function showChannelStatus(chName, msgKey, isError) {
     setTimeout(() => el.classList.add('opacity-0'), 2500);
 }
 
-function saveChannelConfig(chName) {
-    const card = document.getElementById(`channel-card-${chName}`);
+function saveChannelConfig(chName, instanceId) {
+    // instanceId keys the DOM (per-instance cards); falls back to the channel
+    // name for legacy single-instance cards.
+    const iid = instanceId || chName;
+    const card = document.getElementById(`channel-card-${iid}`);
     if (!card) return;
 
     const updates = {};
-    card.querySelectorAll('input[data-ch="' + chName + '"]').forEach(inp => {
+    card.querySelectorAll('input[data-ch="' + iid + '"]').forEach(inp => {
         const key = inp.dataset.field;
         if (inp.type === 'checkbox') {
             updates[key] = inp.checked;
@@ -9299,27 +11695,27 @@ function saveChannelConfig(chName) {
         }
     });
 
-    const btn = document.getElementById(`ch-save-${chName}`);
+    const btn = document.getElementById(`ch-save-${iid}`);
     if (btn) btn.disabled = true;
 
     fetch('/api/channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'save', channel: chName, config: updates })
+        body: JSON.stringify({ action: 'save', channel: chName, instance_id: instanceId || '', config: updates })
     })
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
-            showChannelStatus(chName, data.restarted ? 'channels_restarted' : 'channels_saved', false);
+            showChannelStatus(iid, data.restarted ? 'channels_restarted' : 'channels_saved', false);
         } else {
-            showChannelStatus(chName, 'channels_save_error', true);
+            showChannelStatus(iid, 'channels_save_error', true);
         }
     })
-    .catch(() => showChannelStatus(chName, 'channels_save_error', true))
+    .catch(() => showChannelStatus(iid, 'channels_save_error', true))
     .finally(() => { if (btn) btn.disabled = false; });
 }
 
-function disconnectChannel(chName) {
+function disconnectChannel(chName, instanceId) {
     const ch = channelsData.find(c => c.name === chName);
     const label = ch ? ((typeof ch.label === 'object') ? (ch.label[currentLang] || ch.label.en) : ch.label) : chName;
 
@@ -9332,13 +11728,20 @@ function disconnectChannel(chName) {
             fetch('/api/channels', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'disconnect', channel: chName })
+                body: JSON.stringify({ action: 'disconnect', channel: chName, instance_id: instanceId || '' })
             })
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'success') {
-                    if (ch) ch.active = false;
-                    renderActiveChannels();
+                    // An instance removal changes the instances list; reload from
+                    // the server so the card set is authoritative. Legacy per-type
+                    // disconnect can flip the flag locally.
+                    if (instanceId) {
+                        loadChannelsView();
+                    } else {
+                        if (ch) ch.active = false;
+                        renderActiveChannels();
+                    }
                 }
             })
             .catch(() => {});
@@ -9349,11 +11752,16 @@ function disconnectChannel(chName) {
 // --- Add channel panel ---
 function openAddChannelPanel() {
     const panel = document.getElementById('channels-add-panel');
-    const activeNames = new Set(channelsData.filter(c => c.active).map(c => c.name));
+    // A multi-instance-ready type (feishu) can always be added again — each add
+    // creates a new instance. Other types disappear once active.
+    const activeNames = new Set(
+        channelsData.filter(c => c.active && !isMultiInstanceType(c.name)).map(c => c.name)
+    );
     const available = channelsData.filter(c => !activeNames.has(c.name));
 
+    const anyCards = channelRenderList().length > 0;
     const content = document.getElementById('channels-content');
-    if (activeNames.size === 0 && content) content.classList.add('hidden');
+    if (!anyCards && content) content.classList.add('hidden');
 
     if (available.length === 0) {
         panel.innerHTML = `<div class="bg-white dark:bg-[#1A1A1A] rounded-xl border border-slate-200 dark:border-white/10 p-6 text-center">
@@ -9492,6 +11900,13 @@ function submitAddChannel() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // A new multi-instance record only shows up by reloading the
+            // instances list from the server; legacy per-type add can patch
+            // local state and re-render.
+            if (isMultiInstanceType(chName) || data.instance_id) {
+                loadChannelsView();
+                return;
+            }
             const ch = channelsData.find(c => c.name === chName);
             if (ch) {
                 ch.active = true;
@@ -9669,6 +12084,15 @@ function connectWeixinAfterQr() {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // Multi-Agent: the new Weixin instance only lives in the server's
+            // channel_instances yet, and its card is rendered from that list —
+            // so reload the channels view to make it appear. Re-rendering from
+            // the stale local state would drop the freshly scanned card until a
+            // manual refresh. Legacy single-instance patches local state.
+            if (isMultiInstanceType('weixin') || data.instance_id) {
+                setTimeout(() => loadChannelsView(), 1500);
+                return;
+            }
             const ch = channelsData.find(c => c.name === 'weixin');
             if (ch) ch.active = true;
             setTimeout(() => renderActiveChannels(), 1500);
@@ -9864,11 +12288,13 @@ document.addEventListener('DOMContentLoaded', function() {
             wecomPanel.dataset.initialized = '1';
             switchWecomBotMode(wecomPanel.dataset.defaultMode || 'scan');
         }
-        const feishuPanel = document.getElementById('feishu-panel');
-        if (feishuPanel && !feishuPanel.dataset.initialized) {
+        // Init every feishu panel on screen, not just the first: multiple
+        // instance cards can be present at once, each with its own id suffix.
+        document.querySelectorAll('.feishu-panel').forEach(feishuPanel => {
+            if (feishuPanel.dataset.initialized) return;
             feishuPanel.dataset.initialized = '1';
-            switchFeishuMode(feishuPanel.dataset.defaultMode || 'scan');
-        }
+            switchFeishuMode(feishuPanel.dataset.iid || 'feishu', feishuPanel.dataset.defaultMode || 'scan');
+        });
     });
     observer.observe(document.body, { childList: true, subtree: true });
 });
@@ -9891,34 +12317,48 @@ function buildFeishuPanel(ch, isActive) {
     // 已有凭据时默认进入手动 Tab，方便修改；否则推荐扫码
     const defaultMode = _feishuHasCreds(ch) ? 'manual' : 'scan';
     const activeAttr = isActive ? 'data-active="1"' : '';
+    // Every DOM id in the panel is suffixed with the instance id so two feishu
+    // cards on screen at once never collide: without this, getElementById()
+    // always resolves to the first card, so the second card is dead and its tab
+    // clicks drive the first one. The Add panel (no instance yet) uses the bare
+    // "feishu" suffix; an active instance card uses its real instance id.
+    const iid = (isActive && ch && ch.iid) ? ch.iid : 'feishu';
     return `
-        <div id="feishu-panel" data-default-mode="${defaultMode}" ${activeAttr}>
+        <div id="feishu-panel-${iid}" class="feishu-panel" data-default-mode="${defaultMode}" data-iid="${escapeHtml(iid)}" ${activeAttr}>
             <div class="flex items-center justify-center gap-1 mb-5 bg-slate-100 dark:bg-white/5 rounded-lg p-1">
-                <button id="feishu-tab-scan" onclick="switchFeishuMode('scan')"
+                <button id="feishu-tab-scan-${iid}" onclick="switchFeishuMode('${iid}', 'scan')"
                     class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
                            bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm">
                     ${scanLabel}
                 </button>
-                <button id="feishu-tab-manual" onclick="switchFeishuMode('manual')"
+                <button id="feishu-tab-manual-${iid}" onclick="switchFeishuMode('${iid}', 'manual')"
                     class="flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors
                            text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                     ${manualLabel}
                 </button>
             </div>
-            <div id="feishu-mode-content"></div>
+            <div id="feishu-mode-content-${iid}"></div>
         </div>`;
 }
 
-function switchFeishuMode(mode) {
-    const panel = document.getElementById('feishu-panel');
-    const scanTab = document.getElementById('feishu-tab-scan');
-    const manualTab = document.getElementById('feishu-tab-manual');
-    const content = document.getElementById('feishu-mode-content');
+function switchFeishuMode(iid, mode) {
+    // Back-compat: old call sites passed only the mode. Treat a bare mode as the
+    // Add panel's "feishu" instance.
+    if (mode === undefined && (iid === 'scan' || iid === 'manual')) {
+        mode = iid;
+        iid = 'feishu';
+    }
+    iid = iid || 'feishu';
+    const panel = document.getElementById(`feishu-panel-${iid}`);
+    const scanTab = document.getElementById(`feishu-tab-scan-${iid}`);
+    const manualTab = document.getElementById(`feishu-tab-manual-${iid}`);
+    const content = document.getElementById(`feishu-mode-content-${iid}`);
     if (!scanTab || !manualTab || !content) return;
 
     // 已激活通道卡片中嵌入此 panel 时，没有 add-channel-actions（保存按钮就近渲染）
     const isActive = panel && panel.dataset.active === '1';
     const actions = isActive ? null : document.getElementById('add-channel-actions');
+    const scanStatusId = `feishu-scan-status-${iid}`;
 
     const activeClasses = 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-sm';
     const inactiveClasses = 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200';
@@ -9934,31 +12374,36 @@ function switchFeishuMode(mode) {
             ? t('feishu_scan_replace_desc')
             : t('feishu_scan_desc');
         content.innerHTML = `
-            <div id="feishu-scan-panel" class="flex flex-col items-center py-4">
+            <div class="flex flex-col items-center py-4">
                 <p class="text-sm text-slate-600 dark:text-slate-300 mb-3 text-center">${desc}</p>
-                <button onclick="startFeishuRegister()"
+                <button onclick="startFeishuRegister('${scanStatusId}')"
                     class="mt-2 px-6 py-2.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium
                            cursor-pointer transition-colors duration-150">
                     <i class="fas fa-qrcode mr-2"></i>${t('feishu_scan_btn')}
                 </button>
-                <div id="feishu-scan-status" class="mt-4 w-full"></div>
+                <div id="${scanStatusId}" class="mt-4 w-full"></div>
             </div>`;
     } else {
         manualTab.className = `flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${activeClasses}`;
         scanTab.className = `flex-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${inactiveClasses}`;
-        const ch = channelsData.find(c => c.name === 'feishu');
-        const fieldsHtml = buildChannelFieldsHtml('feishu', ch ? ch.fields || [] : []);
+        // An active instance card keys its fields by the instance id (so the
+        // card's data-ch query and the save target line up); the Add panel keys
+        // by the bare type since no instance exists yet.
+        const ch = (isActive && iid !== 'feishu')
+            ? channelInstancesView.find(c => c.instance_id === iid)
+            : channelsData.find(c => c.name === 'feishu');
+        const fieldsHtml = buildChannelFieldsHtml(iid, ch ? ch.fields || [] : []);
         if (isActive) {
             // 已接入卡片：内置保存按钮，复用 saveChannelConfig 走 update 流程
             content.innerHTML = `
                 <div class="space-y-4">
                     ${fieldsHtml}
                     <div class="flex items-center justify-end gap-3 pt-1">
-                        <span id="ch-status-feishu" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
-                        <button onclick="saveChannelConfig('feishu')"
+                        <span id="ch-status-${iid}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                        <button onclick="saveChannelConfig('feishu', '${iid === 'feishu' ? '' : iid}')"
                             class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
                                    cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
-                            id="ch-save-feishu">${t('channels_save')}</button>
+                            id="ch-save-${iid}">${t('channels_save')}</button>
                     </div>
                 </div>`;
         } else {
@@ -10113,6 +12558,12 @@ function connectFeishuAfterRegister(appId, appSecret) {
     .then(r => r.json())
     .then(data => {
         if (data.status === 'success') {
+            // Multi-Agent mode created a new feishu instance server-side; reload
+            // so its card appears. Legacy mode patches local state.
+            if (isMultiInstanceType('feishu') || data.instance_id) {
+                setTimeout(() => loadChannelsView(), 1500);
+                return;
+            }
             const ch = channelsData.find(c => c.name === 'feishu');
             if (ch) {
                 ch.active = true;
@@ -10164,7 +12615,7 @@ function runTaskNow(task, button) {
             fetch('/api/scheduler/run', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({task_id: task.id})
+                body: JSON.stringify({task_id: task.id, agent_id: task.agent_id || ''})
             }).then(r => r.json()).then(res => {
                 if (res.status !== 'success') throw new Error(res.message || t('task_run_failed'));
                 button.innerHTML = `<i class="fas fa-check mr-1"></i>${t('task_run_started')}`;
@@ -10185,7 +12636,15 @@ function runTaskNow(task, button) {
 
 function loadTasksView() {
     if (tasksLoaded) return;
-    fetch('/api/scheduler').then(r => r.json()).then(data => {
+    // The list tags each task with an owning Agent; make sure the roster is in
+    // hand first so findAgent()/multiAgentMode() can resolve the avatar + name.
+    const rosterReady = agentCatalog.length ? Promise.resolve() : loadAgentCatalog();
+    rosterReady.then(() => {
+    // Explicit empty agent_id so the global fetch wrapper doesn't inject the
+    // active chat Agent: the task list is the whole team's schedule and must
+    // NOT follow whichever Agent the conversation is currently on. The backend
+    // treats an empty agent_id as "aggregate across all Agents".
+    fetch('/api/scheduler?agent_id=').then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const emptyEl = document.getElementById('tasks-empty');
         const listEl = document.getElementById('tasks-list');
@@ -10233,10 +12692,19 @@ function loadTasksView() {
             const action = task.action || {};
             const taskContent = action.content || action.task_description || '';
             const toggleId = 'toggle-' + task.id;
+            // Owner chip: only when several Agents exist (otherwise every task
+            // carries the same face and it's just noise). Empty on a solo install.
+            const owner = (multiAgentMode() && task.agent_id) ? findAgent(task.agent_id) : null;
+            const ownerChip = owner
+                ? `<span class="inline-flex items-center gap-1 ml-2 pl-1 pr-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-white/10 text-[10px] leading-none text-slate-400 dark:text-slate-500">
+                        ${agentAvatarHTML(owner, 15)}<span class="truncate max-w-[80px]">${escapeHtml(owner.name || owner.id)}</span>
+                   </span>`
+                : '';
             card.innerHTML = `
                 <div class="flex items-center gap-2 mb-2">
                     <span class="w-2 h-2 rounded-full ${isEnabled ? 'bg-primary-400' : 'bg-slate-300 dark:bg-slate-600'}"></span>
                     <span class="font-medium text-sm text-slate-700 dark:text-slate-200">${escapeHtml(task.name || task.id || '--')}</span>
+                    ${ownerChip}
                     <div class="flex-1"></div>
                     ${typeLabel}
                 </div>
@@ -10263,7 +12731,7 @@ function loadTasksView() {
                 fetch('/api/scheduler/toggle', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({task_id: task.id, enabled: newEnabled})
+                    body: JSON.stringify({task_id: task.id, enabled: newEnabled, agent_id: task.agent_id || ''})
                 }).then(r => r.json()).then(res => {
                     if (res.status === 'success') {
                         const dot = card.querySelector('.rounded-full.w-2');
@@ -10290,6 +12758,7 @@ function loadTasksView() {
         });
         tasksLoaded = true;
     }).catch(() => {});
+    });
 }
 
 // =====================================================================
@@ -10381,26 +12850,30 @@ function stopLogStream() {
 // =====================================================================
 const _origNavigateTo = navigateTo;
 navigateTo = function(viewId) {
+    // An open document editor is about to be replaced by another view, which
+    // would drop the edit with nothing on screen to say so.
+    if (!docGuardUnsaved(() => navigateTo(viewId))) return;
+
     // Stop log stream when leaving logs view
     if (currentView === 'logs' && viewId !== 'logs') stopLogStream();
-
-    // Back-compat: the standalone "models" view is now a tab inside "config".
-    // Redirect any legacy navigateTo('models') to config + models tab.
-    if (viewId === 'models') {
-        _origNavigateTo('config');
-        loadConfigView();
-        switchConfigTab('models');
-        return;
-    }
 
     _origNavigateTo(viewId);
 
     // Lazy-load view data
     if (viewId === 'config') { loadConfigView(); switchConfigTab('basic'); }
-    else if (viewId === 'skills') loadSkillsView();
+    else if (viewId === 'skills') { resetSkillViewer(); loadSkillsView(); }
     else if (viewId === 'memory') {
+        memoryEditor.forget();
         document.getElementById('memory-panel-viewer').classList.add('hidden');
         document.getElementById('memory-panel-list').classList.remove('hidden');
+        // Keep the last viewed Agent across refreshes, but drop it if that
+        // Agent has since been deleted so we don't point at a ghost.
+        if (memoryAgentId && agentCatalog.length && !agentCatalog.some(a => a.id === memoryAgentId)) {
+            memoryAgentId = '';
+            localStorage.removeItem('cow_memory_agent');
+        }
+        if (!memoryAgentId) memoryAgentId = activeAgentId || defaultAgentId;
+        renderMemoryAgentSelect();
         switchMemoryTab('files');
     }
     else if (viewId === 'knowledge') loadKnowledgeView();
@@ -10420,13 +12893,51 @@ const KNOWLEDGE_IMPORT_MAX_FILES = 100;
 const KNOWLEDGE_IMPORT_MAX_FILE_SIZE = 10 * 1024 * 1024;
 const KNOWLEDGE_IMPORT_MAX_TOTAL_SIZE = 200 * 1024 * 1024;
 
+// Which Agent's knowledge base the page is viewing. Persisted like the memory
+// page's selector so a refresh keeps the last choice. An Agent on "shared" mode
+// resolves to the shared base on the backend, so this simply scopes the view.
+let knowledgeAgentId = localStorage.getItem('cow_knowledge_agent') || '';
+
+function viewingKnowledgeAgentId() {
+    return knowledgeAgentId || activeAgentId || defaultAgentId;
+}
+
+// Append the viewed Agent to a knowledge URL. The global fetch wrapper only
+// injects activeAgentId when no agent_id is present, so an explicit one wins.
+function _kbUrl(path) {
+    const joiner = path.includes('?') ? '&' : '?';
+    return `${path}${joiner}agent_id=${encodeURIComponent(viewingKnowledgeAgentId())}`;
+}
+
+function renderKnowledgeAgentSelect() {
+    const el = document.getElementById('knowledge-agent-select');
+    if (!el) return;
+    const current = viewingKnowledgeAgentId();
+    const list = agentCatalog.length ? agentCatalog : enabledAgents();
+    const options = list.map(a => ({ value: a.id, label: a.name || a.id, agent: a }));
+    initDropdown(el, options, current, (value) => selectKnowledgeAgent(value), { withAvatar: true });
+}
+
+function selectKnowledgeAgent(agentId) {
+    knowledgeAgentId = agentId;
+    localStorage.setItem('cow_knowledge_agent', agentId);
+    loadKnowledgeView();
+}
+
 function loadKnowledgeView(targetPath) {
     // Reset to docs tab
     switchKnowledgeTab('docs');
     _knowledgeGraphLoaded = false;
     _knowledgeCurrentFile = null;
 
-    fetch('/api/knowledge/list').then(r => r.json()).then(data => {
+    // Drop a deleted Agent selection so we never point at a ghost.
+    if (knowledgeAgentId && agentCatalog.length && !agentCatalog.some(a => a.id === knowledgeAgentId)) {
+        knowledgeAgentId = '';
+        localStorage.removeItem('cow_knowledge_agent');
+    }
+    renderKnowledgeAgentSelect();
+
+    fetch(_kbUrl('/api/knowledge/list')).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         initKnowledgeImportDropZone();
 
@@ -10600,7 +13111,7 @@ async function dispatchKnowledgeAction(action, payload, openPathResolver) {
         const response = await fetch('/api/knowledge/action', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({action, payload}),
+            body: JSON.stringify({action, payload, agent_id: viewingKnowledgeAgentId()}),
         });
         const result = await response.json();
         if (result.status !== 'success') {
@@ -10873,7 +13384,7 @@ async function importKnowledgeDocuments(files, targetCategory) {
     supported.forEach(file => formData.append('files', file, file.name));
     _setKnowledgeStatus(currentLang === 'zh' ? '正在导入...' : 'Importing...', false, true);
     try {
-        const response = await fetch('/api/knowledge/import', { method: 'POST', body: formData });
+        const response = await fetch(_kbUrl('/api/knowledge/import'), { method: 'POST', body: formData });
         const result = await response.json();
         if (result.status !== 'success') {
             _setKnowledgeStatus(result.message || (currentLang === 'zh' ? '导入失败' : 'Import failed'), true);
@@ -11069,7 +13580,7 @@ function openKnowledgeFile(path, title) {
     // Immediately hide placeholder
     document.getElementById('knowledge-content-placeholder').classList.add('hidden');
 
-    fetch(`/api/knowledge/read?path=${encodeURIComponent(path)}`).then(r => r.json()).then(data => {
+    fetch(_kbUrl(`/api/knowledge/read?path=${encodeURIComponent(path)}`)).then(r => r.json()).then(data => {
         if (data.status !== 'success') return;
         const viewer = document.getElementById('knowledge-content-viewer');
         document.getElementById('knowledge-viewer-title').textContent = title;
@@ -11135,7 +13646,7 @@ function loadKnowledgeGraph() {
 
     Promise.all([
         ensureD3Loaded(),
-        fetch('/api/knowledge/graph').then(r => r.json()),
+        fetch(_kbUrl('/api/knowledge/graph')).then(r => r.json()),
     ]).then(([, data]) => {
         const nodes = data.nodes || [];
         const links = data.links || [];
@@ -11549,6 +14060,23 @@ function loadTaskChannelOptions(selectedChannelType) {
     });
 }
 
+// The owning Agent shown (read-only) in the task edit modal header. Hidden on a
+// single-Agent install, where every task belongs to the one Agent anyway.
+function renderTaskOwnerChip(task) {
+    const el = document.getElementById('task-edit-owner');
+    if (!el) return;
+    const agent = task.agent_id ? findAgent(task.agent_id) : null;
+    if (!multiAgentMode() || !agent) {
+        el.classList.add('hidden');
+        el.innerHTML = '';
+        return;
+    }
+    el.innerHTML = `${agentAvatarHTML(agent, 20)}
+        <span class="text-xs font-medium text-slate-600 dark:text-slate-300 truncate max-w-[120px]">${escapeHtml(agent.name || agent.id)}</span>`;
+    el.classList.remove('hidden');
+    el.classList.add('flex');
+}
+
 function openTaskEditModal(task) {
     currentEditingTask = task;
     const overlay = document.getElementById('task-edit-modal-overlay');
@@ -11569,6 +14097,10 @@ function openTaskEditModal(task) {
     titleEl.textContent = t('task_edit_title');
     subtitle.textContent = task.id;
     deleteBtn.classList.remove('hidden');
+
+    // Show which Agent owns this task (read-only). Only meaningful with more
+    // than one Agent; a solo install would just repeat the obvious.
+    renderTaskOwnerChip(task);
 
     // Populate data
     nameInput.value = task.name || '';
@@ -11788,6 +14320,7 @@ function saveTaskEdit() {
     
     const payload = {
         task_id: currentEditingTask.id,
+        agent_id: currentEditingTask.agent_id || '',
         name: name,
         enabled: enabledInput.checked,
         schedule: schedule,
@@ -11822,6 +14355,7 @@ function deleteTask() {
     
     const taskName = currentEditingTask.name || currentEditingTask.id || '未知任务';
     const taskId = currentEditingTask.id;  // Capture early to avoid closure race condition
+    const taskAgentId = currentEditingTask.agent_id || '';  // route delete to the owner's store
     showConfirmDialog({
         title: t('task_delete_confirm_title'),
         message: (currentLang === 'zh' ? `确定要删除任务「${taskName}」吗？` : `Are you sure to delete task "${taskName}"?`),
@@ -11829,7 +14363,7 @@ function deleteTask() {
             fetch('/api/scheduler/delete', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ task_id: taskId })
+                body: JSON.stringify({ task_id: taskId, agent_id: taskAgentId })
             }).then(r => r.json()).then(res => {
                 if (res.status === 'success') {
                     closeTaskEditModal();
@@ -11856,6 +14390,7 @@ function deleteTask() {
         }
     });
 }
+
 
 document.getElementById('task-edit-schedule-type').addEventListener('change', updateTaskScheduleFields);
 document.getElementById('task-edit-action-type').addEventListener('change', updateTaskActionLabel);

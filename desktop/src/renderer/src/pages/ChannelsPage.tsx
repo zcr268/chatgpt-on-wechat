@@ -21,9 +21,11 @@ import type { LucideIcon } from 'lucide-react'
 import { t, localizedLabel, getLang } from '../i18n'
 import apiClient from '../api/client'
 import type { ChannelInfo, ChannelField } from '../types'
-import { Toggle, Btn } from './settings/primitives'
+import { Toggle, Btn, FieldTip } from './settings/primitives'
 import QrScanPanel from '../components/QrScanPanel'
 import { PaperPlaneIcon } from '../components/icons'
+import ChannelTeamSelect from '../components/ChannelTeamSelect'
+import { useAgentStore } from '../store/agentStore'
 
 // Channels that connect via QR scanning rather than credential fields.
 const QR_PROVIDERS: Record<string, 'weixin' | 'feishu'> = { weixin: 'weixin', feishu: 'feishu' }
@@ -74,6 +76,11 @@ const MASK_RE = /\*{2,}/
 
 const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
   const [channels, setChannels] = useState<ChannelInfo[]>([])
+  // Multi-Agent extras. All default to the single-Agent shape (off / empty), so
+  // a legacy backend that omits these fields renders exactly as before.
+  const [multiAgent, setMultiAgent] = useState(false)
+  const [multiInstanceTypes, setMultiInstanceTypes] = useState<string[]>([])
+  const [instances, setInstances] = useState<ChannelInfo[]>([])
   const [loading, setLoading] = useState(true)
   // Whether the "add channel" panel is open, and the channel chosen in it.
   // `selected` starts empty so the user must pick a channel themselves.
@@ -82,16 +89,26 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
   const scrollRef = useRef<HTMLDivElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
 
+  const isMultiInstanceType = (name: string) => multiInstanceTypes.includes(name)
+
   // `silent` refreshes keep the current list on screen (used by the WeChat
   // login watcher, which must not flash the spinner every few seconds).
   const loadChannels = async (silent = false) => {
     try {
       if (!silent) setLoading(true)
-      const data = await apiClient.getChannels()
-      setChannels(data || [])
+      const data = await apiClient.getChannelsFull()
+      setChannels(data.channels || [])
+      setMultiAgent(!!data.multi_agent)
+      setMultiInstanceTypes(data.multi_instance_types || [])
+      setInstances(data.instances || [])
     } catch (err) {
       console.error('Failed to load channels:', err)
-      if (!silent) setChannels([])
+      if (!silent) {
+        setChannels([])
+        setMultiAgent(false)
+        setMultiInstanceTypes([])
+        setInstances([])
+      }
     } finally {
       if (!silent) setLoading(false)
     }
@@ -116,10 +133,24 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
   }, [settling])
 
   const { connected, available } = useMemo(() => {
-    const connected = channels.filter((c) => c.active)
-    const available = channels.filter((c) => !c.active)
+    // In multi-Agent mode the multi-instance-ready types are represented by
+    // per-instance cards from `instances`; their legacy per-type card is
+    // dropped from "connected" so a Feishu with two bots shows two cards, not
+    // three. Non-multi-instance types (and single-Agent mode) are unchanged.
+    const legacyConnected = channels.filter(
+      (c) => c.active && !(multiAgent && isMultiInstanceType(c.name))
+    )
+    const connected: ChannelInfo[] = multiAgent
+      ? [...legacyConnected, ...instances]
+      : legacyConnected
+    // A multi-instance-ready type stays "available" even once it has instances,
+    // so the user can add a second bot of the same type.
+    const available = channels.filter(
+      (c) => !c.active || (multiAgent && isMultiInstanceType(c.name))
+    )
     return { connected, available }
-  }, [channels])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [channels, instances, multiAgent, multiInstanceTypes])
 
   // If the selected channel got connected (or vanished), clear the selection.
   useEffect(() => {
@@ -136,6 +167,22 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
   }
 
   const addingChannel = available.find((c) => c.name === selected)
+
+  // The add panel always creates a brand-new instance, so present it as an
+  // unconnected card with blank fields — never the stored (masked) credentials
+  // of an existing instance of the same type.
+  const addChannelForPanel = (ch: ChannelInfo): ChannelInfo => {
+    if (!(multiAgent && isMultiInstanceType(ch.name))) return ch
+    return {
+      ...ch,
+      active: false,
+      instance_id: undefined,
+      agent_id: '',
+      members: [],
+      login_status: undefined,
+      fields: ch.fields.map((f) => ({ ...f, value: f.type === 'bool' ? f.value : '' })),
+    }
+  }
 
   const onAdded = () => {
     setAddOpen(false)
@@ -199,7 +246,14 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
                   )}
                 </div>
               ) : (
-                connected.map((ch) => <ChannelCard key={ch.name} channel={ch} onChanged={loadChannels} />)
+                connected.map((ch) => (
+                  <ChannelCard
+                    key={ch.instance_id || ch.name}
+                    channel={ch}
+                    multiAgent={multiAgent}
+                    onChanged={loadChannels}
+                  />
+                ))
               )}
 
               {/* Add-channel panel lives at the bottom of the list: pick a
@@ -223,7 +277,17 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
                     placeholder={t('channels_select_placeholder')}
                   />
                   {addingChannel && (
-                    <ChannelCard key={addingChannel.name} channel={addingChannel} onChanged={onAdded} defaultExpanded />
+                    <ChannelCard
+                      // For a multi-instance-ready type we always create a NEW
+                      // instance from the add panel, so force a fresh card (no
+                      // stored credentials, blank binding) with a stable key.
+                      key={`add-${addingChannel.name}`}
+                      channel={addChannelForPanel(addingChannel)}
+                      multiAgent={multiAgent}
+                      onChanged={onAdded}
+                      defaultExpanded
+                      forceNewInstance={multiAgent && isMultiInstanceType(addingChannel.name)}
+                    />
                   )}
                 </div>
               )}
@@ -244,6 +308,9 @@ const ChannelDropdown: React.FC<{
   placeholder: string
 }> = ({ channels, value, onChange, placeholder }) => {
   const [open, setOpen] = useState(false)
+  // Open upward when the trigger sits too low for the menu to fit below, so the
+  // last channel's list isn't clipped against the window bottom.
+  const [dropUp, setDropUp] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -255,13 +322,25 @@ const ChannelDropdown: React.FC<{
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
+  // Roughly the menu's max height (max-h-60 = 15rem = 240px) plus a small gap.
+  const MENU_MAX = 248
+  const toggleOpen = () => {
+    if (!open && ref.current) {
+      const rect = ref.current.getBoundingClientRect()
+      const below = window.innerHeight - rect.bottom
+      // Flip up only when there's clearly more room above than below.
+      setDropUp(below < MENU_MAX && rect.top > below)
+    }
+    setOpen((v) => !v)
+  }
+
   const current = channels.find((c) => c.name === value)
 
   return (
     <div ref={ref} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         className={`w-full flex items-center justify-between gap-2 h-10 px-3 rounded-btn border bg-inset text-sm cursor-pointer transition-colors ${
           open ? 'border-accent ring-2 ring-accent/15' : 'border-strong hover:border-content-tertiary'
         } ${current ? 'text-content' : 'text-content-tertiary'}`}
@@ -278,7 +357,11 @@ const ChannelDropdown: React.FC<{
         <ChevronDown size={14} className={`flex-shrink-0 text-content-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-[calc(100%+4px)] left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-btn border border-default bg-elevated shadow-lg p-1">
+        <div
+          className={`absolute left-0 right-0 z-50 max-h-60 overflow-y-auto rounded-btn border border-default bg-elevated shadow-lg p-1 ${
+            dropUp ? 'bottom-[calc(100%+4px)]' : 'top-[calc(100%+4px)]'
+          }`}
+        >
           {channels.map((ch) => {
             const active = ch.name === value
             return (
@@ -330,7 +413,7 @@ const ModeTab: React.FC<{ icon: LucideIcon; label: string; active: boolean; onCl
     type="button"
     onClick={onClick}
     className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-[6px] text-sm font-medium cursor-pointer transition-colors ${
-      active ? 'bg-surface text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
+      active ? 'bg-elevated dark:bg-white/10 text-content shadow-sm' : 'text-content-tertiary hover:text-content-secondary'
     }`}
   >
     <Icon size={14} />
@@ -338,11 +421,15 @@ const ModeTab: React.FC<{ icon: LucideIcon; label: string; active: boolean; onCl
   </button>
 )
 
-const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defaultExpanded?: boolean }> = ({
-  channel,
-  onChanged,
-  defaultExpanded = false,
-}) => {
+const ChannelCard: React.FC<{
+  channel: ChannelInfo
+  onChanged: () => void
+  defaultExpanded?: boolean
+  multiAgent?: boolean
+  // The add panel sets this so connect always mints a new instance rather than
+  // editing the existing one of the same type.
+  forceNewInstance?: boolean
+}> = ({ channel, onChanged, defaultExpanded = false, multiAgent = false, forceNewInstance = false }) => {
   // Channels with no fields connect purely via QR (e.g. weixin).
   const isQrLogin = channel.fields.length === 0
   // QR provider supported by the desktop scan panel (weixin / feishu).
@@ -388,12 +475,22 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
     return cfg
   }
 
+  // Which instance this card's actions target. `undefined` keeps the legacy
+  // per-type path (single-Agent, or a non-multi-instance type). An empty string
+  // means "create a new instance"; a real id edits that specific bot.
+  const instanceIdArg = (): string | undefined => {
+    if (!multiAgent) return undefined
+    if (forceNewInstance) return ''
+    if (channel.instance_id) return channel.instance_id
+    return undefined
+  }
+
   const run = async (action: 'save' | 'connect' | 'disconnect') => {
     setBusy(true)
     setStatus('')
     try {
       const cfg = action === 'disconnect' ? undefined : buildConfig()
-      const res = await apiClient.channelAction(action, channel.name, cfg)
+      const res = await apiClient.channelAction(action, channel.name, cfg, instanceIdArg())
       if (res.status === 'success') {
         if (action === 'save') {
           setStatus(t('channels_save_ok'))
@@ -473,7 +570,7 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
               <span className="text-xs text-accent">{t('channels_connected')}</span>
             ) : null}
           </div>
-          <p className="text-xs text-content-tertiary font-mono mt-0.5">{channel.name}</p>
+          <p className="text-xs text-content-tertiary font-mono mt-0.5">{channel.instance_id || channel.name}</p>
         </div>
 
         {channel.active ? (
@@ -487,6 +584,12 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
         )}
       </div>
 
+      {/* Agent binding: a connected instance in multi-Agent mode picks which
+          Agent(s) own the conversation. Hidden entirely in single-Agent mode. */}
+      {multiAgent && channel.active && channel.instance_id && (
+        <ChannelBinding channel={channel} />
+      )}
+
       {/* QR-login channels with no desktop support fall back to the web console. */}
       {isQrLogin && !channel.active && !qrProvider && (
         <p className="text-xs text-content-tertiary mt-3 pl-12">{t('channels_qr_hint')}</p>
@@ -496,14 +599,14 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
           "waiting for scan" badge is what tells a live card why it reappeared. */}
       {weixinQr && (
         <div className={channel.active ? 'mt-4 pt-4 border-t border-subtle' : 'mt-2'}>
-          <QrScanPanel provider="weixin" onConnected={onChanged} />
+          <QrScanPanel provider="weixin" onConnected={onChanged} newInstance={multiAgent && (forceNewInstance || !channel.instance_id)} />
         </div>
       )}
 
       {/* Feishu: pick between one-click QR registration and manual credentials. */}
       {dualMode && (
         <div className="mt-4">
-          <div className="flex items-center gap-1 bg-inset rounded-btn p-0.5 mb-4">
+          <div className="flex items-center gap-1 bg-inset-2 rounded-btn p-0.5 mb-4">
             <ModeTab
               icon={QrCode}
               label={t('feishu_mode_scan')}
@@ -525,7 +628,7 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
           {mode !== 'scan' ? (
             fieldEditor
           ) : feishuScanning ? (
-            <QrScanPanel provider="feishu" onConnected={onChanged} />
+            <QrScanPanel provider="feishu" onConnected={onChanged} newInstance={multiAgent && (forceNewInstance || !channel.instance_id)} />
           ) : (
             <div className="flex flex-col items-center py-3">
               <p className="text-sm text-content-secondary mb-4 text-center max-w-sm leading-relaxed">
@@ -544,6 +647,71 @@ const ChannelCard: React.FC<{ channel: ChannelInfo; onChanged: () => void; defau
 
       {/* Field editor: always for connected channels with fields, on-demand for available ones. */}
       {!isQrLogin && !dualMode && (channel.active || expanded) && <div className="mt-4">{fieldEditor}</div>}
+    </div>
+  )
+}
+
+// The Agent-binding block on a connected instance card. Persists the owner +
+// members selection through the roster's `bind_channel_instance` action, which
+// hot-updates the running channel without restarting it (matching the web
+// console), so switching Agents is instant and non-disruptive.
+const ChannelBinding: React.FC<{ channel: ChannelInfo }> = ({ channel }) => {
+  const agents = useAgentStore((s) => s.agents)
+  const defaultAgentId = useAgentStore((s) => s.defaultAgentId)
+
+  // Local optimistic value so the picker responds instantly; the persisted
+  // truth still comes from the reloaded channel. Re-seed whenever the server
+  // binding changes (owner or members), not just when the instance itself does,
+  // so an external edit is reflected here.
+  const initial = useMemo(() => {
+    const owner = channel.agent_id ? [channel.agent_id] : []
+    return [...owner, ...(channel.members || [])]
+  }, [channel.agent_id, channel.members])
+  const [value, setValue] = useState<string[]>(initial)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    setValue(initial)
+  }, [initial])
+
+  const persist = async (next: string[]) => {
+    setValue(next)
+    setBusy(true)
+    try {
+      const owner = next[0] || ''
+      const members = next.slice(1)
+      await apiClient.agentAction({
+        action: 'bind_channel_instance',
+        channel_type: channel.channel_type || channel.name,
+        instance_id: channel.instance_id,
+        agent_id: owner,
+        members,
+      })
+      // Keep the roster's channel_instances in sync for other views. A silent
+      // channels reload is deliberately skipped: it would fight the optimistic
+      // value, and the binding is already applied server-side (hot-updated).
+      void useAgentStore.getState().refresh()
+    } catch {
+      // Revert to the last server-known value on failure.
+      setValue(initial)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mt-4 pt-4 border-t border-subtle">
+      <div className="flex items-center gap-1.5 mb-1.5">
+        <label className="block text-xs font-medium text-content-secondary">{t('channel_bind_agent')}</label>
+        <FieldTip tip={t('channel_bound_agent_hint')} />
+      </div>
+      <ChannelTeamSelect
+        agents={agents}
+        defaultAgentId={defaultAgentId}
+        value={value}
+        onChange={persist}
+        disabled={busy}
+      />
     </div>
   )
 }

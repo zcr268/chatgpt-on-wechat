@@ -130,6 +130,9 @@ class McpClient:
         # _http_lock protects _http_session_id initialization across
         # concurrent streamable-http requests.
         self._http_lock = threading.Lock()
+        # Blocks new requests while an expired session is being replaced.
+        # An RLock lets the recovery handshake use the normal HTTP path.
+        self._http_reinit_lock = threading.RLock()
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -555,7 +558,14 @@ class McpClient:
         """POST a JSON-RPC request and return the response (JSON or SSE-wrapped)."""
         return self._streamable_http_post(message, expect_response=True)
 
-    def _handle_401(self, err, message: dict, expect_response: bool, retried: bool) -> dict:
+    def _handle_401(
+        self,
+        err,
+        message: dict,
+        expect_response: bool,
+        retried: bool,
+        session_retried: bool = False,
+    ) -> dict:
         """Handle a 401: refresh the token and retry once, else begin OAuth."""
         www_auth = ""
         try:
@@ -570,7 +580,12 @@ class McpClient:
         # First try a silent refresh with the stored refresh token.
         if not retried and self._oauth is not None and self._oauth.refresh():
             logger.info(f"[MCP:{self.name}] Token refreshed after 401, retrying")
-            return self._streamable_http_post(message, expect_response, _retried=True)
+            return self._streamable_http_post(
+                message,
+                expect_response,
+                _retried=True,
+                _session_retried=session_retried,
+            )
 
         # No usable token — start (or restart) the interactive OAuth flow.
         self._begin_oauth(www_auth)
@@ -579,7 +594,13 @@ class McpClient:
             f"(complete the OAuth flow to enable this server)"
         )
 
-    def _streamable_http_post(self, message: dict, expect_response: bool, _retried: bool = False) -> dict:
+    def _streamable_http_post(
+        self,
+        message: dict,
+        expect_response: bool,
+        _retried: bool = False,
+        _session_retried: bool = False,
+    ) -> dict:
         """
         POST a JSON-RPC message over Streamable HTTP.
 
@@ -592,10 +613,11 @@ class McpClient:
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
         }
-        # Read session id under lock to avoid racing with the
-        # initialization write below during concurrent requests.
-        with self._http_lock:
-            sid = self._http_session_id
+        # Do not start a request between invalidating an expired session and
+        # completing the replacement handshake.
+        with self._http_reinit_lock:
+            with self._http_lock:
+                sid = self._http_session_id
         if sid:
             headers["Mcp-Session-Id"] = sid
         headers.update(self._http_headers)
@@ -618,7 +640,30 @@ class McpClient:
         except urllib.error.HTTPError as e:
             # 401 is the spec-compliant "needs authorization" signal.
             if e.code == 401 and not self._has_static_auth():
-                return self._handle_401(e, message, expect_response, _retried)
+                return self._handle_401(
+                    e,
+                    message,
+                    expect_response,
+                    _retried,
+                    _session_retried,
+                )
+            if (
+                e.code == 404
+                and sid
+                and not _session_retried
+                and message.get("method") != "initialize"
+            ):
+                try:
+                    e.read()
+                except Exception:
+                    pass
+                self._replace_expired_http_session(sid)
+                return self._streamable_http_post(
+                    message,
+                    expect_response,
+                    _retried=_retried,
+                    _session_retried=True,
+                )
             # Surface the server-provided error body for easier debugging
             detail = ""
             try:
@@ -635,7 +680,11 @@ class McpClient:
             # Double-checked lock: only the first response sets the
             # session id, preventing concurrent initializers from
             # overwriting each other.
-            if session_id and not self._http_session_id:
+            if (
+                session_id
+                and (message.get("method") == "initialize" or sid is None)
+                and not self._http_session_id
+            ):
                 with self._http_lock:
                     if not self._http_session_id:
                         self._http_session_id = session_id
@@ -660,6 +709,23 @@ class McpClient:
             if not raw:
                 return {}
             return json.loads(raw)
+
+    def _replace_expired_http_session(self, expired_session_id: str) -> None:
+        """Replace an expired Streamable HTTP session once across callers."""
+        with self._http_reinit_lock:
+            with self._http_lock:
+                if self._http_session_id != expired_session_id:
+                    if not self._initialized:
+                        raise IOError(
+                            f"[MCP:{self.name}] failed to reinitialize expired HTTP session"
+                        )
+                    return
+                self._http_session_id = None
+
+            if not self._handshake():
+                raise IOError(
+                    f"[MCP:{self.name}] failed to reinitialize expired HTTP session"
+                )
 
     def _read_sse_response(self, resp, expected_id) -> dict:
         """Read an SSE stream and return the first JSON-RPC response with matching id."""
@@ -795,8 +861,93 @@ class McpClientRegistry:
                 obj = super().__new__(cls)
                 obj._clients: dict[str, McpClient] = {}
                 obj._registry_lock = threading.Lock()
+                # Process-wide pool of booted clients keyed by their *source*
+                # config, so several Agents that resolve to the same shared
+                # mcp.json reuse one subprocess instead of each forking its own.
+                # Keyed by (mcp_json_path, server_name, config_signature): an
+                # Agent with its own mcp.json, or a different command/env, gets a
+                # distinct key and stays isolated.
+                obj._shared_pool: dict[tuple, McpClient] = {}
+                obj._shared_pool_lock = threading.Lock()
+                # Per-key boot locks so that when several Agents' loader threads
+                # miss the pool for the same server at once, only one forks the
+                # subprocess and the rest wait and reuse it (instead of racing
+                # and each booting a duplicate).
+                obj._boot_locks: dict[tuple, threading.Lock] = {}
                 cls._instance = obj
         return cls._instance
+
+    @staticmethod
+    def shared_key(mcp_json_path: str, server_name: str, cfg: dict) -> tuple:
+        import json as _json
+        try:
+            sig = _json.dumps(cfg, sort_keys=True, ensure_ascii=False, default=str)
+        except Exception:
+            sig = repr(cfg)
+        return (mcp_json_path or "", server_name, sig)
+
+    def get_shared_client(self, key: tuple):
+        """Return a live pooled client for this exact config, or None. A client
+        whose subprocess has died is dropped so the caller boots a fresh one."""
+        with self._shared_pool_lock:
+            client = self._shared_pool.get(key)
+        if client is None:
+            return None
+        if not self._shared_client_alive(client):
+            with self._shared_pool_lock:
+                # Only evict the exact object we found dead; a concurrent reload
+                # may already have put a fresh one under the same key.
+                if self._shared_pool.get(key) is client:
+                    self._shared_pool.pop(key, None)
+            return None
+        return client
+
+    def put_shared_client(self, key: tuple, client: "McpClient") -> None:
+        with self._shared_pool_lock:
+            self._shared_pool[key] = client
+
+    def _boot_lock_for(self, key: tuple) -> "threading.Lock":
+        with self._shared_pool_lock:
+            lock = self._boot_locks.get(key)
+            if lock is None:
+                lock = threading.Lock()
+                self._boot_locks[key] = lock
+            return lock
+
+    def get_or_boot_shared(self, key: tuple, factory):
+        """Return a pooled client for ``key``, booting it via ``factory`` if
+        absent. Serialized per key so concurrent loader threads don't each fork
+        a duplicate; distinct keys still boot in parallel.
+
+        Returns (client, reused). ``client`` is None when ``factory`` failed to
+        produce a usable client (e.g. init failed / needs auth); ``reused`` is
+        True when an already-booted subprocess was handed back.
+        """
+        client = self.get_shared_client(key)
+        if client is not None:
+            return client, True
+        with self._boot_lock_for(key):
+            # Re-check: another thread may have booted it while we waited.
+            client = self.get_shared_client(key)
+            if client is not None:
+                return client, True
+            client = factory()
+            if client is None:
+                return None, False
+            self.put_shared_client(key, client)
+            return client, False
+
+    @staticmethod
+    def _shared_client_alive(client: "McpClient") -> bool:
+        """Best-effort liveness: a stdio client whose child process has exited
+        must not be reused. Unknown/remote transports are assumed alive."""
+        proc = getattr(client, "_proc", None)
+        if proc is not None and hasattr(proc, "poll"):
+            try:
+                return proc.poll() is None
+            except Exception:
+                return False
+        return True
 
     def start_all(self, configs: list) -> None:
         """Initialize McpClient for each config entry; skip failures with a warning."""

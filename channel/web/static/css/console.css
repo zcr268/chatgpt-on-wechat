@@ -154,6 +154,67 @@
     color: #e5e5e5;
     background: rgba(255, 255, 255, 0.04);
 }
+.session-panel-new-wrap { position: relative; flex-shrink: 0; }
+.session-panel-new-wrap .session-panel-new { width: calc(100% - 24px); }
+.new-chat-caret { margin-left: auto; font-size: 10px; opacity: .7; }
+.new-chat-menu {
+    position: absolute; left: 12px; right: 12px; top: calc(100% - 2px);
+    z-index: 70; padding: 6px;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    box-shadow: 0 16px 40px -12px rgba(0,0,0,.28);
+}
+.dark .new-chat-menu { background: #1A1A1A; border-color: rgba(255,255,255,.1); }
+.new-chat-menu.hidden { display: none; }
+.new-chat-section { display: flex; flex-direction: column; }
+.new-chat-item {
+    display: flex; align-items: center; gap: 9px;
+    padding: 7px 9px; border-radius: 8px;
+    font-size: 13px; color: #334155; cursor: pointer; background: none; border: none;
+    text-align: left; width: 100%;
+}
+.new-chat-item:hover { background: #EDFDF3; color: #228547; }
+.dark .new-chat-item { color: #cbd5e1; }
+.dark .new-chat-item:hover { background: rgba(74,190,110,.14); color: #6EE7A0; }
+.new-chat-item .agent-avatar { flex-shrink: 0; }
+.new-chat-sep { height: 1px; background: #f1f5f9; margin: 5px 4px; }
+.dark .new-chat-sep { background: rgba(255,255,255,.07); }
+.new-chat-team-ico {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: #EDFDF3; color: #17803d; font-size: 11px; flex-shrink: 0;
+}
+.dark .new-chat-team-ico { background: rgba(74,190,110,.16); color: #6EE7A0; }
+
+/* Team-chat picker rows in the modal */
+.team-chat-list-head {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px;
+}
+.team-chat-list-label {
+    font-size: 12px; font-weight: 600; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.03em;
+}
+.team-chat-list { display: flex; flex-direction: column; gap: 6px; }
+.team-chat-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 11px; border-radius: 10px;
+    border: 1px solid #e2e8f0; background: #f8fafc;
+    cursor: pointer; text-align: left; width: 100%;
+    transition: border-color .15s, background .15s;
+}
+.team-chat-row .agent-avatar { flex-shrink: 0; }
+.team-chat-row:hover { border-color: #cbd5e1; }
+.team-chat-row.on { border-color: #4ABE6E; background: #EDFDF3; }
+.dark .team-chat-row { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.04); }
+.dark .team-chat-row.on { border-color: #4ABE6E; background: rgba(74,190,110,.12); }
+.team-chat-name { font-size: 14px; color: #1e293b; }
+.dark .team-chat-name { color: #f1f5f9; }
+.team-chat-owner {
+    font-size: 10px; padding: 1px 7px; border-radius: 999px;
+    background: #4ABE6E; color: #fff; font-weight: 500;
+}
+.team-chat-check { margin-left: auto; color: #cbd5e1; font-size: 16px; }
+.team-chat-row.on .team-chat-check { color: #4ABE6E; }
 
 /* Session List */
 .session-list {
@@ -627,7 +688,13 @@
     margin: 0.8em 0; background: rgba(74, 190, 110, 0.05); border-radius: 0 6px 6px 0;
 }
 .dark .msg-content blockquote { background: rgba(74, 190, 110, 0.08); }
+/* Tables scroll sideways inside their own wrapper instead of pushing the
+   bubble wider than the column (see the table_open rule in createMd). */
+.msg-content .table-wrap { max-width: 100%; overflow-x: auto; margin: 0.8em 0; scrollbar-width: thin; }
 .msg-content table { border-collapse: collapse; width: 100%; margin: 0.8em 0; }
+.msg-content .table-wrap > table { margin: 0; }
+.msg-content th { white-space: nowrap; }
+.msg-content td { overflow-wrap: break-word; }
 .msg-content th, .msg-content td {
     border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left;
 }
@@ -877,9 +944,15 @@
     display: block;
     font-size: 0.75rem;
     line-height: 1.65;
-    max-height: 420px;
+    max-height: 240px;
     overflow-y: auto;
-    padding: 0.125rem 0;
+    margin-top: 0.375rem;
+    padding: 0.375rem 0.5rem;
+    background: #f1f5f9;
+    border-radius: 4px;
+}
+.dark .tool-display-output.has-content {
+    background: #111111;
 }
 .tool-display-output h3 {
     font-size: 0.75rem;
@@ -889,6 +962,8 @@
 }
 .tool-display-output h3:first-child { margin-top: 0; }
 .tool-display-output p { margin: 0.25rem 0; }
+.tool-display-output p:first-of-type { margin-top: 0; }
+.tool-display-output p:last-child { margin-bottom: 0; }
 .tool-display-output ul,
 .tool-display-output ol { margin: 0.25rem 0; padding-left: 1.1rem; }
 .tool-display-output hr {
@@ -973,6 +1048,19 @@
 }
 .cfg-dropdown-selected:hover { border-color: #94a3b8; }
 .dark .cfg-dropdown-selected:hover { border-color: #64748b; }
+/* A compact trigger for header rows, so the picker lines up with the pill
+   tabs beside it instead of towering over them. */
+.cfg-dropdown-sm .cfg-dropdown-selected {
+    height: 32px; padding: 0 0.5rem; font-size: 0.8125rem;
+}
+.cfg-dropdown-sm .cfg-dropdown-face .agent-avatar { width: 18px; height: 18px; }
+/* An even more compact trigger for rows that sit right next to the
+   agent-seg segmented control (e.g. the core-file picker), so both line up
+   at the same height instead of the dropdown towering over the tabs. */
+.cfg-dropdown-xs .cfg-dropdown-selected {
+    height: 28px; padding: 0 0.5rem; font-size: 12px; border-radius: 6px;
+}
+.cfg-dropdown-xs .cfg-dropdown-arrow { font-size: 10px; }
 .cfg-dropdown.open .cfg-dropdown-selected,
 .cfg-dropdown:focus .cfg-dropdown-selected {
     border-color: #4ABE6E;
@@ -986,6 +1074,23 @@
     margin-left: 0.5rem;
 }
 .cfg-dropdown.open .cfg-dropdown-arrow { transform: rotate(180deg); }
+/* Avatar variant: a face sits left of the label in both the trigger and each
+   row. The trigger keeps its space-between layout, so face+text are grouped by
+   letting the text flex and the arrow stay pinned right. */
+.cfg-dropdown-avatar .cfg-dropdown-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* Groups the trigger's avatar + label on the left so the arrow can sit at the
+   far right (the selected row uses space-between). */
+.cfg-dropdown-value { display: inline-flex; align-items: center; min-width: 0; }
+.cfg-dropdown-value .cfg-dropdown-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cfg-dropdown-face {
+    display: inline-flex; width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px;
+}
+.cfg-dropdown-face:empty { display: none; }
+.cfg-dropdown-face .agent-avatar,
+.cfg-dropdown-item-face .agent-avatar { width: 20px; height: 20px; border-radius: 50%; }
+.cfg-dropdown-item-face {
+    display: inline-flex; width: 20px; height: 20px; flex-shrink: 0; margin-right: 8px;
+}
 .cfg-dropdown-menu {
     display: none;
     position: absolute;
@@ -1007,6 +1112,12 @@
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
 }
 .cfg-dropdown.open .cfg-dropdown-menu { display: block; }
+/* When flipped, anchor the menu above the control so it isn't clipped at the
+   bottom of the viewport (e.g. the last channel's config dropdown). */
+.cfg-dropdown.drop-up .cfg-dropdown-menu {
+    top: auto;
+    bottom: calc(100% + 4px);
+}
 .cfg-dropdown-item {
     display: flex;
     align-items: center;
@@ -1051,9 +1162,65 @@
     font-size: 12px;
     font-weight: 400;
 }
+/* Small trailing pill after an avatar option's name, e.g. a "default" marker. */
+.cfg-dropdown-badge {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 500;
+    line-height: 1.5;
+}
+.dark .cfg-dropdown-badge {
+    background: rgba(255,255,255,.08);
+    color: #94a3b8;
+}
 .dark .cfg-dropdown-hint {
     color: #64748b;
 }
+/* Multi-select variant: the trigger shows overlapping avatars of the chosen
+   members instead of a single face, and each row is a checklist item whose
+   tick appears only when selected. Selecting a row does NOT close the menu. */
+.cfg-dropdown-faces {
+    display: inline-flex;
+    flex-shrink: 0;
+    margin-right: 8px;
+}
+.cfg-dropdown-faces:empty { display: none; }
+.cfg-dropdown-faces .agent-avatar {
+    width: 18px; height: 18px; border-radius: 50%;
+    margin-left: -6px;
+    box-shadow: 0 0 0 2px #ffffff;
+}
+.cfg-dropdown-faces .agent-avatar:first-child { margin-left: 0; }
+.dark .cfg-dropdown-faces .agent-avatar { box-shadow: 0 0 0 2px #1e1e1e; }
+.cfg-dropdown-multi .cfg-dropdown-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.cfg-dropdown-check.active { font-weight: 500; }
+/* "+N" pill trailing the overlapping avatars when the team has more members
+   than the trigger shows faces for. Sized to sit inline with the 18px faces. */
+.cfg-dropdown-more {
+    display: inline-flex;
+    align-items: center;
+    height: 18px;
+    padding: 0 5px;
+    margin-left: 2px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 10px;
+    font-weight: 600;
+}
+.dark .cfg-dropdown-more { background: rgba(255,255,255,.1); color: #94a3b8; }
+.cfg-dropdown-empty {
+    color: #94a3b8;
+    cursor: default;
+    justify-content: center;
+    font-size: 0.8125rem;
+}
+.cfg-dropdown-empty:hover { background: transparent; }
 .cfg-dropdown-item.active .cfg-dropdown-hint {
     /* Tint the hint toward the brand colour on the active row so it doesn't
        fight with the highlighted label tone. */
@@ -1325,6 +1492,10 @@
     white-space: nowrap;
 }
 .composer-chip-caret { font-size: 9px; opacity: 0.55; }
+/* Collapse a chip to just its icon (permission is always icon-only; the default
+   workspace collapses too). The name/state lives in the hover tooltip. */
+.composer-chip-icon-only .composer-chip-label,
+.composer-chip-icon-only .composer-chip-caret { display: none; }
 .dark .composer-chip { color: #94a3b8; }
 .dark .composer-chip:hover,
 .dark .composer-chip.open { background: rgba(74, 190, 110, 0.14); color: #6EE7A0; border-color: transparent; }
@@ -1436,6 +1607,17 @@
 }
 .composer-menu.hidden { display: none; }
 .composer-menu-wide { width: 340px; left: auto; right: 0; }
+/* The Agent identity chip now sits on the far right of the toolbar, so its
+   menu is right-anchored to stay on-screen instead of overflowing left. */
+#composer-agent-menu { left: auto; right: 0; }
+/* The permission / model popups live at the card level, whose top edge is the
+   textarea - not the chip that opened them. Anchor them just above the toolbar
+   row instead, so they hug their trigger rather than floating over the input.
+   (The agent menu is nested in .composer-identity, so it keeps bottom:100%.) */
+#permission-selector-menu,
+#model-selector-menu {
+    bottom: calc(2rem + 14px);
+}
 .dark .composer-menu {
     background: #1A1A1A;
     border-color: rgba(255, 255, 255, 0.1);
@@ -1469,6 +1651,24 @@
 }
 .composer-menu-item:hover { background: #EDFDF3; color: #228547; }
 .composer-menu-item.active { background: #EDFDF3; }
+/* Single-line Agent rows (avatar + name + trailing icon) center vertically;
+   only the multi-line permission rows need top alignment. */
+.composer-menu-item.agent-row { align-items: center; }
+.composer-menu-item.agent-row > i:last-child { margin-top: 0; }
+/* "Create Agent" row: a dashed circle stands in for the avatar so it lines up
+   with the Agent rows above while reading as an action, not a person. */
+.composer-menu-create-icon {
+    flex-shrink: 0;
+    width: 24px; height: 24px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+    border: 1px dashed #cbd5e1;
+    color: #94a3b8; font-size: 11px;
+}
+.composer-menu-item.composer-menu-create:hover .composer-menu-create-icon {
+    border-color: #4ABE6E; color: #228547;
+}
+.dark .composer-menu-create-icon { border-color: #475569; color: #94a3b8; }
 .composer-menu-item > i:first-child {
     width: 15px;
     text-align: center;
@@ -2555,6 +2755,89 @@
     overflow: auto;
 }
 
+/* Preview editor: fills the panel so the text area is the whole scroll area. */
+.workspace-preview-content .ws-editor {
+    width: 100%;
+    height: 100%;
+    display: block;
+    border: 0;
+    outline: none;
+    resize: none;
+    padding: 16px;
+    background: transparent;
+    color: #1e293b;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    tab-size: 4;
+    white-space: pre;
+    overflow: auto;
+}
+.dark .workspace-preview-content .ws-editor { color: #e2e8f0; }
+.workspace-icon-btn.ws-btn-busy { opacity: 0.5; pointer-events: none; }
+
+/* =====================================================================
+   Document editor (memory files, skill definitions)
+   ===================================================================== */
+
+/* Sized to the viewport rather than to the content: a text area that grows with
+   the document would push its own save button off the top of the page. */
+textarea.doc-editor {
+    display: block;
+    width: 100%;
+    height: calc(100vh - 280px);
+    min-height: 240px;
+    border: 0;
+    outline: none;
+    resize: vertical;
+    background: transparent;
+    color: #1e293b;
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.7;
+    tab-size: 4;
+    /* Wrap instead of scrolling sideways: these are prose documents, and a
+       horizontal scrollbar hides the end of every long paragraph. `anywhere`
+       covers the unbreakable cases (long URLs) that would still overflow. */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+.dark textarea.doc-editor { color: #e2e8f0; }
+
+.doc-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #64748b;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+}
+.doc-action-btn:hover { background: #f1f5f9; color: #334155; }
+.dark .doc-action-btn { border-color: rgba(255, 255, 255, 0.1); color: #94a3b8; }
+.dark .doc-action-btn:hover { background: rgba(255, 255, 255, 0.1); color: #e2e8f0; }
+
+/* primary-500 / primary-600 from the Tailwind theme in chat.html. */
+.doc-action-btn-primary {
+    border-color: transparent;
+    background: #35A85B;
+    color: #fff;
+}
+.doc-action-btn-primary:hover { background: #228547; color: #fff; }
+.dark .doc-action-btn-primary { border-color: transparent; background: #35A85B; color: #fff; }
+.dark .doc-action-btn-primary:hover { background: #228547; color: #fff; }
+
+.doc-action-btn.doc-btn-busy { opacity: 0.5; pointer-events: none; }
+
+/* Unsaved-changes marker beside the file name in a viewer title. */
+.doc-dirty-dot { color: #35A85B; }
+
 .workspace-empty {
     height: 100%;
     display: flex;
@@ -2852,4 +3135,537 @@
         z-index: 46;
     }
     .workspace-resizer { display: none; }
+}
+
+/* =====================================================================
+   Agents: cards, detail, composer identity
+   ===================================================================== */
+/* Team page is a two-pane workbench: a scrollable vertical roster on the left,
+   the selected Agent's detail filling the right — the same shape as the desktop
+   client. On a narrow screen it collapses to a single column and the detail
+   slides over as a full-screen sheet (see the media query below). */
+.agents-view.view.active { display: flex; flex-direction: row; }
+.agents-view { min-height: 0; overflow: hidden; }
+.agents-list-pane {
+    display: flex; flex-direction: column; min-height: 0;
+    width: 320px; flex-shrink: 0;
+    border-right: 1px solid #e2e8f0;
+    padding: 18px 14px 8px;
+    overflow-y: auto;
+}
+.dark .agents-list-pane { border-color: rgba(255,255,255,.08); }
+.agents-list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 0 4px; }
+/* A tidier, less shouty header for the roster column. */
+.agents-list-head h2 { font-size: 15px; font-weight: 600; }
+.agents-list-head p { display: none; }
+.agents-list-head > button {
+    padding: 6px 12px; font-size: 12.5px; border-radius: 8px;
+}
+.agents-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.agent-card {
+    position: relative;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 9px 10px;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+}
+/* The status chip floats in the corner instead of taking a row of its own, so
+   the "default" card is the same height as the rest of the roster. */
+.agent-card-badge {
+    position: absolute;
+    top: 9px; right: 10px;
+    font-size: 9.5px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-weight: 500;
+}
+.agent-card-badge.agent-chip-on { background: #EDFDF3; color: #17803d; }
+.dark .agent-card-badge { background: rgba(255,255,255,.06); color: #94a3b8; }
+.dark .agent-card-badge.agent-chip-on { background: rgba(74, 190, 110, .15); color: #86efac; }
+.agent-card:hover { background: #f8fafc; }
+.dark .agent-card:hover { background: rgba(255,255,255,.04); }
+.agent-card.selected { background: #EDFDF3; border-color: transparent; }
+.dark .agent-card.selected { background: rgba(74, 190, 110, .14); }
+.agent-card.archived { opacity: .55; }
+.agent-card-top { display: flex; align-items: center; gap: 10px; padding-right: 44px; min-width: 0; }
+.agent-card-top .agent-avatar { flex-shrink: 0; }
+.agent-card-name { font-weight: 600; font-size: 13.5px; color: #1e293b; }
+.dark .agent-card-name { color: #f1f5f9; }
+.agent-card-id { font-size: 11px; color: #94a3b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* One line of description under the name, ellipsised — keeps every row the same
+   compact height so the roster reads as a clean list, not a wall of cards. */
+.agent-card-desc {
+    margin-top: 3px;
+    font-size: 12px;
+    line-height: 1.4;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.dark .agent-card-desc { color: #94a3b8; }
+.agent-card-desc-empty { color: #cbd5e1; }
+.dark .agent-card-desc-empty { color: #475569; }
+.agent-card-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.agent-chip {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+}
+.dark .agent-chip { background: rgba(255,255,255,.06); color: #94a3b8; }
+.agent-chip-on { background: #EDFDF3; color: #17803d; }
+.dark .agent-chip-on { background: rgba(74, 190, 110, .15); color: #86efac; }
+
+.agent-avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+    font-weight: 600;
+    line-height: 1;
+    background: #edfdf3;
+    color: #17803d;
+}
+.agent-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* The face an Agent wears until an image is uploaded: its initial on a tinted
+   disc. Kept low-saturation, and a tint rather than a solid fill, so a roster
+   of a dozen of them reads as one calm list instead of a bag of sweets. Tone 0
+   is the neutral one, worn by anything without an id yet (a draft in the
+   create modal). */
+.agent-avatar-tone-0 { background: #eef1f5; color: #4b5563; }
+.agent-avatar-tone-1 { background: #eaf0f7; color: #3f5f80; }
+.agent-avatar-tone-2 { background: #ebf3ed; color: #46694e; }
+.agent-avatar-tone-3 { background: #f4f1e9; color: #6b5f45; }
+.agent-avatar-tone-4 { background: #f5eeeb; color: #7a564d; }
+.agent-avatar-tone-5 { background: #f0eef6; color: #574f70; }
+.dark .agent-avatar-tone-0 { background: #2a2f36; color: #b6bec9; }
+.dark .agent-avatar-tone-1 { background: #26313d; color: #a8c0d6; }
+.dark .agent-avatar-tone-2 { background: #263329; color: #a9c7b0; }
+.dark .agent-avatar-tone-3 { background: #33302a; color: #cdbe9f; }
+.dark .agent-avatar-tone-4 { background: #352c2a; color: #d0b0a7; }
+.dark .agent-avatar-tone-5 { background: #2e2b38; color: #b8b0d0; }
+.agent-avatar-15 { width: 15px; height: 15px; font-size: 7px; }
+.agent-avatar-16 { width: 16px; height: 16px; font-size: 8px; }
+.agent-avatar-20 { width: 20px; height: 20px; font-size: 10px; }
+.agent-avatar-22 { width: 22px; height: 22px; font-size: 11px; }
+.agent-avatar-24 { width: 24px; height: 24px; font-size: 12px; }
+.agent-avatar-28 { width: 28px; height: 28px; font-size: 13px; }
+.agent-avatar-32 { width: 32px; height: 32px; font-size: 15px; }
+.agent-avatar-40 { width: 40px; height: 40px; font-size: 18px; }
+.agent-avatar-56 { width: 56px; height: 56px; font-size: 24px; }
+
+/* A drawer rather than a column: the Agent list now sits inside a settings
+   tab, which is a normal scrolling page, so the panel cannot rely on being
+   the second half of a full-height flex row. */
+/* Desktop: the detail is the right pane, filling the space beside the roster.
+   `.hidden` (no Agent selected) shows an empty-state placeholder instead of
+   collapsing, so the workbench keeps its two-pane shape. */
+.agent-detail {
+    flex: 1;
+    min-width: 0;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+}
+.agent-detail.hidden { display: flex; }
+.agent-detail.hidden > * { display: none; }
+.agent-detail.hidden::before {
+    content: attr(data-empty-label);
+    margin: auto;
+    color: #cbd5e1;
+    font-size: 14px;
+}
+.dark .agent-detail.hidden::before { color: #475569; }
+.dark .agent-detail { background: #1A1A1A; }
+.agent-detail-header { position: relative; padding: 20px 20px 8px; }
+.agent-detail-close {
+    position: absolute; top: 12px; right: 12px;
+    width: 28px; height: 28px; border-radius: 8px;
+    color: #94a3b8;
+}
+.agent-detail-close:hover { background: #f1f5f9; }
+.dark .agent-detail-close:hover { background: rgba(255,255,255,.06); }
+.agent-detail-identity { display: flex; align-items: center; gap: 12px; padding-right: 28px; }
+.agent-detail-tabs { display: flex; gap: 4px; padding: 0 16px; border-bottom: 1px solid #e2e8f0; }
+.dark .agent-detail-tabs { border-color: rgba(255,255,255,.08); }
+.agent-detail-tab {
+    padding: 10px 12px; font-size: 13px; color: #64748b; border-bottom: 2px solid transparent;
+}
+.agent-detail-tab.active { color: #17803d; border-color: #4ABE6E; font-weight: 600; }
+.agent-detail-pane { flex: 1; overflow-y: auto; padding: 16px 20px; }
+.agent-core-editor {
+    width: 100%; min-height: 520px; padding: 12px;
+    background: #f8fafc; color: #1e293b; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; border-radius: 10px; resize: vertical; border: 1px solid #e2e8f0;
+}
+.dark .agent-core-editor { background: #151515; color: #e2e8f0; border-color: rgba(255,255,255,.08); }
+/* Read-only rendered markdown, shown instead of the textarea in preview mode.
+   Same footprint as the editor so switching modes doesn't jump the layout. */
+.agent-core-preview {
+    width: 100%; min-height: 520px; padding: 12px 14px;
+    background: #f8fafc; border-radius: 10px; border: 1px solid #e2e8f0;
+    overflow-y: auto; font-size: 13px;
+}
+.dark .agent-core-preview { background: #151515; border-color: rgba(255,255,255,.08); }
+.agent-skill-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid #f1f5f9;
+}
+.dark .agent-skill-row { border-color: rgba(255,255,255,.05); }
+
+/* Custom checkbox: green fill with a white tick when checked, instead of the
+   browser default (accent-color renders a black tick that clashes with green).
+   Applies to the skills pane's "use all" toggle and each skill row. */
+#agent-detail-skills input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none;
+    flex-shrink: 0; margin: 0; cursor: pointer;
+    width: 16px; height: 16px; border-radius: 5px;
+    border: 1.5px solid #cbd5e1; background: #fff;
+    position: relative; transition: background .12s, border-color .12s;
+}
+.dark #agent-detail-skills input[type="checkbox"] { background: #1f1f1f; border-color: rgba(255,255,255,.2); }
+#agent-detail-skills input[type="checkbox"]:hover { border-color: #4ABE6E; }
+#agent-detail-skills input[type="checkbox"]:checked {
+    background: #4ABE6E; border-color: #4ABE6E;
+}
+#agent-detail-skills input[type="checkbox"]:checked::after {
+    content: ""; position: absolute;
+    left: 5px; top: 2px; width: 4px; height: 8px;
+    border: solid #fff; border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+}
+#agent-detail-skills input[type="checkbox"]:disabled {
+    opacity: .5; cursor: not-allowed;
+}
+.agent-modal {
+    position: fixed; inset: 0; background: rgba(15, 23, 42, .45);
+    display: flex; align-items: center; justify-content: center; z-index: 60;
+    backdrop-filter: blur(2px);
+}
+.agent-modal.hidden { display: none; }
+.agent-modal-card-wide { width: min(560px, calc(100% - 32px)) !important; }
+.agent-modal-card {
+    width: min(460px, calc(100% - 32px));
+    max-height: calc(100vh - 48px);
+    display: flex; flex-direction: column;
+    background: #fff; border-radius: 18px;
+    box-shadow: 0 24px 60px -20px rgba(0,0,0,.4);
+}
+.dark .agent-modal-card { background: #1A1A1A; border: 1px solid rgba(255,255,255,.08); }
+.agent-modal-title {
+    font-size: 16px; font-weight: 600; color: #1e293b;
+    padding: 22px 24px 4px;
+}
+.dark .agent-modal-title { color: #f1f5f9; }
+/* overflow stays visible so an opened dropdown's menu can spill past the last
+   field instead of being clipped into a scroll area (which would show a
+   scrollbar and trap the options). The card itself scrolls if a form ever
+   outgrows the viewport. */
+.agent-modal-body { padding: 12px 24px; overflow: visible; }
+.agent-modal-foot {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 24px 20px; border-top: 1px solid #f1f5f9;
+}
+.dark .agent-modal-foot { border-color: rgba(255,255,255,.06); }
+
+/* Shared form vocabulary for the create modal and the detail drawer, so a
+   field looks the same wherever it appears: a label above the control, never
+   a placeholder standing in for one. */
+.agent-field { margin-bottom: 18px; }
+.agent-field-label {
+    display: block; font-size: 12px; font-weight: 500;
+    color: #64748b; margin-bottom: 7px;
+}
+.dark .agent-field-label { color: #94a3b8; }
+.agent-field-hint { font-size: 11px; color: #94a3b8; margin-top: 6px; }
+.agent-status-ok { color: #17803d !important; }
+.dark .agent-status-ok { color: #86efac !important; }
+.agent-status-error { color: #dc2626 !important; }
+.dark .agent-status-error { color: #fca5a5 !important; }
+#agent-detail-files button[onclick="saveAgentCoreFile()"][disabled] { opacity: 0.55; cursor: default; }
+.agent-input {
+    width: 100%; height: 40px; padding: 0 12px;
+    border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc;
+    font-size: 14px; color: #1e293b;
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+.agent-input::placeholder { color: #cbd5e1; }
+.agent-input:focus {
+    outline: none; border-color: #4ABE6E;
+    box-shadow: 0 0 0 3px rgba(74, 190, 110, .12); background: #fff;
+}
+/* Responsibilities is a paragraph, not a line: let it breathe and wrap. */
+.agent-textarea {
+    height: auto; min-height: 84px; padding: 10px 12px;
+    line-height: 1.55; resize: vertical; font-family: inherit;
+}
+.dark .agent-input {
+    border-color: #475569; background: rgba(255,255,255,.05); color: #f1f5f9;
+}
+.dark .agent-input:focus { background: rgba(255,255,255,.07); }
+.agent-input-locked {
+    width: 100%; min-height: 40px; padding: 9px 12px;
+    border-radius: 10px; border: 1px dashed #e2e8f0;
+    font-size: 13px; color: #94a3b8; background: #f8fafc;
+}
+.dark .agent-input-locked { border-color: rgba(255,255,255,.1); background: rgba(255,255,255,.03); }
+
+/* Segmented two-way switch (e.g. shared vs own knowledge base). Kept compact
+   so it reads as an inline control rather than a heavy toolbar. */
+.agent-seg {
+    display: inline-flex; gap: 2px; padding: 2px;
+    border-radius: 8px; background: #f1f5f9; border: 1px solid #e2e8f0;
+}
+.dark .agent-seg { background: rgba(255,255,255,.05); border-color: rgba(255,255,255,.1); }
+.agent-seg-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 4px 12px; height: 26px; border-radius: 6px; border: none; cursor: pointer;
+    font-size: 12px; font-weight: 500; color: #64748b; background: transparent;
+    transition: background .15s, color .15s;
+}
+.agent-seg-btn i { font-size: 11px; }
+.dark .agent-seg-btn { color: #94a3b8; }
+.agent-seg-btn:hover { color: #334155; }
+.dark .agent-seg-btn:hover { color: #cbd5e1; }
+.agent-seg-btn.active {
+    background: #fff; color: #16a34a;
+    box-shadow: 0 1px 2px rgba(0,0,0,.06);
+}
+.dark .agent-seg-btn.active { background: rgba(255,255,255,.12); color: #86efac; }
+
+/* An info icon that sits after a field label and reveals its help on hover,
+   replacing a permanent paragraph of hint text below the field. The popup
+   itself is a JS-positioned element fixed to <body> (see showFieldTip in
+   console.js) rather than a CSS ::after, so it can escape an ancestor's
+   `overflow: auto` (e.g. the Agent detail drawer) instead of being clipped. */
+.agent-field-label-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+.agent-field-label-row .agent-field-label { margin-bottom: 0; }
+.agent-field-tip {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; color: #cbd5e1; cursor: help; font-size: 11px;
+}
+.agent-field-tip:hover { color: #94a3b8; }
+.dark .agent-field-tip { color: #64748b; }
+.dark .agent-field-tip:hover { color: #94a3b8; }
+.agent-tip-popup {
+    position: fixed; width: max-content; max-width: 260px; padding: 8px 10px;
+    border-radius: 8px; background: #1e293b; color: #f1f5f9;
+    font-size: 11px; font-weight: 400; line-height: 1.5; text-align: left; white-space: pre-line;
+    opacity: 0; pointer-events: none; transition: opacity .12s; z-index: 200;
+    box-shadow: 0 6px 20px rgba(0,0,0,.18);
+}
+.agent-tip-popup.show { opacity: 1; }
+.agent-tip-popup::after {
+    content: ""; position: absolute; left: var(--tip-arrow-x, 50%); top: 100%;
+    transform: translateX(-50%);
+    border: 5px solid transparent; border-top-color: #1e293b;
+}
+/* Flipped below the icon when there isn't room above (e.g. near the top of a
+   drawer): the arrow points up at the icon instead of down. */
+.agent-tip-popup.tip-arrow-top::after {
+    top: auto; bottom: 100%;
+    border-top-color: transparent; border-bottom-color: #1e293b;
+}
+.dark .agent-tip-popup { background: #0f172a; }
+.dark .agent-tip-popup::after { border-top-color: #0f172a; }
+.dark .agent-tip-popup.tip-arrow-top::after { border-bottom-color: #0f172a; }
+
+/* Avatar picker: a live preview beside an emoji grid and an upload button,
+   all in the page palette. */
+.agent-avatar-picker { display: flex; align-items: flex-start; gap: 14px; }
+.agent-avatar-picker-preview { flex-shrink: 0; }
+.agent-avatar-picker-body { flex: 1; min-width: 0; padding-top: 4px; }
+.agent-avatar-upload {
+    display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+    padding: 6px 12px; border-radius: 9px;
+    border: 1px solid #e2e8f0; background: #fff;
+    font-size: 12px; color: #64748b; cursor: pointer;
+    transition: border-color .15s ease, color .15s ease;
+}
+.agent-avatar-upload:hover { border-color: #4ABE6E; color: #17803d; }
+.dark .agent-avatar-upload { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.1); color: #94a3b8; }
+
+/* While bytes are in flight: dim the preview and spin a ring over it, and make
+   the upload button read as busy so a second click does not stack requests. */
+.agent-avatar-picker.is-uploading .agent-avatar-picker-preview { position: relative; }
+.agent-avatar-picker.is-uploading .agent-avatar-picker-preview::after {
+    content: ""; position: absolute; inset: 0; margin: auto;
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid rgba(74,190,110,.35); border-top-color: #4ABE6E;
+    animation: agent-avatar-spin .7s linear infinite;
+}
+.agent-avatar-picker.is-uploading .agent-avatar-picker-preview .agent-avatar { opacity: .35; }
+.agent-avatar-picker.is-uploading .agent-avatar-upload { opacity: .6; pointer-events: none; }
+@keyframes agent-avatar-spin { to { transform: rotate(360deg); } }
+
+/* Detail-drawer buttons, matching the create modal's foot. */
+.agent-detail-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+/* Delete is destructive, so it sits apart from the everyday save/chat buttons. */
+.agent-detail-delete { margin-left: auto; }
+.agent-btn {
+    height: 34px; padding: 0 14px; border-radius: 9px;
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    transition: background .15s ease, border-color .15s ease, color .15s ease;
+}
+.agent-btn-primary { background: #4ABE6E; color: #fff; }
+.agent-btn-primary:hover { background: #3aa85d; }
+.agent-btn-ghost { border: 1px solid #e2e8f0; color: #475569; background: #fff; }
+.agent-btn-ghost:hover { border-color: #94a3b8; }
+.dark .agent-btn-ghost { background: transparent; border-color: rgba(255,255,255,.12); color: #cbd5e1; }
+.agent-btn-text { color: #64748b; background: transparent; }
+.agent-btn-text:hover { color: #334155; }
+.dark .agent-btn-text:hover { color: #e2e8f0; }
+.agent-btn-sm { padding: 4px 8px; font-size: 12px; }
+.agent-btn-text.agent-btn-sm { color: #4ABE6E; }
+.agent-btn-text.agent-btn-sm:hover { color: #228547; }
+.agent-btn-accent { color: #17803d; }
+.agent-btn-danger { color: #ef4444; background: transparent; }
+.agent-btn-danger:hover { color: #dc2626; }
+
+.composer-identity-row { display: flex; align-items: flex-start; gap: 10px; }
+/* The identity chip lives in the toolbar's right group now, so it centers with
+   the other chips instead of hanging from the top of the card. */
+.composer-identity { position: relative; display: inline-flex; align-items: center; }
+.composer-identity.hidden { display: none; }
+.composer-agent-btn {
+    border-radius: 50%; padding: 0; line-height: 0;
+    box-shadow: 0 0 0 2px transparent;
+}
+.composer-agent-btn { position: relative; }
+.composer-agent-btn:hover { box-shadow: 0 0 0 2px #4ABE6E; }
+/* Locked only means the owner can no longer be swapped; the button still opens
+   its menu, so it keeps a pointer. */
+.composer-agent-btn.locked:hover { box-shadow: 0 0 0 2px #cbd5e1; }
+.composer-agent-count {
+    position: absolute; right: -4px; bottom: -4px;
+    min-width: 13px; height: 13px; padding: 0 2px;
+    border-radius: 999px; border: 2px solid #fff;
+    background: #4ABE6E; color: #fff;
+    font-size: 8px; font-weight: 600; line-height: 9px; text-align: center;
+}
+.dark .composer-agent-count { border-color: #1A1A1A; }
+
+/* The current Agent is marked by its trailing check, not a standing highlight:
+   a permanent green fill fought the hover state, so two rows looked selected at
+   once. Hover is the only fill; current just tints its text and check. */
+.composer-menu-item.current { color: #228547; }
+.composer-menu-item.current:hover { background: #EDFDF3; }
+.dark .composer-menu-item.current { color: #6EE7A0; }
+.dark .composer-menu-item.current:hover { background: rgba(74, 190, 110, .14); }
+.composer-menu-item.current > i.fa-check { color: #4ABE6E; }
+/* A member already in the conversation is a plain row, not a standing green
+   fill (that read as "everything is selected"). A dim ✓ marks that it's in the
+   chat; hovering a removable teammate swaps it for a red × (the owner row is a
+   non-button and stays put). */
+.composer-menu-item.joined .joined-check { color: #94a3b8; }
+.composer-menu-item.joined .joined-remove { display: none; }
+button.composer-menu-item.joined:hover { background: #FEF2F2; color: #b91c1c; cursor: pointer; }
+.dark button.composer-menu-item.joined:hover { background: rgba(239, 68, 68, .12); color: #fca5a5; }
+button.composer-menu-item.joined:hover .joined-check { display: none; }
+button.composer-menu-item.joined:hover .joined-remove { display: inline; color: #b91c1c; }
+.composer-menu-item.joined.is-owner { cursor: default; }
+.composer-menu-badge {
+    font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 999px;
+    background: #f1f5f9; color: #64748b;
+}
+.dark .composer-menu-badge { background: rgba(255,255,255,.08); color: #94a3b8; }
+.composer-menu-item .agent-avatar { flex-shrink: 0; }
+.composer-menu-sep { height: 1px; margin: 5px 6px; background: #eef2f6; }
+.dark .composer-menu-sep { background: rgba(255, 255, 255, 0.08); }
+
+/* Overlapping faces read as "several people are in here" at a glance, which is
+   the only thing this row needs to say. */
+.session-faces { display: inline-flex; flex-shrink: 0; }
+.session-faces .agent-avatar {
+    border: 1.5px solid #fff;
+    box-sizing: content-box;
+}
+.session-faces .agent-avatar + .agent-avatar { margin-left: -8px; }
+.dark .session-faces .agent-avatar { border-color: #141414; }
+/* A "+N" cap keeps the stack short while still telling how big the group is. */
+.session-face-more {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 20px; height: 20px; padding: 0 4px; margin-left: -8px;
+    border: 1.5px solid #fff; box-sizing: content-box;
+    border-radius: 999px; background: #e2e8f0; color: #475569;
+    font-size: 10px; font-weight: 600; line-height: 1;
+}
+.dark .session-face-more { border-color: #141414; background: #2a2a2a; color: #cbd5e1; }
+
+.bot-face { flex-shrink: 0; line-height: 0; }
+.bot-speaker {
+    margin: 0 0 4px 2px;
+    font-size: 11px; font-weight: 500; color: #64748b;
+}
+.dark .bot-speaker { color: #94a3b8; }
+
+/* A mention reads as the teammate it names: a rounded chip carrying their face
+   and name, so "@我的运营助手" looks addressed rather than typed. */
+.mention-tag {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 1px 7px 1px 2px; border-radius: 999px;
+    font-weight: 500; line-height: 1;
+    /* The chip carries a 16px avatar, so it is taller than the surrounding
+       text. `vertical-align: middle` centres it on the font's x-height, which
+       for CJK still leaves it sitting a hair low; the small negative shift
+       lands its optical centre on the text centre. */
+    vertical-align: middle;
+    transform: translateY(-1.5px);
+    background: rgba(255, 255, 255, .22);
+}
+.mention-tag-face {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 16px; height: 16px; flex-shrink: 0;
+}
+/* The avatar is an inline <img>; without `block` it rides the text baseline and
+   leaves a descender gap that drops it a few px below the name. `block` removes
+   that gap so the face and the name share a centre. */
+.mention-tag-face .agent-avatar {
+    display: block; width: 16px; height: 16px; border-radius: 50%;
+}
+.mention-tag-name { white-space: nowrap; }
+/* In a bot bubble (white surface) the chip needs its own tint to read as a chip. */
+.bot-message-group .mention-tag { background: #EDFDF3; color: #17803d; }
+.dark .bot-message-group .mention-tag { background: rgba(74, 190, 110, .16); color: #6EE7A0; }
+
+.channel-agent-bind {
+    display: flex; align-items: center; gap: 8px;
+    margin: 0 0 16px; padding: 10px 12px;
+    background: #f8fafc; border-radius: 10px;
+}
+.dark .channel-agent-bind { background: rgba(255,255,255,.04); }
+.channel-agent-bind select {
+    flex: 1; min-width: 0;
+    padding: 6px 8px; border-radius: 8px;
+    border: 1px solid #e2e8f0; background: #fff; font-size: 13px;
+}
+.dark .channel-agent-bind select { background: #222; border-color: rgba(255,255,255,.1); color: #e2e8f0; }
+/* Bind-agent avatar dropdown fills the row like the old <select> did. */
+.channel-agent-bind .cfg-dropdown { flex: 1 1 auto; min-width: 0; width: auto !important; }
+
+/* Narrow screens (phones, split panes): the roster takes the full width and the
+   detail slides over it as a sheet only once an Agent is picked. Nothing
+   selected -> no empty pane hanging around, just the list. */
+@media (max-width: 900px) {
+    .agents-list-pane { width: 100%; border-right: none; }
+    .agent-detail {
+        position: absolute; inset: 0; z-index: 20;
+        width: 100%; border-left: none;
+        box-shadow: none;
+    }
+    .agent-detail.hidden { display: none; }
+    .agent-detail.hidden::before { content: none; }
 }

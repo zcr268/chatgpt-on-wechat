@@ -96,6 +96,9 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
   }
 
   const selectProject = async (projectDir: string | null) => {
+    // Re-scoping the panel closes any open editor, so settle it here, while the
+    // binding has not been committed yet and declining can still stop it.
+    if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     setOpenMenu(null)
     setBusy(true)
     try {
@@ -132,6 +135,7 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
       setNewError(t('ws_sel_name_no_slash'))
       return
     }
+    if (!(await useWorkspaceStore.getState().guardUnsavedEdit())) return
     setBusy(true)
     try {
       const res = await apiClient.createProject(sessionId, name)
@@ -164,7 +168,9 @@ const WorkspaceSelector: React.FC<WorkspaceSelectorProps> = ({ sessionId }) => {
           }`}
         >
           <FolderOpen size={13} className="shrink-0" />
-          <span className="composer-chip-label truncate">{label}</span>
+          {/* The default workspace is the implicit state, so the label there is
+              just clutter — show the icon alone and only name a real project. */}
+          {current && <span className="composer-chip-label truncate">{label}</span>}
           <ChevronDown size={11} className="opacity-60 shrink-0" />
         </button>
       </Tooltip>

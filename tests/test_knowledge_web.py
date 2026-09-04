@@ -68,7 +68,7 @@ def test_knowledge_frontend_management_contract():
     assert "function importKnowledgeDocuments(" in js
     assert "function validateKnowledgeImportFiles(" in js
     assert "KNOWLEDGE_IMPORT_MAX_FILE_SIZE" in js
-    assert "fetch('/api/knowledge/import'" in js
+    assert "fetch(_kbUrl('/api/knowledge/import')" in js
     assert "initKnowledgeImportDropZone()" in js
 
     knowledge_section = js[js.index("// Knowledge View"):js.index("function _hasFilterMatch")]

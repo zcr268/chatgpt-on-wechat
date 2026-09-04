@@ -1,9 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { Eye, FolderTree, ExternalLink, Download, Link2, Check, X } from 'lucide-react'
+import {
+  Eye, FolderTree, ExternalLink, Download, Link2, Check, X,
+  Pencil, Save, RotateCcw, Loader2, AlertTriangle,
+} from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
 import FilePreview from './FilePreview'
+import FileEditor from './FileEditor'
 import FileTree from './FileTree'
+import { isEditable } from '../lib/fileKind'
 import { useWorkspaceStore, WS_MIN_WIDTH } from '../store/workspaceStore'
 
 const TabButton: React.FC<{
@@ -38,14 +43,19 @@ const IconButton: React.FC<{ onClick: () => void; title: string; children: React
 )
 
 const WorkspacePanel: React.FC = () => {
-  const { open, tab, width, current, previewError } = useWorkspaceStore()
+  const { open, tab, width, current, previewError, edit, editNotice } = useWorkspaceStore()
+  const dismissEditNotice = useWorkspaceStore((s) => s.dismissEditNotice)
   const setTab = useWorkspaceStore((s) => s.setTab)
   const setWidth = useWorkspaceStore((s) => s.setWidth)
   const closePanel = useWorkspaceStore((s) => s.closePanel)
+  const startEdit = useWorkspaceStore((s) => s.startEdit)
+  const saveEdit = useWorkspaceStore((s) => s.saveEdit)
+  const cancelEdit = useWorkspaceStore((s) => s.cancelEdit)
   const [copied, setCopied] = useState(false)
   // Dragging the divider over the preview iframe would otherwise lose the
   // mousemove stream to the iframe's document.
   const [resizing, setResizing] = useState(false)
+  const editorRef = useRef<HTMLTextAreaElement>(null)
   const widthRef = useRef(width)
   widthRef.current = width
 
@@ -69,13 +79,20 @@ const WorkspacePanel: React.FC = () => {
     [setWidth]
   )
 
+  // Both are about the file on screen, so opening another one retires them.
   useEffect(() => {
     setCopied(false)
-  }, [current?.path])
+    dismissEditNotice()
+  }, [current?.path, dismissEditNotice])
 
   if (!open) return null
 
-  const showFileActions = tab === 'preview' && !!current
+  const onFile = tab === 'preview' && !!current
+  const editing = onFile && !!edit
+  // While editing, the viewer actions would act on the file on disk rather than
+  // on what is in the text area, which reads as a bug. Hide them instead.
+  const showFileActions = onFile && !editing
+  const showEditButton = showFileActions && !current.is_dir && isEditable(current.kind)
 
   const openExternally = () => {
     if (!current) return
@@ -128,6 +145,29 @@ const WorkspacePanel: React.FC = () => {
             />
           </div>
           <div className="flex items-center gap-0.5">
+            {editing && (
+              <>
+                <IconButton
+                  // Never fall back to '' for a missing text area: that would
+                  // write an empty file over the user's content.
+                  onClick={() => {
+                    const el = editorRef.current
+                    if (el) saveEdit(el.value)
+                  }}
+                  title={t('ws_edit_save')}
+                >
+                  {edit.saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                </IconButton>
+                <IconButton onClick={cancelEdit} title={t('ws_edit_cancel')}>
+                  <RotateCcw size={13} />
+                </IconButton>
+              </>
+            )}
+            {showEditButton && (
+              <IconButton onClick={startEdit} title={t('ws_edit')}>
+                <Pencil size={13} />
+              </IconButton>
+            )}
             {showFileActions && (
               <>
                 <IconButton onClick={openExternally} title={t('ws_open_external')}>
@@ -153,13 +193,35 @@ const WorkspacePanel: React.FC = () => {
           {current && (
             <div className="shrink-0 px-3 py-2 text-[11px] font-mono text-content-tertiary border-b border-default break-all">
               {current.path}
+              {edit?.dirty && <span className="text-accent" title={t('ws_edit_unsaved')}> •</span>}
+            </div>
+          )}
+          {editNotice && !edit && (
+            <div className="shrink-0 flex items-start gap-1.5 px-3 py-2 text-[12px] text-amber-600 bg-amber-500/10 border-b border-default">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+              <span className="flex-1 break-all">{editNotice}</span>
+              <button
+                onClick={dismissEditNotice}
+                title={t('ws_close')}
+                className="shrink-0 opacity-60 hover:opacity-100 cursor-pointer"
+              >
+                <X size={13} />
+              </button>
             </div>
           )}
           <div
-            className="flex-1 min-h-0 overflow-auto"
+            // The editor manages its own scrolling; letting this wrapper scroll
+            // too would stop the text area from filling the panel.
+            className={`flex-1 min-h-0 ${editing ? 'overflow-hidden' : 'overflow-auto'}`}
             style={resizing ? { pointerEvents: 'none' } : undefined}
           >
-            <FilePreview file={current} error={previewError} />
+            {edit ? (
+              // Keyed so switching the edited file remounts the text area and
+              // reseeds it, instead of keeping the previous file's text.
+              <FileEditor key={edit.file.path} edit={edit} textareaRef={editorRef} />
+            ) : (
+              <FilePreview file={current} error={previewError} />
+            )}
           </div>
         </div>
 

@@ -303,7 +303,10 @@ class MemoryManager:
 
         from config import conf
         if conf().get("knowledge", True):
-            knowledge_dir = Path(workspace_dir) / "knowledge"
+            # Resolve through state_dir so an Agent without its own knowledge/
+            # scans the shared base rather than an empty (or missing) local one.
+            from common import state_dir
+            knowledge_dir = Path(state_dir.knowledge_dir(base=workspace_dir))
             if knowledge_dir.exists():
                 for file_path in knowledge_dir.rglob("*.md"):
                     files_to_scan.append((file_path, "knowledge", "shared", None))

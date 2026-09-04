@@ -1,14 +1,16 @@
-"""Web Search tool. Supports four backends with a unified response format:
+"""Web Search tool. Supports six backends with a unified response format:
   - bocha   (https://open.bochaai.com)
   - zhipu   (https://docs.bigmodel.cn/cn/guide/tools/web-search)
   - qianfan (https://cloud.baidu.com/doc/qianfan/s/2mh4su4uy)
   - linkai  (https://link-ai.tech, fallback)
+  - anysearch (https://anysearch.com)
+  - serply  (https://serply.io, Google/Bing SERP API)
 
 Provider selection
   - strategy 'auto' (default): pick the first configured provider in the
-    canonical order [bocha, zhipu, qianfan, linkai]. When the caller passes
-    an explicit `provider` it overrides the pick; an invalid/unconfigured
-    one silently falls back to the auto order.
+    canonical order [bocha, qianfan, zhipu, linkai, anysearch, serply]. When
+    the caller passes an explicit `provider` it overrides the pick; an
+    invalid/unconfigured one silently falls back to the auto order.
   - strategy 'fixed': use the configured provider; if its credential is
     missing at call time, silently fall back to auto order (no card hint).
 
@@ -17,11 +19,14 @@ Credentials
   - zhipu   : conf.zhipu_ai_api_key            ->  env ZHIPUAI_API_KEY
   - qianfan : conf.qianfan_api_key             ->  env QIANFAN_API_KEY
   - linkai  : conf.linkai_api_key              ->  env LINKAI_API_KEY
+  - anysearch : tools.web_search.anysearch_api_key  -> env ANYSEARCH_API_KEY
+  - serply  : tools.web_search.serply_api_key  ->  env SERPLY_API_KEY
 """
 
 import json
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import urlencode
 
 import requests
 
@@ -34,15 +39,18 @@ DEFAULT_TIMEOUT = 30
 
 # Canonical fallback order. Empirically ordered by Chinese real-time
 # quality + relevance: bocha (best overall), qianfan (best for hot news),
-# zhipu (strong on long-form articles), linkai (cloud aggregator, last
-# resort).
-PROVIDER_ORDER = ("bocha", "qianfan", "zhipu", "linkai")
+# zhipu (strong on long-form articles), linkai (cloud aggregator),
+# anysearch, serply (global Google/Bing SERP, last since it isn't
+# benchmarked against the Chinese-market providers above).
+PROVIDER_ORDER = ("bocha", "qianfan", "zhipu", "linkai", "anysearch", "serply")
 
 PROVIDER_LABELS = {
     "bocha":   "Bocha",
     "zhipu":   "Zhipu",
     "qianfan": "Baidu Qianfan",
     "linkai":  "LinkAI",
+    "anysearch": "AnySearch",
+    "serply":  "Serply",
 }
 
 
@@ -69,6 +77,12 @@ def _get_api_key(provider: str) -> str:
     if provider == "linkai":
         key = (conf().get("linkai_api_key") or "").strip()
         return key or os.environ.get("LINKAI_API_KEY", "").strip()
+    if provider == "anysearch":
+        key = (_tools_web_search_conf().get("anysearch_api_key") or "").strip()
+        return key or os.environ.get("ANYSEARCH_API_KEY", "").strip()
+    if provider == "serply":
+        key = (_tools_web_search_conf().get("serply_api_key") or "").strip()
+        return key or os.environ.get("SERPLY_API_KEY", "").strip()
     return ""
 
 
@@ -209,7 +223,8 @@ class WebSearch(BaseTool):
         if not provider:
             return ToolResult.fail(
                 "Error: No search provider configured. "
-                "Configure one of BOCHA_API_KEY / zhipu_ai_api_key / qianfan_api_key / linkai_api_key."
+                "Configure one of BOCHA_API_KEY / zhipu_ai_api_key / qianfan_api_key / linkai_api_key / "
+                "anysearch_api_key / SERPLY_API_KEY."
             )
 
         # Always log the routing decision so multi-provider deployments can
@@ -231,6 +246,10 @@ class WebSearch(BaseTool):
                 return self._search_qianfan(query, count, freshness)
             if provider == "linkai":
                 return self._search_linkai(query, count, freshness)
+            if provider == "anysearch":
+                return self._search_anysearch(query, count)
+            if provider == "serply":
+                return self._search_serply(query, count)
             return ToolResult.fail(f"Error: Unknown provider '{provider}'")
         except requests.Timeout:
             return ToolResult.fail(f"Error: Search request timed out after {DEFAULT_TIMEOUT}s")
@@ -483,4 +502,89 @@ class WebSearch(BaseTool):
         return ToolResult.success({
             "query": query, "backend": "linkai",
             "total": 1, "count": 1, "results": [{"content": str(raw)}],
+        })
+
+    def _search_anysearch(self, query: str, count: int) -> ToolResult:
+        api_key = _get_api_key("anysearch")
+        url = "https://api.anysearch.com/v1/search"
+        headers = {"Content-Type": "application/json", "Accept": "application/json"}
+        # AnySearch also serves anonymous traffic with a daily free quota, so
+        # the Authorization header is only sent when a key is configured.
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        # AnySearch accepts 1-20 results; the shared tool schema allows 1-50.
+        max_results = max(1, min(int(count or 10), 20))
+        payload = {"query": query, "max_results": max_results, "format": "json"}
+
+        logger.debug(f"[WebSearch] anysearch: query='{query}', max_results={max_results}")
+        resp = requests.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
+
+        if resp.status_code == 401:
+            return ToolResult.fail("Error: Invalid AnySearch API key.")
+        if resp.status_code == 402:
+            return ToolResult.fail("Error: AnySearch quota exhausted. Check usage at https://anysearch.com")
+        if resp.status_code == 429:
+            return ToolResult.fail("Error: AnySearch API rate limit reached.")
+        if resp.status_code != 200:
+            return ToolResult.fail(f"Error: AnySearch API returned HTTP {resp.status_code}")
+
+        data = resp.json()
+        # AnySearch signals success with business code 0 (not 200).
+        api_code = data.get("code")
+        if api_code not in (0, None):
+            msg = data.get("message") or "Unknown error"
+            return ToolResult.fail(f"Error: AnySearch API error (code={api_code}): {msg}")
+
+        body = data.get("data") or {}
+        results = []
+        for it in body.get("results") or []:
+            results.append({
+                "title": it.get("title", ""),
+                "url": it.get("url", ""),
+                "snippet": it.get("snippet") or (it.get("content") or "")[:200],
+            })
+        total = (body.get("metadata") or {}).get("total_results", len(results))
+        return ToolResult.success({
+            "query": query, "backend": "anysearch",
+            "total": total, "count": len(results), "results": results,
+        })
+
+    # ------------------------------------------------------------------
+    # Serply
+    # ------------------------------------------------------------------
+
+    def _search_serply(self, query: str, count: int) -> ToolResult:
+        api_key = _get_api_key("serply")
+        path = urlencode({"q": query, "num": max(1, min(int(count or 10), 50))})
+        headers = {
+            "X-Api-Key": api_key,
+            "Accept": "application/json",
+            # Serply sits behind Cloudflare, which rejects the default
+            # requests User-Agent, so send an explicit one.
+            "User-Agent": "CowAgent",
+        }
+
+        logger.debug(f"[WebSearch] serply: query='{query}', count={count}")
+        resp = requests.get(f"https://api.serply.io/v1/search/{path}", headers=headers, timeout=DEFAULT_TIMEOUT)
+
+        if resp.status_code == 401:
+            return ToolResult.fail("Error: Invalid Serply API key.")
+        if resp.status_code == 429:
+            return ToolResult.fail("Error: Serply API rate limit reached.")
+        if resp.status_code != 200:
+            return ToolResult.fail(f"Error: Serply API returned HTTP {resp.status_code}")
+
+        data = resp.json()
+        items = data.get("results") or []
+        results = []
+        for it in items:
+            results.append({
+                "title": it.get("title", ""),
+                "url": it.get("link", ""),
+                "snippet": it.get("description", ""),
+            })
+        return ToolResult.success({
+            "query": query, "backend": "serply",
+            "total": len(results), "count": len(results), "results": results,
         })

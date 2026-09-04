@@ -33,6 +33,7 @@ user_session = dict()
 # ``output_config.effort``) and reject ``enabled``; 4.5 and earlier only accept
 # ``enabled`` with an explicit ``budget_tokens`` and reject ``adaptive``.
 ADAPTIVE_THINKING_MODELS = (
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-mythos-5",
     "claude-mythos-preview",
@@ -276,10 +277,15 @@ class ClaudeAPIBot(Bot, OpenAIImage):
         if not adaptive and not lowered.startswith(BUDGET_THINKING_MODELS):
             return None
 
+        if adaptive:
+            # Adaptive-only models reject ``thinking.type: disabled``. When the
+            # caller asks to disable thinking, omit the field entirely (the API
+            # then defaults to adaptive) rather than sending an unsupported value.
+            if thinking.get("type") == "disabled":
+                return None
+            return {"type": "adaptive", "display": "summarized"}
         if thinking.get("type") == "disabled":
             return {"type": "disabled"}
-        if adaptive:
-            return {"type": "adaptive", "display": "summarized"}
 
         # Legacy models need a budget of at least 1024 that stays below
         # max_tokens, since thinking tokens count towards the same limit.

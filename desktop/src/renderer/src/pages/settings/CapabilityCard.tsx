@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useRef } from 'react'
 import type { LucideIcon } from 'lucide-react'
 import { Loader2 } from 'lucide-react'
 import { t } from '../../i18n'
@@ -25,6 +25,8 @@ export interface CapabilityCardProps {
   status?: string
   onSave: (providerId: string, model: string) => void
   children?: React.ReactNode
+  // Optional trailing element on the card header (e.g. the chat-fallback gear).
+  action?: React.ReactNode
 }
 
 const CapabilityCard: React.FC<CapabilityCardProps> = ({
@@ -40,6 +42,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   status,
   onSave,
   children,
+  action,
 }) => {
   const [provider, setProvider] = useState(state.current_provider || '')
   const [model, setModel] = useState(state.current_model || '')
@@ -49,6 +52,9 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     (state.current_provider || '').startsWith('custom:') ? state.current_model || '' : ''
   )
   const [showCustom, setShowCustom] = useState(false)
+  // Remembers the custom model typed per provider so switching vendors and
+  // back doesn't lose it. Keyed by provider id.
+  const customModelByProvider = useRef<Record<string, string>>({})
 
   // Custom providers expose no preset model catalog, so the model must always
   // be typed in freely instead of picked from an (empty) dropdown.
@@ -92,12 +98,26 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
   }, [data, state.provider_models, provider, allowCustomModel, model, showCustom])
 
   const handleProvider = (id: string) => {
+    // Stash the custom model typed under the provider we're leaving.
+    if (showCustom || isCustomProvider) {
+      const typed = customModel.trim()
+      if (typed) customModelByProvider.current[provider] = typed
+    }
     setProvider(id)
     setShowCustom(false)
+    const remembered = customModelByProvider.current[id]
     if (id.startsWith('custom:')) {
-      // Prefill with the saved model when re-selecting the same provider.
+      // Prefill with a remembered value, else the saved model when
+      // re-selecting the same provider.
       const saved = id === state.current_provider ? state.current_model || '' : ''
-      setCustomModel(saved)
+      setCustomModel(remembered || saved)
+      setModel('')
+      return
+    }
+    if (remembered) {
+      // A remembered custom model for a preset provider: reopen custom input.
+      setShowCustom(true)
+      setCustomModel(remembered)
       setModel('')
       return
     }
@@ -110,6 +130,9 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     if (val === CUSTOM_OPTION) {
       setShowCustom(true)
       setModel('')
+      // Restore any custom model previously typed for this provider.
+      const remembered = customModelByProvider.current[provider]
+      if (remembered) setCustomModel(remembered)
     } else {
       setShowCustom(false)
       setModel(val)
@@ -117,11 +140,19 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
     }
   }
 
+  // Keep the per-provider memory in sync as the user types a custom model.
+  const handleCustomModelInput = (val: string) => {
+    setCustomModel(val)
+    const trimmed = val.trim()
+    if (trimmed) customModelByProvider.current[provider] = trimmed
+    else delete customModelByProvider.current[provider]
+  }
+
   const finalModel = showCustom || isCustomProvider ? customModel.trim() : model
   const isAuto = allowAuto && !provider
 
   return (
-    <Card icon={<Icon size={16} />} title={title} subtitle={subtitle}>
+    <Card icon={<Icon size={16} />} title={title} subtitle={subtitle} action={action}>
       <div className="space-y-4">
         <Field label={t('models_provider')}>
           <Dropdown
@@ -143,7 +174,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
               <TextInput
                 className="font-mono"
                 value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
+                onChange={(e) => handleCustomModelInput(e.target.value)}
                 placeholder={t('config_custom_model_hint')}
               />
             ) : (
@@ -158,7 +189,7 @@ const CapabilityCard: React.FC<CapabilityCardProps> = ({
                   <TextInput
                     className="mt-2 font-mono"
                     value={customModel}
-                    onChange={(e) => setCustomModel(e.target.value)}
+                    onChange={(e) => handleCustomModelInput(e.target.value)}
                     placeholder={t('config_custom_model_hint')}
                   />
                 )}

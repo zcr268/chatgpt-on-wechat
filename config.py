@@ -36,6 +36,16 @@ available_setting = {
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
     "model": "deepseek-v4-flash",  # options: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet, wenxin, moonshot, qwen-turbo, xunfei, glm-4, minimax, gemini, etc. See common/const.py for the full list
     "bot_type": "",  # optional; for OpenAI-compatible third-party services set "openai" or "custom" (in custom mode switching model won't auto-switch bot_type). See common/const.py for bot names; inferred from model name if left empty
+    # Fallback chat model, used only after the primary one has failed
+    # permanently for a turn (all retries exhausted). Opt-in: an empty
+    # provider/model disables the switch and the error surfaces as before.
+    # {"enabled": bool, "provider": str, "model": str, "max_switches": int}
+    "chat_fallback": {
+        "enabled": False,
+        "provider": "",  # a provider id as used by `bot_type` (e.g. "openai", "qianfan", "custom:<id>")
+        "model": "",  # e.g. "gpt-4o-mini"
+        "max_switches": 1,  # how many times one turn may fall back, guarding against ping-pong
+    },
     "use_azure_chatgpt": False,  # whether to use Azure chatgpt
     "azure_deployment_id": "",  # azure model deployment name
     "azure_api_version": "",  # azure api version
@@ -262,13 +272,9 @@ available_setting = {
     # synthesizes one "default" agent from agent_workspace and behaves exactly
     # as before. Each configured workspace is a complete CowAgent workspace.
     "agents": [],
-    # Agent handling conversations with no explicit binding. Defaults to the
-    # first configured agent when unset.
+    # Agent handling conversations that no channel instance binds. Defaults to
+    # the first configured agent when unset.
     "default_agent_id": "",
-    # Routes inbound conversations to an agent. Each entry needs channel_type
-    # and agent_id; add conversation_id to bind one chat rather than the whole
-    # channel. Unbound conversations go to default_agent_id.
-    "agent_bindings": [],
     "agent_max_context_tokens": 64000,  # max context tokens in Agent mode
     "agent_max_context_turns": 30,  # max context memory turns in Agent mode
     "agent_max_steps": 30,  # max decision steps per run in Agent mode
@@ -289,17 +295,18 @@ available_setting = {
         "timeout_seconds": 300,  # budget for one spawn call (range 10-3600)
     },
     # Delegation between configured agents. Unlike a sub agent, the target is a
-    # standing peer that answers in its own workspace, so the call is addressed
-    # by a run id and may outlive the wait. The tool only appears when at least
-    # two agents are enabled. Set to false to withhold it entirely.
+    # standing peer that answers in its own workspace. The call is synchronous:
+    # the delegating Agent waits for the teammate's result. The tool only
+    # appears in a team conversation (two+ enabled agents with members). Set to
+    # false to withhold it entirely.
     "agent_delegation": {
         "enabled": True,
         # {"<source>": ["<target>", ...]} or "*" for any. Unset means every
-        # agent may delegate to every other one.
+        # agent may delegate to every other one. Targets are further bounded to
+        # the teammates in the current conversation.
         "allowed_targets": None,
         "max_depth": 3,               # delegation hops in one chain (range 1-8)
-        "timeout_seconds": 120,       # budget for one delegated run (range 0.01-600)
-        "default_wait_seconds": 30,   # inline wait before handing back a run id
+        "timeout_seconds": 600,       # budget for one delegated run (range 0.01-600)
         "max_message_chars": 8000,    # size limit for one delegated task
     },
     "enable_thinking": False,  # Enable deep-thinking mode for thinking-capable models
@@ -890,20 +897,30 @@ def get_appdata_dir():
     return data_path
 
 
-def get_weixin_credentials_path():
+def get_weixin_credentials_path(instance_id: str = ""):
     """Resolve the Weixin credentials (token) file path.
 
     Honors an explicit ``weixin_credentials_path`` from config. Otherwise the
     packaged desktop build (COW_DATA_DIR set) keeps it under the data dir
     (~/.cow) so all user data stays together, while source deployments retain
     the legacy ~/.weixin_cow_credentials.json default unchanged.
+
+    ``instance_id`` isolates the credentials file when several Weixin instances
+    run in one process, each logged into a different account: their tokens must
+    not share (and overwrite) one file. Empty (the single-instance default)
+    keeps the legacy path byte-for-byte, so existing installs are untouched.
     """
     configured = conf().get("weixin_credentials_path")
     if configured:
-        return os.path.expanduser(configured)
-    if os.environ.get("COW_DATA_DIR"):
-        return os.path.join(get_data_root(), "weixin_credentials.json")
-    return os.path.expanduser("~/.weixin_cow_credentials.json")
+        base = os.path.expanduser(configured)
+    elif os.environ.get("COW_DATA_DIR"):
+        base = os.path.join(get_data_root(), "weixin_credentials.json")
+    else:
+        base = os.path.expanduser("~/.weixin_cow_credentials.json")
+    if not instance_id:
+        return base
+    root, ext = os.path.splitext(base)
+    return f"{root}.{instance_id}{ext or '.json'}"
 
 
 def subscribe_msg():

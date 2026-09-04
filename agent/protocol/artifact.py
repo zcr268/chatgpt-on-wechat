@@ -54,6 +54,11 @@ PREVIEWABLE_KINDS = {
     "html", "markdown", "image", "video", "audio", "pdf", "csv", "code", "text",
 }
 
+# Kinds whose bytes are plain text, so the preview panel can offer an editor.
+# Deliberately a subset of PREVIEWABLE_KINDS: an image or a PDF previews fine
+# but would be destroyed by a round-trip through a text area.
+EDITABLE_KINDS = {"html", "markdown", "csv", "code", "text"}
+
 _KIND_BY_EXT: Dict[str, str] = {
     ext: kind for kind, exts in _EXT_KINDS.items() for ext in exts
 }
@@ -74,6 +79,10 @@ def classify_kind(path: str) -> str:
 
 def is_previewable(kind: str) -> bool:
     return kind in PREVIEWABLE_KINDS
+
+
+def is_editable(kind: str) -> bool:
+    return kind in EDITABLE_KINDS
 
 
 def resolve_workspace_path(path: str, workspace_root: str) -> str:

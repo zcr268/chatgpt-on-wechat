@@ -178,6 +178,7 @@ def build_agent_system_prompt(
     # 7. Runtime info (meta info, goes last)
     if runtime_info:
         sections.extend(_build_runtime_section(runtime_info, language))
+        sections.extend(_build_team_section(runtime_info, language))
 
     # 8. Response language (always appended, independent of the skeleton language)
     sections.extend(_build_response_language_section(language))
@@ -300,6 +301,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "Tool-calling style:",
             "",
             "- For multi-step tasks, complex decisions or sensitive operations, briefly explain what you are doing and why, so the user follows key progress",
+            "- Never just announce intent and stop: if you say you will do something, actually call the tool in the same turn. A text-only reply ends the turn, so only reply with plain text once the work is genuinely finished",
             "- Keep going until the task is done, then report the result to the user",
             "- Always redact secrets, tokens and other sensitive info in replies",
             "- Put URLs directly in the reply text; the system handles and renders them. Don't download and re-send them via the send tool",
@@ -323,6 +325,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "工具调用风格：",
             "",
             "- 多步骤任务、复杂决策、敏感操作时，应简要说明当前在做什么、为什么这样做，让用户了解关键进展",
+            "- 不要只宣告意图就停下：一旦你说要做某事，就必须在同一轮真正发起工具调用。纯文本回复会立即结束本轮，因此只有在任务真正完成后才用纯文本收尾",
             "- 持续推进直到任务完成，完成后向用户报告结果",
             "- 回复中涉及密钥、令牌等敏感信息必须脱敏",
             "- URL链接直接放在回复文本中即可，系统会自动处理和渲染。无需下载后使用send工具发送",
@@ -538,7 +541,11 @@ def _build_knowledge_section(
     In project mode ``project_dir`` anchors knowledge paths to ``workspace_dir``
     (absolute) so writes don't leak into the project cwd.
     """
-    index_path = os.path.join(workspace_dir, "knowledge", "index.md")
+    # Resolve through state_dir so an Agent on the shared base (no knowledge/ of
+    # its own) still gets the shared index injected, not an empty local one.
+    from common import state_dir
+    knowledge_root = str(state_dir.knowledge_dir(base=workspace_dir))
+    index_path = os.path.join(knowledge_root, "index.md")
     if not os.path.exists(index_path):
         return []
 
@@ -896,6 +903,84 @@ def _build_context_files_section(context_files: List[ContextFile], language: str
         lines.append("")
     
     return lines
+
+
+def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str]:
+    """Name the other Agents sharing this conversation, if any. Empty for one.
+
+    Addressing someone by name is routing, not delegation: the named Agent is
+    already the one reading this prompt, so handover is left for work nobody
+    was asked for by name.
+
+    States the Agent's own name, which nothing else in the prompt does. Without
+    it a mention reads as a third party and the Agent declines to answer on
+    that stranger's behalf.
+    """
+    teammates = runtime_info.get("teammates")
+    getter = runtime_info.get("_get_teammates")
+    if callable(getter):
+        try:
+            teammates = getter()
+        except Exception as e:
+            logger.warning(f"[PromptBuilder] Failed to resolve teammates: {e}")
+    if not teammates:
+        return []
+
+    # One line each, with what they are for: a bare list of names is enough to
+    # address someone but not to decide whether the work is theirs.
+    roster = []
+    for item in teammates:
+        if not item.get("id"):
+            continue
+        line = f"{item.get('name') or item['id']}(@{item['id']})"
+        if item.get("description"):
+            line += f"：{item['description']}" if language != "en" else f" — {item['description']}"
+        roster.append(line)
+    if not roster:
+        return []
+
+    own_id = runtime_info.get("agent_id") or ""
+    own_name = runtime_info.get("agent_name") or own_id
+    whoami = f"{own_name}(@{own_id})" if own_id else own_name
+
+    if language == "en":
+        return [
+            "## 👥 Team conversation",
+            "",
+            f"You are {whoami}. Also in this conversation:",
+            "",
+            *[f"- {line}" for line in roster],
+            "",
+            "Everyone here reads the same history. A reply that starts with "
+            "someone's name in brackets was written by them; an unmarked one "
+            "is your own. Do not take a teammate's work, or their promises, "
+            "for yours.",
+            "",
+            "This turn is yours to answer. Answer as yourself. When the user "
+            "wants a teammate's own words, let them address that teammate.",
+            "",
+            "Use agent_delegate for work that belongs to a teammate, passing "
+            "their id above as agent_id (without the @), and say who you handed "
+            "it to and what you asked for. Refer to teammates by name to the user.",
+            "",
+        ]
+    return [
+        "## 👥 团队会话",
+        "",
+        f"你是 {whoami}。同在这个会话里的还有：",
+        "",
+        *[f"- {line}" for line in roster],
+        "",
+        "大家读到的是同一份记录。以方括号加名字开头的回复出自那位同事，"
+        "没有标注的才是你自己说的。不要把同事做过的事、许下的承诺当成你的。",
+        "",
+        "这一轮由你来回答，以你自己的身份回答即可。用户想听某位同事亲口说，"
+        "让他去点那位同事。",
+        "",
+        "该由某位同事做的事，用 agent_delegate 交出去：把那位同事上面的 id "
+        "作为 agent_id 传入 (不含@符号)，并说明交给了谁、交办了什么。对用户提到同事时用名字。",
+        "",
+    ]
 
 
 def _build_runtime_section(runtime_info: Dict[str, Any], language: str) -> List[str]:

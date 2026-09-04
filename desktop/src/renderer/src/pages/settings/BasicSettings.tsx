@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Cpu, Bot, ShieldCheck, Settings, Eye, EyeOff, ArrowRight, Loader2 } from 'lucide-react'
 import { t, getLang, setLang, localizedLabel, type Lang } from '../../i18n'
 import apiClient from '../../api/client'
@@ -75,6 +75,9 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   const [customModel, setCustomModel] = useState('')
   const [showCustom, setShowCustom] = useState(false)
   const [modelStatus, setModelStatus] = useState('')
+  // Remembers the custom model typed per provider so switching vendors and
+  // back doesn't lose it. Keyed by provider id.
+  const customModelByProvider = useRef<Record<string, string>>({})
 
   // managed API key (shown only when the standalone models tab is hidden)
   const [apiKey, setApiKey] = useState('')
@@ -181,14 +184,28 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
   }
 
   const handleProviderChange = (id: string) => {
+    // Stash the custom model typed under the provider we're leaving so a
+    // later switch back to it restores the value.
+    if (showCustom || isCustomProviderId(provider)) {
+      const typed = customModel.trim()
+      if (typed) customModelByProvider.current[provider] = typed
+    }
     setProvider(id)
     setShowCustom(false)
+    const remembered = customModelByProvider.current[id]
     if (id.startsWith('custom:') || id === 'custom') {
-      // Prefill with the provider's default model (or the saved one when
-      // re-selecting the active provider) and let the user edit it freely.
+      // Prefill with a remembered value, else the provider's default model (or
+      // the saved one when re-selecting the active provider).
       const meta = config?.providers?.[id] as ProviderMeta | undefined
       const saved = id === config?.bot_type ? config?.model || '' : ''
-      setCustomModel(saved || meta?.models?.[0] || '')
+      setCustomModel(remembered || saved || meta?.models?.[0] || '')
+      setModel('')
+      return
+    }
+    if (remembered) {
+      // A remembered custom model for a preset provider: reopen custom input.
+      setShowCustom(true)
+      setCustomModel(remembered)
       setModel('')
       return
     }
@@ -200,10 +217,21 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
     }
   }
 
+  // Keep the per-provider memory in sync as the user types a custom model.
+  const handleCustomModelInput = (val: string) => {
+    setCustomModel(val)
+    const trimmed = val.trim()
+    if (trimmed) customModelByProvider.current[provider] = trimmed
+    else delete customModelByProvider.current[provider]
+  }
+
   const handleModelChange = (val: string) => {
     if (val === '__custom__') {
       setShowCustom(true)
       setModel('')
+      // Restore any custom model previously typed for this provider.
+      const remembered = customModelByProvider.current[provider]
+      if (remembered) setCustomModel(remembered)
     } else {
       setShowCustom(false)
       setModel(val)
@@ -409,7 +437,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               <TextInput
                 className="font-mono"
                 value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
+                onChange={(e) => handleCustomModelInput(e.target.value)}
                 placeholder={t('config_custom_model_hint')}
               />
             ) : (
@@ -423,7 +451,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
                   <TextInput
                     className="mt-2 font-mono"
                     value={customModel}
-                    onChange={(e) => setCustomModel(e.target.value)}
+                    onChange={(e) => handleCustomModelInput(e.target.value)}
                     placeholder={t('config_custom_model_hint')}
                   />
                 )}
@@ -469,7 +497,7 @@ const BasicSettings: React.FC<BasicSettingsProps> = ({ baseUrl, onLangChange, on
               className={`w-full flex items-center justify-between gap-2 rounded-btn border px-3 py-2.5 cursor-pointer transition-colors text-left ${
                 currentUnconfigured
                   ? 'border-danger-border bg-danger-soft hover:border-danger'
-                  : 'border-default bg-inset hover:border-accent'
+                  : 'border-default bg-inset-2 hover:border-accent'
               }`}
             >
               <span className={`text-xs ${currentUnconfigured ? 'text-danger' : 'text-content-tertiary'}`}>

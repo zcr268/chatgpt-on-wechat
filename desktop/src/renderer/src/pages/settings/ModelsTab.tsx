@@ -20,6 +20,7 @@ import apiClient from '../../api/client'
 import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState } from '../../types'
 import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
 import CapabilityCard from './CapabilityCard'
+import { ChatFallbackButton } from './ChatFallbackCard'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
@@ -115,7 +116,8 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
     <div className="grid gap-5">
       <VendorSection data={data} onChanged={load} statusMap={statusMap} flash={flash} />
 
-      {/* Chat */}
+      {/* Chat — the fallback is a small button on this card's header rather
+          than a separate card, since it's a rarely-touched safety net. */}
       <CapabilityCard
         icon={MessageSquare}
         title={t('models_cap_chat')}
@@ -127,6 +129,24 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
         busy={busy === 'chat'}
         status={statusMap.chat}
         onSave={(p, m) => run('chat', { action: 'set_capability', capability: 'chat', provider_id: p, model: m })}
+        action={
+          <ChatFallbackButton
+            state={caps.chat_fallback}
+            data={data}
+            busy={busy === 'chat_fallback'}
+            status={statusMap.chat_fallback}
+            onSave={({ providerId, model, enabled, maxSwitches }) =>
+              run('chat_fallback', {
+                action: 'set_capability',
+                capability: 'chat_fallback',
+                provider_id: providerId,
+                model,
+                enabled,
+                max_switches: maxSwitches,
+              })
+            }
+          />
+        }
       />
 
       {/* Vision */}
@@ -293,7 +313,7 @@ const VendorSection: React.FC<VendorSectionProps> = ({ data, onChanged }) => {
 const VendorChip: React.FC<{ provider: ModelProvider; onClick: () => void }> = ({ provider, onClick }) => (
   <button
     onClick={onClick}
-    className="group flex items-center gap-2.5 px-3 py-2.5 rounded-btn border border-default bg-inset hover:border-accent cursor-pointer transition-colors text-left"
+    className="group flex items-center gap-2.5 px-3 py-2.5 rounded-btn border border-default bg-inset-2 hover:border-accent cursor-pointer transition-colors text-left"
   >
     <span className="flex-shrink-0 w-7 h-7 rounded-lg bg-surface-2 text-content-secondary flex items-center justify-center text-xs font-bold">
       {(localizedLabel(provider.label) || provider.id || '?').slice(0, 1).toUpperCase()}
@@ -515,7 +535,10 @@ const CustomProviderModal: React.FC<{
         api_base: apiBase.trim(),
       }
       if (editing) payload.id = editing.custom_id
-      if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
+      // The custom provider key is optional. Only touch it when the user
+      // edited the field (keyDirty) and it isn't the masked placeholder; send
+      // the value even when empty so an explicit clear is honored server-side.
+      if (keyDirty && !MASK_RE.test(apiKey)) payload.api_key = apiKey.trim()
       await apiClient.modelsAction(payload)
       await onSaved()
       onClose()

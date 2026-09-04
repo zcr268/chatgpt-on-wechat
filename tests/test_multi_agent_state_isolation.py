@@ -192,6 +192,127 @@ def test_tool_manager_instance_is_per_workspace(mcp_workspaces):
     assert research._mcp_json_path().endswith("research/mcp.json")
 
 
+def test_agents_sharing_one_mcp_json_boot_each_server_once(isolated_registry, monkeypatch):
+    """When several Agents resolve to the same shared mcp.json, the same server
+    must not be forked once per Agent — they attach to one pooled subprocess."""
+    import json
+
+    from agent.tools.tool_manager import ToolManager
+    from agent.tools.mcp import mcp_client as mcp_mod
+    from agent.tools.mcp.mcp_client import McpClientRegistry
+
+    # Only the default (primary) Agent has an mcp.json; the others share it.
+    primary_ws = Path(isolated_registry.get("primary").workspace)
+    primary_ws.mkdir(parents=True, exist_ok=True)
+    (primary_ws / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"shared-server": {"command": "true"}}})
+    )
+
+    booted = {"count": 0}
+
+    class _FakeClient:
+        def __init__(self, cfg):
+            booted["count"] += 1
+            self.name = cfg.get("name", "")
+            self._proc = SimpleNamespace(poll=lambda: None)
+
+        def initialize(self):
+            return True
+
+        def list_tools(self):
+            return [{"name": f"{self.name}__ping"}]
+
+        def shutdown(self):
+            pass
+
+    monkeypatch.setattr(mcp_mod, "McpClient", _FakeClient)
+    # Reuse should key on the resolved shared mcp.json, not the Agent workspace.
+    monkeypatch.setattr(
+        "agent.tools.tool_manager.threading.Thread",
+        lambda target, args=(), **kwargs: SimpleNamespace(start=lambda: target(*args)),
+    )
+
+    # Fresh process-wide pool for a deterministic count.
+    McpClientRegistry()._shared_pool.clear()
+    ToolManager.reset_instances()
+    try:
+        for agent_id in ("primary", "research"):
+            with identity_scope(agent_id=agent_id):
+                tm = ToolManager()
+                tm._load_mcp_tools_async(tm._load_mcp_configs())
+        assert booted["count"] == 1
+    finally:
+        McpClientRegistry()._shared_pool.clear()
+        ToolManager.reset_instances()
+
+
+def test_concurrent_loaders_boot_a_shared_server_once(isolated_registry, monkeypatch):
+    """The real regression: each Agent's loader runs on its own thread, so two
+    threads can miss the pool for the same server at the same instant. Only one
+    must fork the subprocess; the other has to wait and reuse it."""
+    import json
+    import threading
+    import time
+
+    from agent.tools.tool_manager import ToolManager
+    from agent.tools.mcp import mcp_client as mcp_mod
+    from agent.tools.mcp.mcp_client import McpClientRegistry
+
+    primary_ws = Path(isolated_registry.get("primary").workspace)
+    primary_ws.mkdir(parents=True, exist_ok=True)
+    (primary_ws / "mcp.json").write_text(
+        json.dumps({"mcpServers": {"shared-server": {"command": "true"}}})
+    )
+
+    booted = {"count": 0}
+    booted_lock = threading.Lock()
+
+    class _FakeClient:
+        def __init__(self, cfg):
+            with booted_lock:
+                booted["count"] += 1
+            self.name = cfg.get("name", "")
+            self._proc = SimpleNamespace(poll=lambda: None)
+
+        def initialize(self):
+            # Simulate a slow fork/handshake to widen the race window.
+            time.sleep(0.05)
+            return True
+
+        def list_tools(self):
+            return [{"name": f"{self.name}__ping"}]
+
+        def shutdown(self):
+            pass
+
+    monkeypatch.setattr(mcp_mod, "McpClient", _FakeClient)
+
+    McpClientRegistry()._shared_pool.clear()
+    McpClientRegistry()._boot_locks.clear()
+    ToolManager.reset_instances()
+
+    barrier = threading.Barrier(2)
+
+    def _run(agent_id):
+        with identity_scope(agent_id=agent_id):
+            tm = ToolManager()
+            configs = tm._load_mcp_configs()
+        barrier.wait()
+        tm._load_mcp_tools_async(configs)
+
+    threads = [threading.Thread(target=_run, args=(a,)) for a in ("primary", "research")]
+    try:
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        assert booted["count"] == 1
+    finally:
+        McpClientRegistry()._shared_pool.clear()
+        McpClientRegistry()._boot_locks.clear()
+        ToolManager.reset_instances()
+
+
 def test_mcp_path_stays_put_when_the_ambient_identity_is_gone(mcp_workspaces):
     """The MCP loader and hot-reload run on threads that carry no identity;
     the instance has to remember which workspace it belongs to."""

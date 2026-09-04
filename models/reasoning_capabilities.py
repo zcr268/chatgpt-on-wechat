@@ -18,6 +18,7 @@ DASHSCOPE_HIGH_MAX_VALUES = ["high", "max"]
 DASHSCOPE_MAX_ONLY_VALUES = ["max"]
 KIMI_K3_VALUES = ["low", "high", "max"]
 CLAUDE_XHIGH_MODELS = (
+    "claude-fable-5-1",
     "claude-fable-5",
     "claude-mythos-5",
     "claude-opus-5",
@@ -32,9 +33,10 @@ CLAUDE_MAX_ONLY_MODELS = (
     "claude-opus-4-5",
 )
 DASHSCOPE_QWEN38_MODELS = (
-    # qwen3.8-max and its -preview snapshot share the low/medium/xhigh enum
-    # (default xhigh) and always think.
+    # qwen3.8-max/-flash and their -preview snapshots share the low/medium/xhigh
+    # enum (default xhigh) and always think.
     "qwen3.8-max",
+    "qwen3.8-flash",
 )
 DASHSCOPE_HIGH_MAX_MODELS = (
     "glm-5.2",

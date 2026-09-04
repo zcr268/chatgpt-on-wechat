@@ -75,7 +75,7 @@ class TelegramChannel(ChatChannel):
     # ------------------------------------------------------------------
 
     def startup(self):
-        self.bot_token = conf().get("telegram_token", "")
+        self.bot_token = self.cfg("telegram_token", "")
         if not self.bot_token:
             err = "[Telegram] telegram_token is required"
             logger.error(err)
@@ -264,8 +264,7 @@ class TelegramChannel(ChatChannel):
             from bridge.bridge import Bridge
             agent_bridge = Bridge().get_agent_bridge()
             agent_id = agent_bridge.agent_router.resolve(
-                channel_type=self.channel_type,
-                conversation_ids=(session_id, str(update.effective_chat.id)),
+                explicit_agent_id=getattr(self, "bound_agent_id", "") or None,
             )
             scoped_session_id = agent_bridge._cancel_key(
                 agent_id, session_id, agent_bridge.agent_registry.default_agent_id
@@ -385,6 +384,8 @@ class TelegramChannel(ChatChannel):
                 context["receiver"] = str(chat.id)
                 context["telegram_chat_id"] = chat.id
                 context["telegram_reply_to_msg_id"] = message.message_id if is_group else None
+                from agent.team_addressing import stamp_speaker_from_channel
+                stamp_speaker_from_channel(self, context, tg_msg.content)
                 self.produce(context)
             logger.debug(f"[Telegram] received: type={ctype}, content={str(tg_msg.content)[:80]}")
 
@@ -522,6 +523,7 @@ class TelegramChannel(ChatChannel):
         context.kwargs = kwargs
         if "channel_type" not in context:
             context["channel_type"] = self.channel_type
+        self.stamp_instance_context(context)
         if "origin_ctype" not in context:
             context["origin_ctype"] = ctype
 

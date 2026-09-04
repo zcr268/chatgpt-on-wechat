@@ -81,9 +81,8 @@ class Agent:
             else:
                 # Auto-create skill manager
                 try:
-                    from agent.skills import SkillManager
-                    custom_dir = os.path.join(workspace_dir, "skills") if workspace_dir else None
-                    self.skill_manager = SkillManager(custom_dir=custom_dir)
+                    from agent.skills import build_skill_manager
+                    self.skill_manager = build_skill_manager(workspace_dir=workspace_dir)
                     logger.debug(f"Initialized SkillManager with {len(self.skill_manager.skills)} skills")
                 except Exception as e:
                     logger.warning(f"Failed to initialize SkillManager: {e}")
@@ -307,6 +306,18 @@ class Agent:
                     return 2000000  # Gemini 2.0: 2M tokens
                 else:
                     return 1000000  # Gemini 1.5: 1M tokens
+
+            # GLM: 5.3 Flash ships a 1M window; older glm-5.x is 200K.
+            elif 'glm' in model_name:
+                if model_name.startswith('glm-5.3-flash'):
+                    return 1000000
+                return 200000
+
+            # Qwen: 3.8 Flash ships a 1M window; keep others conservative.
+            elif 'qwen' in model_name:
+                if model_name.startswith('qwen3.8-flash'):
+                    return 1000000
+                return 128000
 
         # Default conservative value
         return 128000

@@ -30,6 +30,7 @@ CLAUDE_35_SONNET = "claude-3-5-sonnet-latest"  # "latest" tag always points to t
 CLAUDE_35_SONNET_1022 = "claude-3-5-sonnet-20241022"  # dated name pinned to a specific release
 CLAUDE_35_SONNET_0620 = "claude-3-5-sonnet-20240620"
 CLAUDE_4_OPUS = "claude-opus-4-0"
+CLAUDE_FABLE_5_1 = "claude-fable-5-1"    # Claude Fable 5.1 - alternative Claude 5 flagship
 CLAUDE_FABLE_5 = "claude-fable-5"        # Claude Fable 5 - alternative Claude 5 flagship
 CLAUDE_4_8_OPUS = "claude-opus-4-8"      # Claude Opus 4.8 - Agent recommended model
 CLAUDE_4_7_OPUS = "claude-opus-4-7"      # Claude Opus 4.7
@@ -97,6 +98,7 @@ DEEPSEEK_CHAT = "deepseek-chat"  # DeepSeek-V3 chat model
 DEEPSEEK_REASONER = "deepseek-reasoner"  # DeepSeek-R1 model
 DEEPSEEK_V4_FLASH = "deepseek-v4-flash"  # DeepSeek V4 Flash - default recommendation (thinking + tool calls)
 DEEPSEEK_V4_PRO = "deepseek-v4-pro"  # DeepSeek V4 Pro - stronger on complex tasks (thinking + tool calls)
+DEEPSEEK_V4_FLASH_VISION_EXP = "deepseek-v4-flash-vision-exp"  # DeepSeek V4 Flash vision (experimental, multimodal)
 
 # Baidu Qianfan / ERNIE
 ERNIE_5_1 = "ernie-5.1"  # ERNIE 5.1 - default recommendation, latest flagship
@@ -119,6 +121,7 @@ QWEN36_PLUS = "qwen3.6-plus"  # Qwen3.6 Plus - Omni model (MultiModalConversatio
 QWEN37_PLUS = "qwen3.7-plus"  # Qwen3.7 Plus - Omni model (MultiModalConversation)
 QWEN37_MAX = "qwen3.7-max"  # Qwen3.7 Max - Agent recommended model
 QWEN38_MAX = "qwen3.8-max"  # Qwen3.8 Max - native effort model (multimodal endpoint)
+QWEN38_FLASH = "qwen3.8-flash"  # Qwen3.8 Flash - Agent recommended model (default), 1M context / 128K output (MultiModalConversation)
 QWQ_PLUS = "qwq-plus"
 
 # MiniMax
@@ -129,7 +132,8 @@ MINIMAX_TEXT_01 = "MiniMax-Text-01"  # MiniMax multimodal (vision)
 MINIMAX_ABAB6_5 = "abab6.5-chat"  # MiniMax abab6.5
 
 # GLM (Zhipu AI)
-GLM_5_3 = "glm-5.3"  # GLM-5.3 - Agent recommended model (default)
+GLM_5_3_FLASH = "glm-5.3-flash"  # GLM-5.3 Flash - Agent recommended model (default), 1M context / 128K output
+GLM_5_3 = "glm-5.3"  # GLM-5.3 - Agent recommended model
 GLM_5_2 = "glm-5.2"  # GLM-5.2
 GLM_5_1 = "glm-5.1"  # GLM-5.1
 GLM_5_TURBO = "glm-5-turbo"  # GLM-5-Turbo
@@ -209,7 +213,7 @@ MODEL_LIST = [
               MIMO, MIMO_V2_5_PRO, MIMO_V2_5, MIMO_V2_PRO, MIMO_V2_OMNI, MIMO_V2_FLASH,
 
               # Claude
-              CLAUDE_OPUS_5, CLAUDE_SONNET_5, CLAUDE_FABLE_5, CLAUDE3, CLAUDE_4_8_OPUS, CLAUDE_4_7_OPUS, CLAUDE_4_6_SONNET, CLAUDE_4_6_OPUS, CLAUDE_4_OPUS, CLAUDE_4_5_SONNET, CLAUDE_4_SONNET, CLAUDE_3_OPUS, CLAUDE_3_OPUS_0229,
+              CLAUDE_OPUS_5, CLAUDE_SONNET_5, CLAUDE_FABLE_5_1, CLAUDE_FABLE_5, CLAUDE3, CLAUDE_4_8_OPUS, CLAUDE_4_7_OPUS, CLAUDE_4_6_SONNET, CLAUDE_4_6_OPUS, CLAUDE_4_OPUS, CLAUDE_4_5_SONNET, CLAUDE_4_SONNET, CLAUDE_3_OPUS, CLAUDE_3_OPUS_0229,
               CLAUDE_35_SONNET, CLAUDE_35_SONNET_1022, CLAUDE_35_SONNET_0620, CLAUDE_3_SONNET, CLAUDE_3_HAIKU,
               "claude", "claude-3-haiku", "claude-3-sonnet", "claude-3-opus", "claude-3.5-sonnet",
 
@@ -229,11 +233,11 @@ MODEL_LIST = [
               O1, O1_MINI,
 
               # GLM (Zhipu AI)
-              ZHIPU_AI, GLM_5_3, GLM_5_2, GLM_5_1, GLM_5_TURBO, GLM_5, GLM_4, GLM_4_PLUS, GLM_4_flash, GLM_4_LONG, GLM_4_ALLTOOLS,
+              ZHIPU_AI, GLM_5_3_FLASH, GLM_5_3, GLM_5_2, GLM_5_1, GLM_5_TURBO, GLM_5, GLM_4, GLM_4_PLUS, GLM_4_flash, GLM_4_LONG, GLM_4_ALLTOOLS,
               GLM_4_0520, GLM_4_AIR, GLM_4_AIRX, GLM_4_7,
 
               # Qwen
-              QWEN37_PLUS, QWEN37_MAX, QWEN38_MAX, QWEN36_PLUS, QWEN35_PLUS, QWEN3_MAX, QWEN_MAX, QWEN_PLUS, QWEN_TURBO, QWEN_LONG,
+              QWEN38_FLASH, QWEN37_PLUS, QWEN37_MAX, QWEN38_MAX, QWEN36_PLUS, QWEN35_PLUS, QWEN3_MAX, QWEN_MAX, QWEN_PLUS, QWEN_TURBO, QWEN_LONG,
 
               # Doubao
               DOUBAO, DOUBAO_SEED_2_1_PRO, DOUBAO_SEED_2_1_TURBO,
