@@ -693,6 +693,21 @@ class AgentStreamExecutor:
         final_response = ""
         turn = 0
 
+        # Respect a run id an outer scope already set (a subagent spawn or a
+        # delegated task passes one down); only mint a fresh one when this turn
+        # is the top of its own run. Writing through set_agent_run_id keeps the
+        # outbound header-tagging path and RuntimeIdentity on the same id.
+        import uuid as _uuid
+        from common.utils import set_agent_run_id, clear_agent_run_id, current_agent_run_id
+        # Captured before minting: once this run sets its own id, nothing
+        # downstream can tell whether it was nested. A sub agent inherits the
+        # parent's run id through identity_scope, so an id already being
+        # present is exactly what "nested" means.
+        _nested_run = bool(current_agent_run_id())
+        _run_token = None
+        if not _nested_run:
+            _run_token = set_agent_run_id(_uuid.uuid4().hex)
+
         # Reset any fallback routing left over from a *previous* run: a new user
         # message always starts fresh on the primary model. Within this run the
         # fallback is deliberately sticky — once the primary has failed a turn
@@ -701,17 +716,14 @@ class AgentStreamExecutor:
         # outage — dead key, IP block, regional downtime — would otherwise burn
         # one wasted primary call per step). The primary gets a fresh chance on
         # the next user message.
-        self._reset_model_fallback()
+        #
+        # Must run *after* the run id above, not before: the reset is a no-op
+        # for a nested run (see _reset_model_fallback), and only the id tells
+        # the two apart. A nested run keeps the parent's fallback engaged — the
+        # sub agent is running inside the same outage and should inherit the
+        # backup rather than start over on the provider that just failed.
+        self._reset_model_fallback(nested_run=_nested_run)
 
-        # Respect a run id an outer scope already set (a subagent spawn or a
-        # delegated task passes one down); only mint a fresh one when this turn
-        # is the top of its own run. Writing through set_agent_run_id keeps the
-        # outbound header-tagging path and RuntimeIdentity on the same id.
-        import uuid as _uuid
-        from common.utils import set_agent_run_id, clear_agent_run_id, current_agent_run_id
-        _run_token = None
-        if not current_agent_run_id():
-            _run_token = set_agent_run_id(_uuid.uuid4().hex)
         cancelled = False
         try:
             while turn < self.max_turns:
@@ -1154,12 +1166,25 @@ class AgentStreamExecutor:
             logger.debug(f"[ToolRetrieval] full injection (retrieval skipped): {e}")
             return all_tools
 
-    def _reset_model_fallback(self) -> None:
+    def _reset_model_fallback(self, nested_run: bool = False) -> None:
         """Drop any fallback routing so the next call uses the primary model.
 
+        ``nested_run`` marks a run that inherited its run id from an outer
+        scope — a sub agent spawn or a delegated task. Those must leave the
+        parent's routing alone: a sub agent is built with the parent's *same*
+        model object, so resetting here would clear the fallback the parent is
+        mid-way through relying on and send both of them back to the provider
+        that just failed.
+
         Fallback is opt-in and this is a no-op on models that don't support it,
-        so it is safe to call unconditionally at the top of every turn.
+        so it is safe to call unconditionally at the top of a run.
         """
+        # The caller captures this *before* minting its own run id — once that
+        # id is set, nothing downstream can tell a nested run from a top-level
+        # one, so the distinction has to be passed in.
+        if nested_run:
+            return
+
         model = getattr(self, "model", None)
         reset = getattr(model, "reset_fallback", None)
         if not callable(reset):
