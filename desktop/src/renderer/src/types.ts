@@ -587,6 +587,22 @@ export interface CapabilityState {
   [k: string]: unknown
 }
 
+/** Backup chat model, tried only after the primary one fails a turn. */
+export interface ChatFallbackCapabilityState {
+  editable?: boolean
+  /** Opt-in: when false the fallback never engages. */
+  enabled?: boolean
+  current_provider?: string
+  current_model?: string
+  providers?: string[]
+  provider_models?: Record<string, ModelEntry[]>
+  /** How many times a single turn may switch; guards against ping-pong. */
+  max_switches?: number
+  /** The primary model, shown so the user sees what is being backed up. */
+  primary_provider?: string
+  primary_model?: string
+}
+
 export interface SearchCapabilityState {
   editable?: boolean
   providers: SearchProviderMeta[]
@@ -602,6 +618,7 @@ export interface ModelsData {
   providers: ModelProvider[]
   capabilities: {
     chat: CapabilityState
+    chat_fallback?: ChatFallbackCapabilityState
     vision: CapabilityState
     asr: CapabilityState
     tts: CapabilityState
@@ -618,7 +635,10 @@ export type ModelsAction =
   | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
-  | { action: 'set_capability'; capability: CapabilityKey; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string }
+  // `chat_fallback` is not a first-class CapabilityKey (it has no top-level
+  // card), but it is persisted through the same set_capability action, so it
+  // is accepted here alongside its opt-in fields.
+  | { action: 'set_capability'; capability: CapabilityKey | 'chat_fallback'; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string; enabled?: boolean; max_switches?: number }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   | { action: 'set_search_credential'; api_key: string }
 

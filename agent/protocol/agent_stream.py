@@ -693,6 +693,16 @@ class AgentStreamExecutor:
         final_response = ""
         turn = 0
 
+        # Reset any fallback routing left over from a *previous* run: a new user
+        # message always starts fresh on the primary model. Within this run the
+        # fallback is deliberately sticky — once the primary has failed a turn
+        # for good we stay on the backup for the remaining steps instead of
+        # re-hitting a provider we already know is down every step (a sustained
+        # outage — dead key, IP block, regional downtime — would otherwise burn
+        # one wasted primary call per step). The primary gets a fresh chance on
+        # the next user message.
+        self._reset_model_fallback()
+
         # Respect a run id an outer scope already set (a subagent spawn or a
         # delegated task passes one down); only mint a fresh one when this turn
         # is the top of its own run. Writing through set_agent_run_id keeps the
@@ -1144,6 +1154,44 @@ class AgentStreamExecutor:
             logger.debug(f"[ToolRetrieval] full injection (retrieval skipped): {e}")
             return all_tools
 
+    def _reset_model_fallback(self) -> None:
+        """Drop any fallback routing so the next call uses the primary model.
+
+        Fallback is opt-in and this is a no-op on models that don't support it,
+        so it is safe to call unconditionally at the top of every turn.
+        """
+        model = getattr(self, "model", None)
+        reset = getattr(model, "reset_fallback", None)
+        if not callable(reset):
+            return
+        try:
+            reset()
+        except Exception as e:
+            logger.debug(f"[Agent] fallback reset skipped: {e}")
+
+    def _switch_to_fallback(self, fallback_reason: str = "") -> bool:
+        """Try to reroute the rest of this turn onto the configured fallback.
+
+        Returns True only when the switch actually happened, so the caller can
+        retry the turn on the new model. Every guard lives in
+        ``AgentLLMModel.use_fallback``; this wrapper only covers the cases
+        where there is no such model to ask (tests pass doubles, and the
+        fallback is opt-in so a plain LLMModel simply has no support for it).
+
+        Context-overflow and message-format errors are deliberately NOT
+        candidates: they are caused by the conversation, not the provider, and
+        the recovery paths above already rewrite the history for them.
+        """
+        model = getattr(self, "model", None)
+        use_fallback = getattr(model, "use_fallback", None)
+        if not callable(use_fallback):
+            return False
+        try:
+            return bool(use_fallback())
+        except Exception as e:
+            logger.warning(f"[Agent] chat fallback unavailable: {e}")
+            return False
+
     def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=3,
                          _overflow_stage: int = 0) -> Tuple[str, List[Dict], Optional[str]]:
         """
@@ -1462,12 +1510,27 @@ class AgentStreamExecutor:
                     retry_count=retry_count + 1,
                     max_retries=max_retries
                 )
+
+            # Retries are exhausted (or the error was never retryable). Before
+            # surfacing the failure, try the configured fallback model once —
+            # a provider-wide outage is exactly what retrying the same endpoint
+            # can never fix.
+            if self._switch_to_fallback(fallback_reason=error_str):
+                self._emit_event("model_fallback", {
+                    "reason": error_str,
+                    "model": getattr(self.model, "model", ""),
+                })
+                return self._call_llm_stream(
+                    retry_on_empty=retry_on_empty,
+                    retry_count=0,          # fresh attempt on the new model
+                    max_retries=max_retries,
+                )
+
+            if retry_count >= max_retries:
+                logger.error(f"❌ LLM API error after {max_retries} retries: {e}", exc_info=True)
             else:
-                if retry_count >= max_retries:
-                    logger.error(f"❌ LLM API error after {max_retries} retries: {e}", exc_info=True)
-                else:
-                    logger.error(f"❌ LLM call error (non-retryable): {e}", exc_info=True)
-                raise
+                logger.error(f"❌ LLM call error (non-retryable): {e}", exc_info=True)
+            raise
 
         # Parse tool calls
         tool_calls = []

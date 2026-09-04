@@ -3620,6 +3620,56 @@ class ModelsHandler:
             "use_linkai": bool(local_config.get("use_linkai", False)),
         }
 
+    @staticmethod
+    def _chat_provider_models() -> dict:
+        """{provider_id: [model, ...]} for every chat-capable vendor.
+
+        ``ConfigHandler.PROVIDER_MODELS`` carries per-vendor metadata
+        (label, api_key_field, ...) around the model list; the console's model
+        picker wants only the lists. Kept as its own helper so the two chat
+        cards can never drift apart.
+        """
+        out = {}
+        for pid, meta in ConfigHandler.PROVIDER_MODELS.items():
+            models = (meta or {}).get("models")
+            out[pid] = list(models) if isinstance(models, (list, tuple)) else []
+        return out
+
+    @classmethod
+    def _chat_fallback_capability(cls, local_config: dict) -> dict:
+        """The backup chat model, tried only after the primary one fails.
+
+        Deliberately separate from ``_chat_capability``: the primary model is
+        the one that answers, while this is a safety net that stays idle until
+        an outage. It is opt-in (``enabled`` defaults to false) and needs both
+        a provider and a model — a half-filled entry is treated as "off" so a
+        partially configured fallback can never hijack a healthy setup.
+        """
+        cfg = local_config.get("chat_fallback") or {}
+        if not isinstance(cfg, dict):
+            cfg = {}
+        provider_id = (cfg.get("provider") or "").strip()
+        model = (cfg.get("model") or "").strip()
+        # Same provider list as the primary chat card, so the two dropdowns
+        # always offer identical choices (including expanded custom:<id>).
+        primary = cls._chat_capability(local_config)
+        return {
+            "editable": True,
+            "enabled": bool(cfg.get("enabled", False)),
+            "current_provider": provider_id,
+            "current_model": model,
+            "providers": primary.get("providers", []),
+            # The model picker expects {provider_id: [models]}. PROVIDER_MODELS
+            # is richer ({provider_id: {label, models, ...}}), so reduce it to
+            # just the lists — handing over the raw dict makes the web console
+            # call .slice() on a mapping and throw.
+            "provider_models": cls._chat_provider_models(),
+            "max_switches": cfg.get("max_switches", 1),
+            # Shown in the UI so it's obvious the fallback is inactive.
+            "primary_provider": primary.get("current_provider", ""),
+            "primary_model": primary.get("current_model", ""),
+        }
+
     # Auto-fallback order for vision when no explicit model is pinned.
     # Mirrors agent/tools/vision/vision.py::_resolve_providers — DeepSeek and
     # other text-only chat bots are intentionally absent, since they cannot
@@ -4079,6 +4129,7 @@ class ModelsHandler:
     def _capabilities(cls, local_config: dict) -> dict:
         return {
             "chat":      cls._chat_capability(local_config),
+            "chat_fallback": cls._chat_fallback_capability(local_config),
             "vision":    cls._vision_capability(local_config),
             "asr":       cls._asr_capability(local_config),
             "tts":       cls._tts_capability(local_config),
@@ -4416,6 +4467,13 @@ class ModelsHandler:
 
         if capability == "chat":
             return self._set_chat(provider_id, model)
+        if capability == "chat_fallback":
+            return self._set_chat_fallback(
+                provider_id,
+                model,
+                bool(data.get("enabled")),
+                data.get("max_switches"),
+            )
         if capability == "vision":
             return self._set_vision(provider_id, model)
         if capability == "asr":
@@ -4558,6 +4616,61 @@ class ModelsHandler:
         logger.info(f"[ModelsHandler] chat updated: {applied}")
         self._reset_bridge()
         return json.dumps({"status": "success", "applied": applied})
+
+    def _set_chat_fallback(self, provider_id: str, model: str, enabled: bool,
+                           max_switches=None) -> str:
+        """Persist the backup chat model under ``chat_fallback``.
+
+        Validation mirrors ``_set_chat`` (custom:<id> ids included), with two
+        differences: the entry is opt-in via ``enabled``, and turning it on
+        requires both a provider and a model so a half-configured fallback can
+        never hijack a healthy primary model.
+        """
+        custom_provider = None
+        if provider_id.startswith("custom:"):
+            from models.custom_provider import parse_custom_bot_type
+            _, custom_id = parse_custom_bot_type(provider_id)
+            providers = self._normalize_custom_providers(conf().get("custom_providers"))
+            custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
+            if custom_provider is None:
+                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
+        elif provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
+            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+
+        # Fall back to the custom provider's default model when none is given.
+        if not model and custom_provider:
+            model = custom_provider.get("model") or ""
+
+        # Enabling is all-or-nothing; disabling is always allowed (it is the
+        # safe direction, and lets a user clear a broken entry).
+        if enabled and (not provider_id or not model):
+            return json.dumps({
+                "status": "error",
+                "message": "both a provider and a model are required to enable the fallback",
+            })
+
+        try:
+            switches = int(max_switches) if max_switches is not None else 1
+        except (TypeError, ValueError):
+            switches = 1
+        # At least one switch, or the fallback could never engage at all.
+        switches = max(1, min(switches, 5))
+
+        local_config = conf()
+        file_cfg = self._read_file_config()
+        payload = {
+            "enabled": bool(enabled),
+            "provider": provider_id or "",
+            "model": model or "",
+            "max_switches": switches,
+        }
+        # Written as a whole so a stale key from an older shape can't survive.
+        local_config["chat_fallback"] = dict(payload)
+        file_cfg["chat_fallback"] = dict(payload)
+        self._write_file_config(file_cfg)
+
+        logger.info(f"[ModelsHandler] chat fallback updated: {payload}")
+        return json.dumps({"status": "success", "applied": payload})
 
     def _set_vision(self, provider_id: str, model: str) -> str:
         # Source of truth: tools.vision.{provider, model}. The provider field

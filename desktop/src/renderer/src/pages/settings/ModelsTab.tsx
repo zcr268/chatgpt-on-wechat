@@ -20,6 +20,7 @@ import apiClient from '../../api/client'
 import type { CapabilityState, ModelsData, ModelProvider, SearchCapabilityState } from '../../types'
 import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
 import CapabilityCard from './CapabilityCard'
+import { ChatFallbackButton } from './ChatFallbackCard'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
@@ -115,7 +116,8 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
     <div className="grid gap-5">
       <VendorSection data={data} onChanged={load} statusMap={statusMap} flash={flash} />
 
-      {/* Chat */}
+      {/* Chat — the fallback is a small button on this card's header rather
+          than a separate card, since it's a rarely-touched safety net. */}
       <CapabilityCard
         icon={MessageSquare}
         title={t('models_cap_chat')}
@@ -127,6 +129,24 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
         busy={busy === 'chat'}
         status={statusMap.chat}
         onSave={(p, m) => run('chat', { action: 'set_capability', capability: 'chat', provider_id: p, model: m })}
+        action={
+          <ChatFallbackButton
+            state={caps.chat_fallback}
+            data={data}
+            busy={busy === 'chat_fallback'}
+            status={statusMap.chat_fallback}
+            onSave={({ providerId, model, enabled, maxSwitches }) =>
+              run('chat_fallback', {
+                action: 'set_capability',
+                capability: 'chat_fallback',
+                provider_id: providerId,
+                model,
+                enabled,
+                max_switches: maxSwitches,
+              })
+            }
+          />
+        }
       />
 
       {/* Vision */}
