@@ -940,6 +940,26 @@ class MemoryStorage:
                 self.conn.rollback()
                 raise
 
+    # --- _meta: internal key-value flags (e.g. chunker_version) -----------
+    def get_meta(self, key: str) -> Optional[str]:
+        """Read a persistent flag from the _meta table, or None if unset."""
+        try:
+            row = self.conn.execute(
+                "SELECT value FROM _meta WHERE key = ?", (key,)
+            ).fetchone()
+        except Exception:
+            return None
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: str) -> None:
+        """Write a persistent flag to the _meta table."""
+        with self._lock:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO _meta(key, value) VALUES(?, ?)",
+                (key, str(value)),
+            )
+            self.conn.commit()
+
     def get_file_hash(self, path: str) -> Optional[str]:
         """Get stored file hash"""
         row = self.conn.execute("""
