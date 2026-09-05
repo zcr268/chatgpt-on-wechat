@@ -139,6 +139,13 @@ class TextChunker:
     MD_CHUNK_TARGET = 1500   # char soft ceiling per chunk
     MD_FRAGMENT_MAX = 400    # a trailing block <= this folds into the previous
 
+    # Bump whenever chunk_markdown()'s strategy changes in a way that alters
+    # existing chunk boundaries. Used to tell an already-built index apart from
+    # one produced by the current algorithm (see detect_chunker_version), so
+    # /memory status can suggest a rebuild instead of silently keeping stale
+    # boundaries forever (file hashes do not change when only the chunker does).
+    CHUNKER_VERSION = 1
+
     def chunk_markdown(self, text: str) -> List[TextChunk]:
         """Chunk a markdown file while respecting its heading structure.
 

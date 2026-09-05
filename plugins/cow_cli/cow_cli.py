@@ -1530,7 +1530,7 @@ class CowCliPlugin(Plugin):
 
     def _memory_status(self) -> str:
         """Show current memory index status."""
-        from agent.memory.embedding import detect_index_dim
+        from agent.memory.embedding import detect_index_dim, detect_chunker_version
         from config import conf
 
         agent = self._get_agent("")
@@ -1580,6 +1580,18 @@ class CowCliPlugin(Plugin):
                 warnings.append(_t(
                     f"  ⚠️ 索引中存量向量为 {index_dim} 维，与当前配置 {cfg_dim} 维不一致；运行 /memory rebuild-index 重建后向量检索才会生效",
                     f"  ⚠️ Existing vectors are {index_dim}-dim, mismatching the current {cfg_dim}-dim config; run /memory rebuild-index to make vector search work",
+                ))
+
+            # Index predates (or doesn't match) the current chunker. Chunked
+            # files only re-split when their content hash changes, so a chunker
+            # upgrade alone never refreshes old boundaries — suggest a rebuild.
+            # This is only a hint: rebuild re-embeds everything and is costly,
+            # so the user decides.
+            from agent.memory.chunker import TextChunker
+            if detect_chunker_version(memory_manager.storage) != TextChunker.CHUNKER_VERSION:
+                warnings.append(_t(
+                    "  ⚠️ 索引由旧版切分算法生成；建议运行 /memory rebuild-index 以按标题更精准地切分记忆（重建成本较高，由你决定）",
+                    "  ⚠️ Index was built by an older chunking strategy; consider running /memory rebuild-index for heading-aware chunking (a rebuild re-embeds everything, so it's your call)",
                 ))
 
         if warnings:
