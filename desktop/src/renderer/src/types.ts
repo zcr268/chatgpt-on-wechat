@@ -632,17 +632,23 @@ export interface CapabilityState {
   [k: string]: unknown
 }
 
-/** Backup chat model, tried only after the primary one fails a turn. */
+/** One link in the fallback chain: tried after the one before it fails. */
+export interface ChatFallbackLink {
+  provider: string
+  model: string
+}
+
+/** Backup chat models, tried in order after the primary one fails a turn. */
 export interface ChatFallbackCapabilityState {
   editable?: boolean
   /** Opt-in: when false the fallback never engages. */
   enabled?: boolean
+  /** Ordered links; index 0 is tried first. Unbounded by design. */
+  chain?: ChatFallbackLink[]
   current_provider?: string
   current_model?: string
   providers?: string[]
   provider_models?: Record<string, ModelEntry[]>
-  /** How many times a single turn may switch; guards against ping-pong. */
-  max_switches?: number
   /** The primary model, shown so the user sees what is being backed up. */
   primary_provider?: string
   primary_model?: string
@@ -683,7 +689,7 @@ export type ModelsAction =
   // `chat_fallback` is not a first-class CapabilityKey (it has no top-level
   // card), but it is persisted through the same set_capability action, so it
   // is accepted here alongside its opt-in fields.
-  | { action: 'set_capability'; capability: CapabilityKey | 'chat_fallback'; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string; enabled?: boolean; max_switches?: number }
+  | { action: 'set_capability'; capability: CapabilityKey | 'chat_fallback'; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string; enabled?: boolean; chain?: ChatFallbackLink[] }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   // Dedicated search-provider credentials (bocha / anysearch / serply). The
   // provider field defaults to bocha server-side when omitted; anonymous is

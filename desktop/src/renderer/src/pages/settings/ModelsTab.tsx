@@ -141,14 +141,12 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
             data={data}
             busy={busy === 'chat_fallback'}
             status={statusMap.chat_fallback}
-            onSave={({ providerId, model, enabled, maxSwitches }) =>
+            onSave={({ enabled, chain }) =>
               run('chat_fallback', {
                 action: 'set_capability',
                 capability: 'chat_fallback',
-                provider_id: providerId,
-                model,
                 enabled,
-                max_switches: maxSwitches,
+                chain,
               })
             }
           />

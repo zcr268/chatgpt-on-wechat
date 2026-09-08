@@ -126,8 +126,17 @@ const I18N = {
         models_fallback_config: '兜底模型',
         models_fallback_config_tip: '配置主模型兜底：主模型彻底失败后接管',
         models_fallback_modal_title: '主模型兜底',
-        models_fallback_modal_desc: '当主模型重试次数用尽仍然失败时，自动切换到兜底模型完成本轮回复',
+        models_fallback_modal_desc: '当主模型重试次数用尽仍然失败时，按顺序尝试兜底链上的下一个模型，直到某个成功或全部失败',
         models_fallback_badge_on: '兜底已启用',
+        models_fallback_chain_title: '兜底链（按顺序尝试）',
+        models_fallback_chain_desc: '第 1 个失败就试第 2 个，依次推进；链越长，一轮可用的备选越多',
+        models_fallback_chain_add: '添加兜底模型',
+        models_fallback_chain_empty: '还没有兜底模型，点下方按钮添加一个',
+        models_fallback_chain_link: '兜底 {{n}}',
+        models_fallback_chain_move_up: '上移',
+        models_fallback_chain_move_down: '下移',
+        models_fallback_chain_remove: '移除',
+        models_fallback_chain_incomplete: '启用兜底至少需要一条完整的「厂商 + 模型」',
         models_capability_vision: '图像理解',
         models_capability_vision_desc: '识别图片内容，用于图像识别工具',
         models_capability_image: '图像生成',
@@ -614,8 +623,17 @@ const I18N = {
         models_fallback_config: '兜底模型',
         models_fallback_config_tip: '設定主模型兜底：主模型徹底失敗後接管',
         models_fallback_modal_title: '主模型兜底',
-        models_fallback_modal_desc: '當主模型重試次數用盡仍然失敗時，自動切換到兜底模型完成本輪回覆',
+        models_fallback_modal_desc: '當主模型重試次數用盡仍然失敗時，依序嘗試兜底鏈上的下一個模型，直到某個成功或全部失敗',
         models_fallback_badge_on: '兜底已啟用',
+        models_fallback_chain_title: '兜底鏈（依序嘗試）',
+        models_fallback_chain_desc: '第 1 個失敗就試第 2 個，依序推進；鏈越長，一輪可用的備選越多',
+        models_fallback_chain_add: '新增兜底模型',
+        models_fallback_chain_empty: '還沒有兜底模型，點下方按鈕新增一個',
+        models_fallback_chain_link: '兜底 {{n}}',
+        models_fallback_chain_move_up: '上移',
+        models_fallback_chain_move_down: '下移',
+        models_fallback_chain_remove: '移除',
+        models_fallback_chain_incomplete: '啟用兜底至少需要一條完整的「廠商 + 模型」',
         models_capability_vision: '影像理解',
         models_capability_vision_desc: '識別圖片內容，用於影像識別工具',
         models_capability_image: '影像生成',
@@ -1097,8 +1115,17 @@ const I18N = {
         models_fallback_config: 'Fallback',
         models_fallback_config_tip: 'Configure the main-model fallback (takes over after the main model fails)',
         models_fallback_modal_title: 'Main Model Fallback',
-        models_fallback_modal_desc: 'When the main model still fails after exhausting its retries, automatically switch to the fallback model to finish the reply.',
+        models_fallback_modal_desc: 'When the main model still fails after exhausting its retries, the next model in the fallback chain is tried in order until one succeeds or the chain runs out.',
         models_fallback_badge_on: 'Fallback on',
+        models_fallback_chain_title: 'Fallback chain (tried in order)',
+        models_fallback_chain_desc: 'If the first one fails, the second is tried, and so on — the longer the chain, the more backups a turn has',
+        models_fallback_chain_add: 'Add a fallback model',
+        models_fallback_chain_empty: 'No fallback models yet — add one below',
+        models_fallback_chain_link: 'Fallback {{n}}',
+        models_fallback_chain_move_up: 'Move up',
+        models_fallback_chain_move_down: 'Move down',
+        models_fallback_chain_remove: 'Remove',
+        models_fallback_chain_incomplete: 'Enabling the fallback needs at least one complete provider + model entry',
         models_capability_vision: 'Image Understanding',
         models_capability_vision_desc: 'Recognizes image content, used by image recognition tools',
         models_capability_image: 'Image Generation',
@@ -10701,6 +10728,239 @@ const CHAT_FALLBACK_DEF = {
     titleKey: 'models_fallback_modal_title', descKey: 'models_capability_chat_fallback_desc',
 };
 
+// ---------- Fallback chain editor -------------------------------------
+//
+// The fallback is an ordered list of provider+model links rather than a single
+// backup model, so the modal renders one row per link with up/down/remove
+// controls instead of a single provider + model pickers. Each row reuses the
+// same initDropdown machinery the capability cards use, keyed off
+// `fb-chain-<i>-*` so nothing collides with the shared capability ids.
+
+// Working copy of the chain while the modal is open. Persisting is a separate
+// act (Save), so a user can reorder freely and cancel without writing.
+let fallbackChainDraft = [];
+
+function _fallbackChainFromCapability() {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    if (Array.isArray(cap.chain) && cap.chain.length) {
+        return cap.chain.map(l => ({ provider: l.provider || '', model: l.model || '' }));
+    }
+    // Older backend (or a pre-chain config): a single backup model.
+    if (cap.current_provider || cap.current_model) {
+        return [{ provider: cap.current_provider || '', model: cap.current_model || '' }];
+    }
+    return [];
+}
+
+function _fallbackProviderOptions() {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const ids = (cap.providers && cap.providers.length)
+        ? cap.providers.slice()
+        : modelsState.providers.map(p => p.id);
+    const byId = {};
+    modelsState.providers.forEach(p => { byId[p.id] = p; });
+    return ids.map(pid => ({
+        value: pid,
+        label: (byId[pid] && localizedLabel(byId[pid].label)) || pid,
+    }));
+}
+
+// Model list for one row, mirroring rebuildCapabilityModelDropdown's
+// provider_models -> provider.models fallback.
+function _fallbackModelOptions(providerId) {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const map = cap.provider_models || {};
+    let raw = map[providerId];
+    if (!raw && providerId.startsWith('custom:') && map['custom']) raw = map['custom'];
+    if (!raw) {
+        const p = modelsState.providers.find(x => x.id === providerId);
+        raw = (p && p.models) ? p.models : [];
+    }
+    return raw.map(e => {
+        const v = (typeof e === 'string') ? e : e.value;
+        return { value: v, label: (typeof e === 'string') ? e : (e.label || v) };
+    });
+}
+
+function _readFallbackChainRow(i) {
+    const provDd = document.getElementById(`fb-chain-${i}-provider`);
+    const modelDd = document.getElementById(`fb-chain-${i}-model`);
+    const customInput = document.getElementById(`fb-chain-${i}-model-custom`);
+    let model = modelDd ? getDropdownValue(modelDd) : '';
+    if (model === '__custom__') model = customInput ? customInput.value.trim() : '';
+    return {
+        provider: provDd ? getDropdownValue(provDd) : '',
+        model: model,
+    };
+}
+
+function _syncFallbackChainDraft() {
+    // Pull every visible row into the draft so a reorder keeps the values the
+    // user has typed but not yet committed to it.
+    fallbackChainDraft = fallbackChainDraft.map((_, i) => {
+        if (!document.getElementById(`fb-chain-${i}-provider`)) return fallbackChainDraft[i];
+        return _readFallbackChainRow(i);
+    });
+}
+
+function addFallbackChainLink() {
+    _syncFallbackChainDraft();
+    // Seed a new row from the first provider with a model, so it is one click
+    // from usable instead of two.
+    const opts = _fallbackProviderOptions();
+    const first = opts[0];
+    const models = first && first.value ? _fallbackModelOptions(first.value) : [];
+    fallbackChainDraft.push({
+        provider: first ? first.value : '',
+        model: models.length ? models[0].value : '',
+    });
+    renderFallbackChainEditor();
+}
+
+function removeFallbackChainLink(i) {
+    _syncFallbackChainDraft();
+    fallbackChainDraft.splice(i, 1);
+    renderFallbackChainEditor();
+}
+
+function moveFallbackChainLink(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= fallbackChainDraft.length) return;
+    _syncFallbackChainDraft();
+    const tmp = fallbackChainDraft[i];
+    fallbackChainDraft[i] = fallbackChainDraft[j];
+    fallbackChainDraft[j] = tmp;
+    renderFallbackChainEditor();
+}
+
+function onFallbackChainProviderChange(i, providerId) {
+    // Keep the draft in sync, then rebuild just this row's model picker.
+    const modelDd = document.getElementById(`fb-chain-${i}-model`);
+    const customWrap = document.getElementById(`fb-chain-${i}-model-custom-wrap`);
+    const models = _fallbackModelOptions(providerId);
+    const opts = models.concat([{
+        value: '__custom__',
+        label: currentLang === 'zh' ? '自定义' : 'Custom',
+    }]);
+    if (modelDd) {
+        initDropdown(modelDd, opts, models.length ? models[0].value : '', (value) => {
+            if (!customWrap) return;
+            if (value === '__custom__') customWrap.classList.remove('hidden');
+            else customWrap.classList.add('hidden');
+        });
+    }
+    if (customWrap) customWrap.classList.add('hidden');
+}
+
+function renderFallbackChainEditor() {
+    const host = document.getElementById('fb-chain-list');
+    if (!host) return;
+    const rows = fallbackChainDraft;
+    if (!rows.length) {
+        host.innerHTML = `<p class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(t('models_fallback_chain_empty'))}</p>`;
+        return;
+    }
+    host.innerHTML = rows.map((link, i) => `
+        <div class="rounded-xl border border-slate-200 dark:border-white/10 p-3 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    ${escapeHtml(t('models_fallback_chain_link').replace('{{n}}', String(i + 1)))}
+                </span>
+                <div class="flex items-center gap-1">
+                    <button type="button" title="${escapeHtml(t('models_fallback_chain_move_up'))}"
+                            onclick="moveFallbackChainLink(${i}, -1)"
+                            ${i === 0 ? 'disabled' : ''}
+                            class="px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200
+                                   hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors
+                                   disabled:opacity-30 disabled:cursor-not-allowed">
+                        <i class="fas fa-arrow-up text-[11px]"></i>
+                    </button>
+                    <button type="button" title="${escapeHtml(t('models_fallback_chain_move_down'))}"
+                            onclick="moveFallbackChainLink(${i}, 1)"
+                            ${i === rows.length - 1 ? 'disabled' : ''}
+                            class="px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200
+                                   hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors
+                                   disabled:opacity-30 disabled:cursor-not-allowed">
+                        <i class="fas fa-arrow-down text-[11px]"></i>
+                    </button>
+                    <button type="button" title="${escapeHtml(t('models_fallback_chain_remove'))}"
+                            onclick="removeFallbackChainLink(${i})"
+                            class="px-1.5 py-1 rounded text-slate-400 hover:text-danger
+                                   hover:bg-danger/10 cursor-pointer transition-colors">
+                        <i class="fas fa-trash-can text-[11px]"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="fb-chain-${i}-provider" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+            <div id="fb-chain-${i}-model" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+            <div id="fb-chain-${i}-model-custom-wrap" class="hidden">
+                <input id="fb-chain-${i}-model-custom" type="text"
+                       class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                              bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                              focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                       placeholder="custom model name">
+            </div>
+        </div>`).join('');
+
+    rows.forEach((link, i) => {
+        const provDd = document.getElementById(`fb-chain-${i}-provider`);
+        if (provDd) {
+            initDropdown(provDd, _fallbackProviderOptions(), link.provider || '',
+                (value) => onFallbackChainProviderChange(i, value));
+        }
+        const models = _fallbackModelOptions(link.provider || '');
+        const inCatalog = models.some(o => o.value === link.model);
+        const modelDd = document.getElementById(`fb-chain-${i}-model`);
+        const customWrap = document.getElementById(`fb-chain-${i}-model-custom-wrap`);
+        const customInput = document.getElementById(`fb-chain-${i}-model-custom`);
+        if (modelDd) {
+            initDropdown(modelDd, models.concat([{
+                value: '__custom__',
+                label: currentLang === 'zh' ? '自定义' : 'Custom',
+            }]), inCatalog ? link.model : (link.model ? '__custom__' : ''), (value) => {
+                if (!customWrap) return;
+                if (value === '__custom__') customWrap.classList.remove('hidden');
+                else customWrap.classList.add('hidden');
+            });
+        }
+        if (!inCatalog && link.model) {
+            if (customWrap) customWrap.classList.remove('hidden');
+            if (customInput) customInput.value = link.model;
+        }
+    });
+}
+
+// Whether at least one row is usable — the backend rejects an empty chain
+// when the fallback is being enabled, so block Save here too.
+function fallbackChainIsComplete() {
+    _syncFallbackChainDraft();
+    return fallbackChainDraft.some(l => l.provider && l.model);
+}
+
+function refreshFallbackChainSaveState() {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const btn = document.getElementById('fb-chain-save');
+    const hint = document.getElementById('fb-chain-incomplete-hint');
+    if (!btn) return;
+    const needsChain = !!cap.enabled;
+    btn.disabled = needsChain && !fallbackChainIsComplete();
+    if (hint) {
+        hint.classList.toggle('hidden', !(needsChain && btn.disabled));
+    }
+}
+
 // Resolve a capability def by id. The chat fallback is intentionally absent
 // from MODELS_CAPABILITY_DEFS (it renders in a modal, not as a card), so the
 // shared save/toggle handlers look it up here too.
@@ -10711,6 +10971,11 @@ function capabilityDefById(capId) {
 
 function openChatFallbackModal() {
     closeChatFallbackModal(); // never stack two
+
+    // Read the capability *before* building the markup: the template below
+    // renders the toggle and the chain from it, so a `cap` declared after the
+    // innerHTML would still be in its temporal dead zone and throw.
+    const cap = modelsState.capabilities.chat_fallback || {};
 
     const overlay = document.createElement('div');
     overlay.id = 'chat-fallback-modal-overlay';
@@ -10730,7 +10995,42 @@ function openChatFallbackModal() {
                     <i class="fas fa-xmark"></i>
                 </button>
             </div>
-            <div class="px-6 py-5 space-y-4" data-cap-body="chat_fallback"></div>
+            <div class="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto" data-cap-body="chat_fallback">
+                <div id="cap-chat_fallback-toggle-wrap" class="flex items-center justify-between gap-3">
+                    <label class="text-sm font-medium text-slate-600 dark:text-slate-400">${escapeHtml(t('models_fallback_enable'))}</label>
+                    <button type="button" id="cap-chat_fallback-toggle" role="switch"
+                            aria-checked="${cap.enabled ? 'true' : 'false'}"
+                            onclick="toggleChatFallbackEnabled()"
+                            class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${cap.enabled ? 'bg-primary-500' : 'bg-slate-200 dark:bg-slate-700'}">
+                        <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cap.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'}"></span>
+                    </button>
+                </div>
+                <div id="fb-chain-wrap" class="space-y-3 ${cap.enabled ? '' : 'hidden'}">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${escapeHtml(t('models_fallback_chain_title'))}</label>
+                        <p class="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">${escapeHtml(t('models_fallback_chain_desc'))}</p>
+                    </div>
+                    <div id="fb-chain-list" class="space-y-2.5"></div>
+                    <button type="button" onclick="addFallbackChainLink()"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                                   text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30
+                                   hover:bg-primary-100 dark:hover:bg-primary-900/50 cursor-pointer transition-colors">
+                        <i class="fas fa-plus text-[11px]"></i>${escapeHtml(t('models_fallback_chain_add'))}
+                    </button>
+                    <p id="fb-chain-incomplete-hint" class="text-xs text-danger hidden">${escapeHtml(t('models_fallback_chain_incomplete'))}</p>
+                </div>
+                <div class="flex items-center justify-between gap-3 pt-1">
+                    <div class="flex-1 min-w-0"></div>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <span id="cap-chat_fallback-status" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                        <button id="fb-chain-save" onclick="saveCapability('chat_fallback')"
+                                class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                                       cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                            ${escapeHtml(t('save'))}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>`;
 
     // Close on backdrop click (but not when clicking inside the dialog).
@@ -10738,9 +11038,36 @@ function openChatFallbackModal() {
 
     document.body.appendChild(overlay);
 
+    // Reset the draft each time the modal opens so a cancelled edit never
+    // leaks into the next open.
+    fallbackChainDraft = _fallbackChainFromCapability();
+    renderFallbackChainEditor();
+    refreshFallbackChainSaveState();
+}
+
+// The chain modal owns its own toggle (the shared capability body renders the
+// picker rows instead), so it needs its own flip handler: toggle the local
+// switch, show/hide the chain, and re-check whether Save is allowed.
+function toggleChatFallbackEnabled() {
     const cap = modelsState.capabilities.chat_fallback || {};
-    const body = overlay.querySelector('[data-cap-body="chat_fallback"]');
-    renderCapabilityBody(CHAT_FALLBACK_DEF, cap, body);
+    cap.enabled = !cap.enabled;
+    modelsState.capabilities.chat_fallback = cap;
+
+    const btn = document.getElementById('cap-chat_fallback-toggle');
+    if (btn) {
+        btn.setAttribute('aria-checked', cap.enabled ? 'true' : 'false');
+        btn.classList.toggle('bg-primary-500', cap.enabled);
+        btn.classList.toggle('bg-slate-200', !cap.enabled);
+        btn.classList.toggle('dark:bg-slate-700', !cap.enabled);
+        const knob = btn.querySelector('span');
+        if (knob) {
+            knob.classList.toggle('translate-x-[18px]', cap.enabled);
+            knob.classList.toggle('translate-x-[3px]', !cap.enabled);
+        }
+    }
+    const wrap = document.getElementById('fb-chain-wrap');
+    if (wrap) wrap.classList.toggle('hidden', !cap.enabled);
+    refreshFallbackChainSaveState();
 }
 
 function closeChatFallbackModal() {
@@ -11863,14 +12190,16 @@ function saveCapability(capId) {
     // Search has its own form (strategy + provider, no model picker).
     if (capId === 'search') { saveSearchCapability(); return; }
     const provDd = document.getElementById(`cap-${capId}-provider`);
-    const provider = provDd ? getDropdownValue(provDd) : '';
+    let provider = provDd ? getDropdownValue(provDd) : '';
     // When the user is in auto mode (provider == ""), the model picker is
     // hidden and any value left in it is stale; persist an empty model so
     // the backend treats this as "fall back to the runtime chain".
     const isAuto = provider === '' && capabilitySupportsAuto(capId);
     // Embedding without a provider similarly means "cleared" — don't leak
     // a stale model value into config.
-    const model = (isAuto || (capId === 'embedding' && !provider)) ? '' : getCapabilityModelValue(def);
+    // Declared with `let` because the chat fallback branch clears both values
+    // below: it posts an ordered chain instead of a single provider/model pair.
+    let model = (isAuto || (capId === 'embedding' && !provider)) ? '' : getCapabilityModelValue(def);
     // TTS carries an extra voice timbre (supports free-text custom ids).
     let voice = '';
     if (capId === 'tts' && !isAuto) {
@@ -11934,7 +12263,21 @@ function saveCapability(capId) {
     // lands so the user drops straight back to the models page (already
     // reloaded by _persistCapability, which refreshes the main-card badge).
     const onAfterSuccess = capId === 'chat_fallback' ? closeChatFallbackModal : undefined;
-    _persistCapability(capId, provider, model, onAfterSuccess, { voice, enabled });
+    // The fallback is an ordered chain rather than one provider/model pair,
+    // so it posts the rows the modal is showing instead of the pickers.
+    //
+    // Sync first: the draft only records a row when it is added, removed or
+    // moved, so a provider/model picked in a dropdown afterwards still lives
+    // in the DOM alone. Saving without this would persist the row's seed
+    // value — silently discarding whatever the user actually chose.
+    let chain = undefined;
+    if (capId === 'chat_fallback') {
+        _syncFallbackChainDraft();
+        chain = fallbackChainDraft.map(l => ({ provider: l.provider, model: l.model }));
+        provider = '';
+        model = '';
+    }
+    _persistCapability(capId, provider, model, onAfterSuccess, { voice, enabled, chain });
 }
 
 function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
@@ -11942,6 +12285,9 @@ function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
     if (extras && extras.voice !== undefined) payload.voice = extras.voice;
     // Opt-in capabilities (the chat fallback) carry their on/off switch.
     if (extras && extras.enabled !== undefined) payload.enabled = extras.enabled;
+    // Only the chat fallback carries an ordered chain; every other capability
+    // keeps sending the single provider/model pair above.
+    if (extras && extras.chain !== undefined) payload.chain = extras.chain;
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

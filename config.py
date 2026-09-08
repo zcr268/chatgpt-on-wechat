@@ -36,15 +36,23 @@ available_setting = {
     # chatgpt model; when use_azure_chatgpt is true, this is the Azure model deployment name
     "model": "deepseek-v4-flash",  # options: gpt-4o, gpt-4o-mini, gpt-4-turbo, claude-3-sonnet, wenxin, moonshot, qwen-turbo, xunfei, glm-4, minimax, gemini, etc. See common/const.py for the full list
     "bot_type": "",  # optional; for OpenAI-compatible third-party services set "openai" or "custom" (in custom mode switching model won't auto-switch bot_type). See common/const.py for bot names; inferred from model name if left empty
-    # Fallback chat model, used only after the primary one has failed
-    # permanently for a turn (all retries exhausted). Opt-in: an empty
-    # provider/model disables the switch and the error surfaces as before.
-    # {"enabled": bool, "provider": str, "model": str, "max_switches": int}
+    # Fallback chat models, tried in order after the primary one has failed
+    # permanently for a turn (all retries exhausted). Opt-in: an empty `chain`
+    # disables the switch and the error surfaces as before.
+    #
+    # The chain is ordered and unbounded: a turn walks it from the front, and
+    # the number of models the user lists *is* the number of switches on offer
+    # — there is no separate cap to raise. Each entry needs both a provider and
+    # a model; an entry missing either is skipped, and an entry equal to the
+    # primary model (or to an earlier link) is skipped too, so a misconfigured
+    # chain can never bounce a turn back onto the model that just failed.
+    # {"enabled": bool, "chain": [{"provider": str, "model": str}, ...]}
     "chat_fallback": {
         "enabled": False,
-        "provider": "",  # a provider id as used by `bot_type` (e.g. "openai", "qianfan", "custom:<id>")
-        "model": "",  # e.g. "gpt-4o-mini"
-        "max_switches": 1,  # how many times one turn may fall back, guarding against ping-pong
+        # Each item: {"provider": "openai", "model": "gpt-4o-mini"}.
+        # `provider` is a provider id as used by `bot_type`
+        # (e.g. "openai", "qianfan", "custom:<id>").
+        "chain": [],
     },
     "use_azure_chatgpt": False,  # whether to use Azure chatgpt
     "azure_deployment_id": "",  # azure model deployment name
@@ -533,6 +541,9 @@ def load_config():
     # only missing namespaces are filled in from the legacy section.
     _merge_legacy_namespace(config, legacy="tool",  canonical="tools")
     _merge_legacy_namespace(config, legacy="skill", canonical="skills")
+    # A backup model configured before the fallback chain must survive the
+    # upgrade, so normalize it into the current shape before anything reads it.
+    _migrate_chat_fallback(config)
 
     # Fresh desktop installs default to the stricter "workspace-write"; every
     # other case keeps the template's "full-access". A packaged client only
@@ -719,6 +730,40 @@ def _merge_duplicate_keys(pairs):
         except Exception:
             print("[INIT] config.json has duplicate keys (merged):", unique)
     return out
+
+
+def _migrate_chat_fallback(cfg) -> None:
+    """Upgrade the single-model ``chat_fallback`` to the chain shape.
+
+    Before the fallback chain, ``chat_fallback`` held one ``provider`` and one
+    ``model`` (plus a ``max_switches`` cap). An existing config with a backup
+    model configured would otherwise load as an empty chain — silently
+    disabling a safety net the user had turned on — so fold those fields into
+    a one-entry chain here. ``max_switches`` is dropped rather than carried
+    over: the chain length is the new bound, and the old counter never
+    actually bounded anything (the fallback was already sticky for a run).
+    """
+    raw = cfg.get("chat_fallback")
+    if not isinstance(raw, dict):
+        return
+    chain = raw.get("chain")
+    if isinstance(chain, list):
+        raw.pop("max_switches", None)
+        return
+    provider = (raw.get("provider") or "").strip()
+    model = (raw.get("model") or "").strip()
+    entry = []
+    if provider and model:
+        entry = [{"provider": provider, "model": model}]
+    raw.pop("provider", None)
+    raw.pop("model", None)
+    raw.pop("max_switches", None)
+    raw["chain"] = entry
+    if entry:
+        logger.warning(
+            "[INIT] chat_fallback.provider/model is deprecated; migrated into "
+            "chat_fallback.chain. Please rewrite it as a list in config.json."
+        )
 
 
 def _merge_legacy_namespace(cfg, legacy: str, canonical: str) -> None:
