@@ -10850,6 +10850,9 @@ function onFallbackChainProviderChange(i, providerId) {
         });
     }
     if (customWrap) customWrap.classList.add('hidden');
+    // The row just became usable (provider + a seeded model), so let the save
+    // button re-evaluate.
+    refreshFallbackChainSaveState();
 }
 
 function renderFallbackChainEditor() {
@@ -10858,6 +10861,10 @@ function renderFallbackChainEditor() {
     const rows = fallbackChainDraft;
     if (!rows.length) {
         host.innerHTML = `<p class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(t('models_fallback_chain_empty'))}</p>`;
+        // No rows left means nothing usable to save. Refresh before returning
+        // — the save button's state is derived from the draft, and removing the
+        // last row is exactly when it has to flip back to disabled.
+        refreshFallbackChainSaveState();
         return;
     }
     host.innerHTML = rows.map((link, i) => `
@@ -10940,6 +10947,11 @@ function renderFallbackChainEditor() {
             if (customInput) customInput.value = link.model;
         }
     });
+
+    // Every add / remove / reorder re-renders the rows, so refresh the save
+    // button here rather than at each call site: a row added after the toggle
+    // was switched on would otherwise leave Save stuck on its previous state.
+    refreshFallbackChainSaveState();
 }
 
 // Whether at least one row is usable — the backend rejects an empty chain

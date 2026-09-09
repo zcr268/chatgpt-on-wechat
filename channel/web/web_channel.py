@@ -3805,13 +3805,14 @@ class ModelsHandler:
         }
 
     @staticmethod
-    def _chat_provider_models() -> dict:
+    def _chat_preset_models() -> dict:
         """{provider_id: [model, ...]} for every chat-capable vendor.
 
         ``ConfigHandler.PROVIDER_MODELS`` carries per-vendor metadata
         (label, api_key_field, ...) around the model list; the console's model
-        picker wants only the lists. Kept as its own helper so the two chat
-        cards can never drift apart.
+        picker wants only the lists. Used as the base for the fallback card's
+        model lists, so a vendor without a catalog still offers its presets
+        while a catalogued one offers its catalog instead.
         """
         out = {}
         for pid, meta in ConfigHandler.PROVIDER_MODELS.items():
@@ -3856,6 +3857,11 @@ class ModelsHandler:
         # Same provider list as the primary chat card, so the dropdowns always
         # offer identical choices (including expanded custom:<id>).
         primary = cls._chat_capability(local_config)
+        # Same model lists too: start from the vendors' presets and let a
+        # catalog override them, which is what the primary card does. Building
+        # this from the presets alone would leave the fallback on a free-form
+        # model field for a vendor whose models the primary card can list.
+        custom_cards = cls._custom_provider_cards(local_config)
         return {
             "editable": True,
             "enabled": bool(cfg.get("enabled", False)),
@@ -3864,7 +3870,8 @@ class ModelsHandler:
             # is richer ({provider_id: {label, models, ...}}), so reduce it to
             # just the lists — handing over the raw dict makes the web console
             # call .slice() on a mapping and throw.
-            "provider_models": cls._chat_provider_models(),
+            "provider_models": cls._apply_catalog(
+                cls._chat_preset_models(), "text", custom_cards),
             "chain": chain,
             # Kept for older clients that still read a single backup model:
             # link 1 of the chain, so a downgraded console does not show blank.
