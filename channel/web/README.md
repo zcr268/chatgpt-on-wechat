@@ -102,7 +102,13 @@ include 的两条规则：
 | `chat/state.js` | 905 | 会话与流式状态、历史加载、附件、`fetch` 的 agent_id 注入 |
 | `chat/context-usage.js` | 410 | 清空上下文按钮上的用量弹窗与压缩操作 |
 | `chat/workspace-selector.js` | 305 | 输入框上方的项目选择器与文件选择对话框 |
-| `chat/composer.js` | 2767 | 按会话设置、发送、SSE 流式接收与消息渲染 |
+| `chat/session-settings.js` | 273 | 权限模式与模型的按会话设置，即输入框下方的两个 chip |
+| `chat/composer-input.js` | 379 | 拖放上传、粘贴、斜杠命令菜单、输入框按键处理 |
+| `chat/message-actions.js` | 175 | 语音消息、复制、编辑已发送消息 |
+| `chat/send.js` | 906 | 发送、重新生成、SSE 流式接收与轮询兜底 |
+| `chat/scheduler-notify.js` | 101 | 定时任务的跨会话通知 |
+| `chat/render.js` | 711 | 消息 DOM：用户/机器人气泡、步骤、语音胶囊、历史渲染 |
+| `chat/new-chat.js` | 222 | 新建对话与多智能体对话 |
 
 ### views/ — 各管理页面
 
@@ -145,8 +151,10 @@ include 的两条规则：
 
 - `_wsToast` 定义在 `chat/workspace-selector.js`，但上下文弹窗、会话设置、技能页、
   `doc-editor.js` 和 `workspace.js` 都在用。它其实应该属于 `core/`。
-- `chat/composer.js` 仍有 2767 行，混着按会话设置、拖放上传、斜杠命令、SSE 流式
-  和消息 DOM 渲染，它们共享 `sessionId`、`chatInput`、`messagesDiv`、`_sessCfg` 等可变全局。
+- `chat/` 下的文件共享 `sessionId`、`chatInput`、`messagesDiv`、`_sessCfg` 等可变全局，
+  拆分只是按职责分了文件，并没有把状态收拢起来。
+- `chat/send.js` 里的 `startSSE()` 单个函数就有 637 行，是整个前端最大的一块。
+- `chat/composer-input.js` 里输入框的 `keydown` 处理器有 92 行，同时负责斜杠命令导航和发送。
 - `views/agents.js` 尾部混着三个记忆页用的辅助函数。
 - `core/nav.js` 里 `navigateTo` 被定义了两次——后一次整体重新赋值以加入
   未保存内容拦截和各视图懒加载。两处现在在同一个文件里，便于以后合并。
