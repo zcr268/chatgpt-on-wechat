@@ -314,7 +314,7 @@ def test_web_console_editor_contract():
     root = Path(__file__).parents[1]
     html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
     js = (root / "channel/web/static/js/workspace.js").read_text(encoding="utf-8")
-    css = (root / "channel/web/static/css/console.css").read_text(encoding="utf-8")
+    css = (root / "channel/web/static/css/workspace.css").read_text(encoding="utf-8")
     console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
 
     assert 'id="ws-btn-edit"' in html

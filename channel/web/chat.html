@@ -42,7 +42,17 @@
         }
     }
     </script>
-    <link rel="stylesheet" href="assets/css/console.css">
+    <!-- Split out of a single console.css. The order is load-bearing: later
+         sheets override earlier ones, so keep it as-is and see
+         channel/web/README.md before inserting anything. -->
+    <link rel="stylesheet" href="assets/css/base.css">
+    <link rel="stylesheet" href="assets/css/sessions.css">
+    <link rel="stylesheet" href="assets/css/components.css">
+    <link rel="stylesheet" href="assets/css/markdown.css">
+    <link rel="stylesheet" href="assets/css/chat.css">
+    <link rel="stylesheet" href="assets/css/workspace.css">
+    <link rel="stylesheet" href="assets/css/knowledge.css">
+    <link rel="stylesheet" href="assets/css/agents.css">
     <!-- Apply theme/lang before first paint to avoid flash of unstyled content.
          This runs synchronously in <head> so the correct class is on <html>
          before any CSS or body rendering occurs. -->
