@@ -312,11 +312,12 @@ def _web(rel):
 
 
 def test_document_editor_is_loaded_before_its_users():
-    """console.js builds both editors at load time, so the factory has to exist
-    by then; `defer` keeps the scripts in document order."""
+    """views/doc-viewers.js builds both editors at load time, so the factory
+    has to exist by then; `defer` keeps the scripts in document order."""
     html = _web("chat.html")
 
-    assert html.index("assets/js/doc-editor.js") < html.index("assets/js/console.js")
+    assert (html.index("assets/js/doc-editor.js")
+            < html.index("assets/js/views/doc-viewers.js"))
     # A cached copy of the old page would ask for a script that has since been
     # renamed, so every first-party asset has to carry a version query.
     from channel.web import template
@@ -352,7 +353,8 @@ def test_memory_and_skill_editor_wiring():
     # The page is assembled from templates/, so assert against what is served.
     from channel.web import template
     html = template.render("chat.html")
-    console = _web("static/js/console.js")
+    from conftest import console_js
+    console = console_js()
     css = _web("static/css/workspace.css")
 
     for ident in ("memory-btn-edit", "memory-btn-save", "memory-btn-cancel",

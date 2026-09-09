@@ -12,12 +12,33 @@ model, language and channel settings, and start passing or failing on them.
 """
 
 import os
+import re
 import sys
 import tempfile
 
 import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+_WEB_DIR = os.path.join(os.path.dirname(__file__), "..", "channel", "web")
+
+
+def console_js():
+    """Every script the console loads, concatenated in load order.
+
+    console.js was split into a core/ and views/ tree, so a test that wants to
+    assert on "the console's code" has to look at all of it. The list comes
+    from the page's own script tags rather than a copy here, so it cannot fall
+    behind a file being added or reordered.
+    """
+    from channel.web import template
+
+    page = template.render("chat.html")
+    parts = []
+    for src in re.findall(r'<script defer src="assets/(js/[^"?]+)"', page):
+        with open(os.path.join(_WEB_DIR, "static", src), encoding="utf-8") as f:
+            parts.append(f.read())
+    return "\n".join(parts)
 
 
 @pytest.fixture(autouse=True, scope="session")

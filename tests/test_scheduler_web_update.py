@@ -93,7 +93,8 @@ def test_web_manual_run_rejects_unavailable_scheduler():
 def test_manual_run_is_exposed_by_explicit_web_and_desktop_controls():
     root = Path(__file__).parents[1]
     web_source = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+    from conftest import console_js
+    web_console = console_js()
     desktop_client = (root / "desktop/src/renderer/src/api/client.ts").read_text(encoding="utf-8")
     desktop_page = (root / "desktop/src/renderer/src/pages/TasksPage.tsx").read_text(encoding="utf-8")
 

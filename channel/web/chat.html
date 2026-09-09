@@ -149,9 +149,51 @@
 
 <!--#include templates/modals/run-detail.html-->
 
-    <!-- doc-editor first: console.js builds its editors at load time. -->
+    <!-- Split out of a single console.js. These are classic scripts, not
+         modules: they share one global scope and `defer` runs them in this
+         order. The order is load-bearing - see channel/web/README.md before
+         adding, removing or moving a line. -->
+
+    <!-- doc-editor first: views/doc-viewers.js builds its editors at load time. -->
     <script defer src="assets/js/doc-editor.js"></script>
-    <script defer src="assets/js/console.js"></script>
+
+    <script defer src="assets/js/core/version.js"></script>
+    <script defer src="assets/js/core/i18n.js"></script>
+    <script defer src="assets/js/core/theme.js"></script>
+    <script defer src="assets/js/core/utils.js"></script>
+    <script defer src="assets/js/core/markdown.js"></script>
+    <script defer src="assets/js/core/confirm.js"></script>
+    <script defer src="assets/js/core/notify.js"></script>
+    <script defer src="assets/js/core/auth.js"></script>
+    <script defer src="assets/js/core/nav.js"></script>
+
+    <script defer src="assets/js/chat/state.js"></script>
+    <script defer src="assets/js/chat/context-usage.js"></script>
+    <script defer src="assets/js/chat/workspace-selector.js"></script>
+    <script defer src="assets/js/chat/composer.js"></script>
+
+    <script defer src="assets/js/views/sessions.js"></script>
+    <script defer src="assets/js/views/agents.js"></script>
+    <script defer src="assets/js/views/config.js"></script>
+    <script defer src="assets/js/views/models.js"></script>
+    <script defer src="assets/js/views/models-custom-provider.js"></script>
+    <script defer src="assets/js/views/channels.js"></script>
+    <script defer src="assets/js/views/channels-weixin.js"></script>
+    <script defer src="assets/js/views/channels-wecom.js"></script>
+    <script defer src="assets/js/views/channels-feishu.js"></script>
+    <script defer src="assets/js/views/tasks.js"></script>
+    <script defer src="assets/js/views/tasks-modal.js"></script>
+    <script defer src="assets/js/views/skills.js"></script>
+    <script defer src="assets/js/views/memory.js"></script>
+    <script defer src="assets/js/views/doc-viewers.js"></script>
+    <script defer src="assets/js/views/knowledge.js"></script>
+    <script defer src="assets/js/views/logs.js"></script>
+
+    <!-- boot before workspace.js, which is where console.js used to sit:
+         applyI18n() probes for relocalizeWorkspacePanel with a typeof guard,
+         and it has always run before workspace.js defined it. -->
+    <script defer src="assets/js/boot.js"></script>
+
     <script defer src="assets/js/workspace.js"></script>
 </body>
 </html>

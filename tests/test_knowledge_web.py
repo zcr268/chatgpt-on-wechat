@@ -46,7 +46,8 @@ def test_knowledge_frontend_management_contract():
     # The page is assembled from templates/, so assert against what is served.
     from channel.web import template
     html = template.render("chat.html")
-    js = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+    from conftest import console_js
+    js = console_js()
 
     assert 'id="knowledge-dialog-overlay"' in html
     assert 'id="knowledge-dialog-textarea"' in html

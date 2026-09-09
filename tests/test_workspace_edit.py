@@ -317,7 +317,8 @@ def test_web_console_editor_contract():
     html = template.render("chat.html")
     js = (root / "channel/web/static/js/workspace.js").read_text(encoding="utf-8")
     css = (root / "channel/web/static/css/workspace.css").read_text(encoding="utf-8")
-    console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
+    from conftest import console_js
+    console = console_js()
 
     assert 'id="ws-btn-edit"' in html
     assert 'id="ws-btn-save"' in html

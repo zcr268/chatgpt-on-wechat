@@ -34,7 +34,8 @@ def test_console_has_agent_cards_not_a_tenant_switcher():
     # console, not a native <select>; its options are built in JS from
     # _agentCoreFileOptions() rather than hardcoded <option> tags in markup.
     assert 'id="agent-core-file" class="cfg-dropdown cfg-dropdown-xs"' in html
-    js = _read("channel/web/static/js/console.js")
+    from conftest import console_js
+    js = console_js()
     for filename in ("AGENT.md", "USER.md", "RULE.md", "MEMORY.md"):
         assert f"value: '{filename}'" in js
     # BOOTSTRAP.md is internal and deliberately left out of the hand-editable
@@ -43,7 +44,8 @@ def test_console_has_agent_cards_not_a_tenant_switcher():
 
 
 def test_console_carries_agent_id_through_existing_feature_requests():
-    source = _read("channel/web/static/js/console.js")
+    from conftest import console_js
+    source = console_js()
     assert "body.agent_id = activeAgentId" in source
     assert "agent_id=${encodeURIComponent(activeAgentId)}" in source
     assert "function runtimeSessionKey" in source
