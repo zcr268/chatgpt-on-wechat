@@ -636,12 +636,13 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
             return self._handle_linkai_sync_response(base_url, headers, body)
             
     except Exception as e:
+        error_msg = str(e)
         logger.error(f"[LinkAI] call_with_tools error: {e}")
         if stream:
             def error_generator():
                 yield {
                     "error": True,
-                    "message": str(e),
+                    "message": error_msg,
                     "status_code": 500
                 }
             return error_generator()
