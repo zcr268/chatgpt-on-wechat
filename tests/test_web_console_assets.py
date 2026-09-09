@@ -78,6 +78,28 @@ def test_shared_layers_load_before_the_views_that_call_them():
     assert scripts.index("js/doc-editor.js") < scripts.index("js/views/doc-viewers.js")
 
 
+def test_the_handler_actually_serves_the_nested_script_paths():
+    """The scripts used to be flat under js/; they are now in js/core/,
+    js/chat/ and js/views/. Existing on disk is not the same as being
+    reachable, so this goes through the handler that answers /assets/."""
+    from unittest.mock import patch
+
+    import channel.web.web_channel as web_channel
+
+    sent = []
+    with patch.object(web_channel.web, "header",
+                      lambda name, value=None: sent.append((name.lower(), value))):
+        handler = web_channel.AssetsHandler()
+        for script in _scripts(_page()):
+            del sent[:]
+            body = handler.GET(script)
+            assert body, script
+            # application/octet-stream is what the handler falls back to, and a
+            # browser will refuse to execute a script served as that.
+            content_type = dict(sent).get("content-type", "")
+            assert "javascript" in content_type, (script, content_type)
+
+
 def test_the_split_scripts_do_not_declare_the_same_global_twice():
     """Every top-level declaration lands on `window`, which is what the inline
     onclick handlers in generated markup reach. Two scripts declaring the same
