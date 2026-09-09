@@ -164,8 +164,15 @@
     <script defer src="assets/js/core/markdown.js"></script>
     <script defer src="assets/js/core/confirm.js"></script>
     <script defer src="assets/js/core/notify.js"></script>
-    <script defer src="assets/js/core/auth.js"></script>
     <script defer src="assets/js/core/nav.js"></script>
+
+    <!-- Ahead of chat/, not with the other views: chat/state.js computes
+         sessionId at load time and activeSessionStorageKey() reads
+         defaultAgentId, which is a `let` declared here. Loading this later
+         puts that binding in its temporal dead zone, and chat/state.js dies
+         on the spot - taking the restored session, and so the visible
+         conversation history, with it. -->
+    <script defer src="assets/js/views/agents.js"></script>
 
     <script defer src="assets/js/chat/state.js"></script>
     <script defer src="assets/js/chat/context-usage.js"></script>
@@ -179,7 +186,6 @@
     <script defer src="assets/js/chat/new-chat.js"></script>
 
     <script defer src="assets/js/views/sessions.js"></script>
-    <script defer src="assets/js/views/agents.js"></script>
     <script defer src="assets/js/views/config.js"></script>
     <script defer src="assets/js/views/models.js"></script>
     <script defer src="assets/js/views/models-custom-provider.js"></script>
@@ -194,6 +200,12 @@
     <script defer src="assets/js/views/doc-viewers.js"></script>
     <script defer src="assets/js/views/knowledge.js"></script>
     <script defer src="assets/js/views/logs.js"></script>
+
+    <!-- Last of the core layer rather than first, which is where it sat in
+         console.js. It installs a window.fetch wrapper for 401 handling, and
+         chat/state.js installs one that appends agent_id; keeping this one
+         outermost means the 401 check still sees the URL the caller passed. -->
+    <script defer src="assets/js/core/auth.js"></script>
 
     <!-- boot before workspace.js, which is where console.js used to sit:
          applyI18n() probes for relocalizeWorkspacePanel with a typeof guard,

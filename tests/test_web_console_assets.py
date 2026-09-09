@@ -70,12 +70,41 @@ def test_boot_runs_last_among_the_console_scripts_but_before_workspace():
 
 def test_shared_layers_load_before_the_views_that_call_them():
     scripts = _scripts(_page())
-    last_core = max(i for i, s in enumerate(scripts) if s.startswith("js/core/"))
-    first_view = min(i for i, s in enumerate(scripts) if s.startswith("js/views/"))
+
+    # core/auth.js is deliberately late; see the dedicated test below.
+    last_core = max(i for i, s in enumerate(scripts)
+                    if s.startswith("js/core/") and s != "js/core/auth.js")
+    first_view = min(i for i, s in enumerate(scripts)
+                     if s.startswith("js/views/") and s != "js/views/agents.js")
     assert last_core < first_view
 
     # views/doc-viewers.js calls createDocEditor() at top level.
     assert scripts.index("js/doc-editor.js") < scripts.index("js/views/doc-viewers.js")
+
+
+def test_the_agent_roster_loads_before_the_chat_state_that_reads_it():
+    """chat/state.js resolves sessionId while it runs, and the storage key it
+    uses compares activeAgentId against defaultAgentId -- a `let` declared in
+    views/agents.js.
+
+    Load agents.js later and that binding is in its temporal dead zone, so
+    chat/state.js throws partway through. Everything below the throw, which is
+    sessionId and every composer element reference, is then permanently
+    uninitialised: no history, no sending, no attachments. The comparison
+    short-circuits on a falsy activeAgentId, so this only breaks for people who
+    have selected an Agent -- it will not show up on a fresh profile.
+    """
+    scripts = _scripts(_page())
+    assert scripts.index("js/views/agents.js") < scripts.index("js/chat/state.js")
+
+
+def test_the_agent_id_fetch_wrapper_is_installed_inside_the_401_wrapper():
+    """Both scripts wrap window.fetch. chat/state.js appends agent_id to the
+    URL; core/auth.js inspects the URL to decide whether a 401 should bounce
+    the user to the login screen. Installing the 401 wrapper second keeps it
+    outermost, so it still sees the URL the caller asked for."""
+    scripts = _scripts(_page())
+    assert scripts.index("js/chat/state.js") < scripts.index("js/core/auth.js")
 
 
 def test_the_handler_actually_serves_the_nested_script_paths():

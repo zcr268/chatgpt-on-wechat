@@ -77,16 +77,36 @@ include 的两条规则：
 - 700 多个顶层声明全部是隐式全局，**动态生成的 HTML 里大量使用 `onclick="foo()"` 依赖这一点**。
   一旦改成 `type="module"` 或者把文件包进 IIFE，这些内联调用会全部静默失效。
 - 顶层 `const`/`let` 进入共享的全局词法环境，跨文件可见，但存在 TDZ：
-  **任何文件在自己顶层执行时都读不到后面文件声明的 `const`**。
+  **任何文件在自己顶层执行时都读不到后面文件声明的 `const`/`let`**。
   所有需要立即执行的启动代码都集中在 `boot.js`，它必须最后加载。
+- **这条 TDZ 限制会顺着调用链传递，这是最容易踩的坑。** 顶层的
+  `let x = someFunc();` 看起来只依赖 `someFunc`，但 `someFunc` 内部读到的
+  任何后面文件的 `let`/`const` 都会抛 `ReferenceError`。
+  一旦抛出，**该文件后面的所有顶层声明都不再执行**，那些 `const` 会永久停留在
+  TDZ，之后任何读取它们的代码都继续抛错——表现为整个视图大面积失效，
+  而不是一个小功能坏掉。这类问题只在浏览器里暴露，静态搜索看不出来。
+  已知的两处实例见下面的加载顺序约束。
 - 同名顶层声明出现在两个文件里会直接抛 `SyntaxError` 并导致白屏。新增声明前先确认没有重名。
 - **不要在顶层给已有全局重新赋值。** 这样的赋值会让"读到的是哪个版本"取决于加载顺序，
   而这种问题不会在任何静态检查里暴露。目前这类赋值已经清零，
   `tests/test_web_console_assets.py` 会守住脚本清单与加载顺序。
 
-以上约定由 `tests/test_web_console_assets.py` 检查：每个脚本恰好被加载一次、
-core/ 在 views/ 之前、`boot.js` 最后但在 `workspace.js` 之前、没有重名全局，
-并且真的能通过 `AssetsHandler` 取到。
+以上约定由两处检查守着。
+
+`tests/test_web_console_assets.py` 随测试套件跑，钉住脚本清单与已知的顺序依赖：
+每个脚本恰好被加载一次、没有孤儿文件、没有重名全局、真的能通过 `AssetsHandler`
+取到，以及下面"三处不能动的加载顺序"里的每一条。
+
+`channel/web/tools/check-load-order.mjs` 用 AST 分析找**新出现**的顺序问题，
+这是唯一能发现上面那种传递性 TDZ 的手段。调整脚本顺序或新增顶层代码后跑一下：
+
+```
+node --stack-size=40000 channel/web/tools/check-load-order.mjs
+```
+
+它需要 `desktop/node_modules` 里的 TypeScript 解析器（在 `desktop/` 下
+`npm install` 过就有），所以没有放进 Python 测试套件。`--stack-size` 是必要的：
+默认栈不够遍历这个体量的 AST。
 
 ### core/ — 跨视图基础设施
 
@@ -99,8 +119,8 @@ core/ 在 views/ 之前、`boot.js` 最后但在 `workspace.js` 之前、没有�
 | `core/markdown.js` | 287 | markdown-it 初始化、图片/视频/代码块渲染 |
 | `core/confirm.js` | 29 | 脚本化确认对话框，各视图共用 |
 | `core/notify.js` | 322 | 任务完成通知与通知权限 |
-| `core/auth.js` | 137 | 登录页、登出、`fetch` 的 401 拦截 |
 | `core/nav.js` | 131 | `navigateTo` 路由与各视图的懒加载钩子 |
+| `core/auth.js` | 137 | 登录页、登出、`fetch` 的 401 拦截。**排在最后，见下** |
 
 ### chat/ — 对话视图
 
@@ -139,6 +159,27 @@ core/ 在 views/ 之前、`boot.js` 最后但在 `workspace.js` 之前、没有�
 | `views/logs.js` | 84 | 实时日志流 |
 | `boot.js` | 36 | 启动：应用主题与语言、鉴权闸门、首次拉取配置与历史 |
 
+### 三处不能动的加载顺序
+
+除了"core 在 views 之前"这个大方向，有三处是硬约束，改动会直接导致运行时报错：
+
+1. **`views/agents.js` 必须排在 `chat/state.js` 之前**，尽管它在 `views/` 下。
+   `chat/state.js` 顶层执行 `let sessionId = loadOrCreateSessionId()`，
+   而 `activeSessionStorageKey()` 会把 `activeAgentId` 和 `defaultAgentId` 作比较，
+   后者是 `views/agents.js` 里的 `let`。放到后面就是上面说的传递性 TDZ，
+   会让整个对话视图失效。
+   注意 `activeAgentId &&` 的短路：**只有选过智能体的用户才会触发**，
+   全新配置下看不出问题。
+2. **`core/auth.js` 必须排在 `chat/state.js` 之后**，所以它放在 core 层末尾。
+   两者都包装了 `window.fetch`：`chat/state.js` 往 URL 上追加 `agent_id`，
+   `core/auth.js` 检查 URL 前缀来决定 401 是否跳登录页。
+   后装的在外层，这样 401 判断看到的是调用方原本的 URL。
+3. **`boot.js` 必须排在 `workspace.js` 之前**，也就是 `console.js` 原来的位置。
+   `applyI18n()` 里用 `typeof` 守卫探测 `relocalizeWorkspacePanel`，
+   它一直是在 `workspace.js` 定义该函数之前运行的；放到后面会改变这个行为。
+   （`typeof` 对未加载脚本里的**函数声明**是安全的，返回 `'undefined'`；
+   但对 `let`/`const` 同样会抛 TDZ 错误，不要依赖它来探测变量。）
+
 ### 未拆分的两个文件
 
 `workspace.js`（1296 行）和 `doc-editor.js`（258 行）保持原样，它们本来就是独立文件。
@@ -148,9 +189,6 @@ core/ 在 views/ 之前、`boot.js` 最后但在 `workspace.js` 之前、没有�
   `createDocEditor()` 构建 `memoryEditor` 与 `skillEditor`。
 - `workspace.js` **必须最后加载**，它消费 `t`、`escapeHtml`、`renderMarkdown`、
   `showConfirmDialog`、`_wsToast`、`sessionId`、`activeAgentId` 等一批全局。
-- `boot.js` 排在 `workspace.js` **之前**，也就是 `console.js` 原来的位置。
-  因为 `applyI18n()` 里用 `typeof` 守卫探测 `relocalizeWorkspacePanel`，
-  它一直是在 `workspace.js` 定义该函数之前运行的；把 `boot.js` 放到后面会改变这个行为。
 
 ### 已知的遗留耦合
 
