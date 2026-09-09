@@ -19,7 +19,9 @@ def test_web_backend_exposes_agent_and_core_file_routes():
 
 
 def test_console_has_agent_cards_not_a_tenant_switcher():
-    html = _read("channel/web/chat.html")
+    # The page is assembled from templates/, so assert against what is served.
+    from channel.web import template
+    html = template.render("chat.html")
     assert 'id="agent-selector"' not in html
     # The team is a top-level view of its own now, not a Settings panel: it is
     # where you compose and manage the Agents you work with.

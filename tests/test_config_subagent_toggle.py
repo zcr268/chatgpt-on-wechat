@@ -142,7 +142,9 @@ def test_a_broken_availability_check_does_not_cost_the_agent_the_tool():
 
 def test_the_switch_is_exposed_by_both_consoles():
     web_source = (ROOT / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    web_markup = (ROOT / "channel/web/chat.html").read_text(encoding="utf-8")
+    # The page is assembled from templates/, so assert against what is served.
+    from channel.web import template
+    web_markup = template.render("chat.html")
     web_console = (ROOT / "channel/web/static/js/console.js").read_text(encoding="utf-8")
     desktop_page = (ROOT / "desktop/src/renderer/src/pages/settings/BasicSettings.tsx").read_text(encoding="utf-8")
 

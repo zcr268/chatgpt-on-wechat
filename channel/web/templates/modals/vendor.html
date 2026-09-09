@@ -1,0 +1,78 @@
+    <!-- Vendor Credentials Modal -->
+    <div id="vendor-modal-overlay" class="fixed inset-0 bg-black/50 z-[100] hidden flex items-center justify-center">
+        <div class="bg-white dark:bg-[#1A1A1A] rounded-2xl border border-slate-200 dark:border-white/10 shadow-xl
+                    w-full max-w-md mx-4">
+            <div class="p-6">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 rounded-xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center flex-shrink-0">
+                        <i class="fas fa-key text-primary-500"></i>
+                    </div>
+                    <div class="min-w-0 flex-1">
+                        <h3 id="vendor-modal-title" class="font-semibold text-slate-800 dark:text-slate-100 text-base"></h3>
+                        <p id="vendor-modal-subtitle" class="text-xs text-slate-500 dark:text-slate-400 mt-0.5 font-mono"></p>
+                    </div>
+                </div>
+
+                <!-- Provider selector (only visible when adding via top button) -->
+                <div id="vendor-modal-picker-wrap" class="mb-4 hidden">
+                    <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5" data-i18n="models_provider">厂商</label>
+                    <div id="vendor-modal-picker" class="cfg-dropdown" tabindex="0">
+                        <div class="cfg-dropdown-selected">
+                            <span class="cfg-dropdown-text">--</span>
+                            <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                        </div>
+                        <div class="cfg-dropdown-menu"></div>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <div class="flex items-center justify-between gap-2 mb-1.5">
+                            <label class="block text-sm font-medium text-slate-600 dark:text-slate-400">API Key</label>
+                            <a id="vendor-modal-manage-key" href="https://link-ai.tech/console/models?apikey=1"
+                               target="_blank" rel="noopener noreferrer"
+                               class="hidden inline-flex items-center gap-1 text-xs text-primary-500 hover:underline">
+                                <span data-i18n="models_manage_api_key">管理 API Key</span>
+                                <i class="fas fa-arrow-up-right-from-square text-[10px]"></i>
+                            </a>
+                        </div>
+                        <input id="vendor-modal-key" type="text" autocomplete="off" data-1p-ignore data-lpignore="true"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                      bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                                      focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                               placeholder="sk-...">
+                    </div>
+                    <div id="vendor-modal-base-wrap">
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">API Base</label>
+                        <input id="vendor-modal-base" type="text"
+                               class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                                      bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                                      focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                               placeholder="https://...../v1">
+                        <p id="vendor-modal-base-hint" class="mt-1.5 text-xs text-slate-400 dark:text-slate-500 hidden">
+                            <i class="fas fa-info-circle mr-1"></i><span data-i18n="models_base_default_hint">留空将使用官方默认地址</span>
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center justify-between gap-3 px-6 py-4 border-t border-slate-100 dark:border-white/5 rounded-b-2xl">
+                <button id="vendor-modal-clear"
+                        class="px-3 py-2 rounded-lg text-xs
+                               text-red-500 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20
+                               cursor-pointer transition-colors duration-150 hidden"
+                        data-i18n="models_clear_credential">清除凭据</button>
+                <span id="vendor-modal-status"
+                      class="flex-1 text-xs text-primary-500 opacity-0 transition-opacity duration-300 text-center"></span>
+                <button id="vendor-modal-cancel"
+                        class="px-4 py-2 rounded-lg border border-slate-200 dark:border-white/10
+                               text-slate-600 dark:text-slate-300 text-sm font-medium
+                               hover:bg-slate-50 dark:hover:bg-white/5
+                               cursor-pointer transition-colors duration-150"
+                        data-i18n="cancel">取消</button>
+                <button id="vendor-modal-save"
+                        class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                               cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+                        data-i18n="save">保存</button>
+            </div>
+        </div>
+    </div>

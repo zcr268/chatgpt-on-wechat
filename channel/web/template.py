@@ -58,7 +58,14 @@ def _expand(text: str, depth: int) -> str:
         raise ValueError("include nesting too deep; check for a cycle")
 
     def substitute(match):
-        return _expand(_read(match.group(1)), depth + 1)
+        fragment = _expand(_read(match.group(1)), depth + 1)
+        # A marker sits alone on its line and keeps its own newline, so the
+        # fragment's trailing one would add a blank line. Drop exactly one, so
+        # fragments can end with a newline like any other file without the
+        # assembled page drifting from what it was before the split.
+        if fragment.endswith('\n'):
+            fragment = fragment[:-1]
+        return fragment
 
     return _INCLUDE_RE.sub(substitute, text)
 

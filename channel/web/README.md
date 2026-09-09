@@ -25,6 +25,50 @@
 避免升级后浏览器拿旧缓存。`assets/vendor/**` 是固定版本，不打标记。
 **新增脚本或样式表不需要修改 Python**，模式匹配会自动覆盖。
 
+include 的两条规则：
+
+- 标记必须独占一行且**顶格书写**。`template.py` 是原地替换标记文本，
+  标记前的缩进会被加到片段第一行前面。片段自带完整缩进。
+- 片段末尾的一个换行符会被去掉，由标记行自身的换行补上。所以片段文件可以像
+  普通文件一样以换行结尾，不会多出空行。
+
+## 页面片段 `templates/`
+
+| 文件 | 行数 | 内容 |
+|---|---|---|
+| `layout/login.html` | 33 | 登录遮罩层 |
+| `layout/sidebar.html` | 107 | 左侧导航栏（`data-view` 决定跳转目标）与移动端遮罩 |
+| `layout/session-panel.html` | 20 | 历史会话侧栏 |
+| `layout/header.html` | 90 | 顶栏：面板开关、面包屑、语言/主题切换、登出 |
+| `views/chat.html` | 279 | 对话视图，含消息区、composer 卡片、工作区面板 |
+| `views/agents.html` | 120 | 智能体团队：列表、详情抽屉、创建表单 |
+| `views/config.html` | 337 | 配置视图，含"基础配置"与"模型配置"两个 tab |
+| `views/skills.html` | 92 | 技能列表与技能定义查看器 |
+| `views/memory.html` | 98 | 记忆列表与文件查看器 |
+| `views/knowledge.html` | 129 | 知识库文档面板与关系图面板 |
+| `views/channels.html` | 23 | 通道视图（内容由 JS 注入） |
+| `views/tasks.html` | 70 | 定时任务与执行记录 |
+| `views/logs.html` | 56 | 日志终端 |
+| `modals/team-chat.html` | 21 | 多智能体新建对话 |
+| `modals/knowledge-dialog.html` | 55 | 知识库增删改对话框 |
+| `modals/confirm-dialog.html` | 25 | 静态确认对话框 |
+| `modals/rename-dialog.html` | 28 | 通道实例重命名 |
+| `modals/folder-picker.html` | 31 | 打开项目目录选择器 |
+| `modals/vendor.html` | 78 | 厂商凭据配置 |
+| `modals/custom-provider.html` | 59 | 自定义 OpenAI 兼容供应商 |
+| `modals/task-edit.html` | 199 | 定时任务创建/编辑 |
+| `modals/run-detail.html` | 33 | 执行记录详情 |
+
+几个容易被名字误导的地方：
+
+- **模型管理不是独立视图**，它是 `views/config.html` 里的 `#config-panel-models` tab，
+  实际内容由 JS 注入 `#models-content`。
+- **定时任务的容器是 `#view-tasks`**，不叫 scheduler。
+- 历史会话是 `#session-panel` 侧栏，不是一个 `.view`。
+- 工作区面板嵌在 `views/chat.html` 内部，不是顶层视图。
+
+`templates/` 在 `static/` 之外，因此不会被 `AssetsHandler` 暴露给浏览器。
+
 ## 样式表 `static/css/`
 
 **加载顺序即层叠顺序，后加载的会覆盖先加载的。调整顺序或插入新文件前请先读这一节。**

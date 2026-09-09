@@ -43,7 +43,9 @@ def test_knowledge_action_handler_preserves_dispatch_error(tmp_path):
 
 def test_knowledge_frontend_management_contract():
     root = Path(__file__).parents[1]
-    html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
+    # The page is assembled from templates/, so assert against what is served.
+    from channel.web import template
+    html = template.render("chat.html")
     js = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
 
     assert 'id="knowledge-dialog-overlay"' in html

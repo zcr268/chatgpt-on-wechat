@@ -349,7 +349,9 @@ def test_document_editor_contract():
 
 
 def test_memory_and_skill_editor_wiring():
-    html = _web("chat.html")
+    # The page is assembled from templates/, so assert against what is served.
+    from channel.web import template
+    html = template.render("chat.html")
     console = _web("static/js/console.js")
     css = _web("static/css/workspace.css")
 

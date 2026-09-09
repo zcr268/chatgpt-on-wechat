@@ -312,7 +312,9 @@ def test_write_handler_falls_back_to_state_root_for_system_assets(tmp_path):
 # ----------------------------------------------------------------------
 def test_web_console_editor_contract():
     root = Path(__file__).parents[1]
-    html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
+    # The page is assembled from templates/, so assert against what is served.
+    from channel.web import template
+    html = template.render("chat.html")
     js = (root / "channel/web/static/js/workspace.js").read_text(encoding="utf-8")
     css = (root / "channel/web/static/css/workspace.css").read_text(encoding="utf-8")
     console = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
