@@ -159,6 +159,29 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 | `views/logs.js` | 84 | 实时日志流 |
 | `boot.js` | 36 | 启动：应用主题与语言、鉴权闸门、首次拉取配置与历史 |
 
+### 和拆分前的版本做对比
+
+拆分前的前端（`chat.html` + `console.js` + `console.css` 三个文件）没有提交副本，
+git 历史里就是唯一的一份。需要对比时先取出快照：
+
+```
+python channel/web/tools/snapshot_legacy.py          # 默认取 master
+python channel/web/tools/snapshot_legacy.py <ref>    # 或任意 ref
+```
+
+产物在 `static/legacy/`（已 gitignore，对比完直接删掉即可）。然后：
+
+```
+python app.py -old
+```
+
+`/chat` 就会返回老版页面，后端、会话和历史都和当前版本共用，所以能直接比行为。
+不带 `-old` 启动则完全不受影响。
+
+想两个版本**同时**跑着看，理论上可以用 `git worktree` 加 `COW_WEB_PORT` 起第二个实例，
+但那会起第二套完整后端——调度器和 IM 渠道都会重复连接，配了飞书之类的会双份收消息。
+除非你只跑 web 渠道，否则别这么做。
+
 ### 三处不能动的加载顺序
 
 除了"core 在 views 之前"这个大方向，有三处是硬约束，改动会直接导致运行时报错：
