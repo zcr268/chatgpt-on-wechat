@@ -44,6 +44,7 @@ from agent.permission import (
     normalize_mode as permission_normalize_mode,
 )
 from channel.web.openai_api import OpenAIChatCompletionsHandler
+from channel.web import template
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".svg"}
 VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
@@ -2066,15 +2067,6 @@ class WebChannel(ChatChannel):
             logger.error(f"Error polling response: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
-    def chat_page(self):
-        """Serve the chat HTML page."""
-        file_path = os.path.join(os.path.dirname(__file__), 'chat.html')  # 使用绝对路径
-        with open(file_path, 'r', encoding='utf-8') as f:
-            html = f.read()
-        # Inject the backend-resolved default language so the console can use
-        # it on first load (when the user has no saved cow_lang preference).
-        return html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
-
     def startup(self):
         configured_host = conf().get("web_host", "")
         host = configured_host or ("0.0.0.0" if _is_password_enabled() else "127.0.0.1")
@@ -2707,15 +2699,10 @@ class ChatHandler:
         web.header('Content-Type', 'text/html; charset=utf-8')
         web.header('Cache-Control', 'no-cache, no-store, must-revalidate')
         web.header('Pragma', 'no-cache')
-        file_path = os.path.join(os.path.dirname(__file__), 'chat.html')
-        with open(file_path, 'r', encoding='utf-8') as f:
-            html = f.read()
-        cache_bust = str(int(time.time()))
-        # Every first-party asset the page pulls in, so an upgraded console is
-        # never left running against a browser-cached copy of the old scripts.
-        for asset in ('js/console.js', 'js/workspace.js', 'js/doc-editor.js',
-                      'css/console.css'):
-            html = html.replace(f'assets/{asset}', f'assets/{asset}?v={cache_bust}')
+        # The shell pulls its layout, views and modals in from templates/;
+        # render() assembles them and stamps a version onto every first-party
+        # asset so an upgraded console never runs against cached old scripts.
+        html = template.render('chat.html', cache_bust=str(int(time.time())))
         # Inject the backend-resolved default language for first-load fallback.
         html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
         return html
