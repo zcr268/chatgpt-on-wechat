@@ -91,6 +91,7 @@ Thanks @zkjqd (#3076)
 - **MCP enhancements**: support tool-name prefixes (Thanks @georgeatparallel #3116); recover expired Streamable HTTP sessions (Thanks @yiheng-kkk ad1f686); reuse the subprocess and drop duplicate load logs when multiple Agents share the same `mcp.json`.
 - **Sub-Agent fix**: fixed a sub-Agent clearing the parent session's fallback settings (Thanks @alanyz106 #3111).
 - **Image generation**: fixed ModelScope `IMAGE_CREATE` failing due to a parameter mismatch (Thanks @Anai-Guo #3097).
+- **Streaming error fix**: fixed seven model bots raising a `NameError` on streaming errors because the generator closed over the already-cleared exception variable, masking the real upstream error (Thanks @Anai-Guo #3128).
 - **Interruption detection**: pass `stop_reason` through to the Agent loop to distinguish a model ending on its own from being cut off by the output limit (Thanks @6vision #3074).
 - **Attachment detection**: match keyword attachment URLs against the resolved path (Thanks @Whxuan0701 #3061).
 - **Gateway attribution**: add source attribution to OrcaRouter gateway requests (Thanks @Marc-oss-hub #3058).
@@ -107,4 +108,4 @@ Thanks @zkjqd (#3076)
 - **Source deployment**: run `cow update` for a one-click upgrade, or pull the latest code and restart. See the [upgrade guide](https://docs.cowagent.ai/guide/upgrade).
 - **Desktop client**: check for updates and update with one click inside the client, or get the latest version from the [download page](https://cowagent.ai/download/).
 
-**Release date**: 2026.09.09 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.7...2.1.8)
+**Release date**: 2026.09.10 | [Full Changelog](https://github.com/zhayujie/CowAgent/compare/2.1.7...2.1.8)
