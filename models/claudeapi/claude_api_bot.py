@@ -427,13 +427,14 @@ class ClaudeAPIBot(Bot, OpenAIImage):
             else:
                 return self._handle_sync_response(request_params)
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"Claude API call error: {e}")
             if stream:
                 # Return error generator for stream
                 def error_generator():
                     yield {
                         "error": True,
-                        "message": str(e),
+                        "message": error_msg,
                         "status_code": 500
                     }
 
