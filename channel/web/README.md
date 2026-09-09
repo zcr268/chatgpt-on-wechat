@@ -80,6 +80,13 @@ include 的两条规则：
   **任何文件在自己顶层执行时都读不到后面文件声明的 `const`**。
   所有需要立即执行的启动代码都集中在 `boot.js`，它必须最后加载。
 - 同名顶层声明出现在两个文件里会直接抛 `SyntaxError` 并导致白屏。新增声明前先确认没有重名。
+- **不要在顶层给已有全局重新赋值。** 这样的赋值会让"读到的是哪个版本"取决于加载顺序，
+  而这种问题不会在任何静态检查里暴露。目前这类赋值已经清零，
+  `tests/test_web_console_assets.py` 会守住脚本清单与加载顺序。
+
+以上约定由 `tests/test_web_console_assets.py` 检查：每个脚本恰好被加载一次、
+core/ 在 views/ 之前、`boot.js` 最后但在 `workspace.js` 之前、没有重名全局，
+并且真的能通过 `AssetsHandler` 取到。
 
 ### core/ — 跨视图基础设施
 
@@ -156,8 +163,8 @@ include 的两条规则：
 - `chat/send.js` 里的 `startSSE()` 单个函数就有 637 行，是整个前端最大的一块。
 - `chat/composer-input.js` 里输入框的 `keydown` 处理器有 92 行，同时负责斜杠命令导航和发送。
 - `views/agents.js` 尾部混着三个记忆页用的辅助函数。
-- `core/nav.js` 里 `navigateTo` 被定义了两次——后一次整体重新赋值以加入
-  未保存内容拦截和各视图懒加载。两处现在在同一个文件里，便于以后合并。
+- `views/models.js`（1804 行）和 `core/i18n.js`（1744 行）仍然偏大。
+  后者主要是翻译表本身，拆开意义不大。
 
 ## 样式表 `static/css/`
 

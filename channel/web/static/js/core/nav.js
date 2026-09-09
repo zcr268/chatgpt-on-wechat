@@ -19,7 +19,9 @@ const VIEW_META = {
 
 let currentView = 'chat';
 
-function navigateTo(viewId) {
+// The view switch itself. Callers want navigateTo() below, which wraps this
+// with the unsaved-edit guard and the per-view lazy loading.
+function _switchToView(viewId) {
     if (!VIEW_META[viewId]) return;
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     const target = document.getElementById('view-' + viewId);
@@ -97,10 +99,11 @@ window.addEventListener('resize', () => {
 });
 
 // =====================================================================
-// View Navigation Hook
+// View Navigation
 // =====================================================================
-const _origNavigateTo = navigateTo;
-navigateTo = function(viewId) {
+// Everything routes through here: the sidebar, the breadcrumb and the
+// navigateTo() calls in generated onclick handlers.
+function navigateTo(viewId) {
     // An open document editor is about to be replaced by another view, which
     // would drop the edit with nothing on screen to say so.
     if (!docGuardUnsaved(() => navigateTo(viewId))) return;
@@ -108,7 +111,7 @@ navigateTo = function(viewId) {
     // Stop log stream when leaving logs view
     if (currentView === 'logs' && viewId !== 'logs') stopLogStream();
 
-    _origNavigateTo(viewId);
+    _switchToView(viewId);
 
     // Lazy-load view data
     if (viewId === 'config') { loadConfigView(); switchConfigTab('basic'); }
@@ -131,5 +134,5 @@ navigateTo = function(viewId) {
     else if (viewId === 'channels') loadChannelsView();
     else if (viewId === 'tasks') { switchTasksTab('tasks'); loadTasksView(); }
     else if (viewId === 'logs') startLogStream();
-};
+}
 
