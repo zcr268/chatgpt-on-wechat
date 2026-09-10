@@ -56,6 +56,7 @@ GEMINI_31_FLASH_LITE_PRE = "gemini-3.1-flash-lite-preview"  # Gemini 3.1 Flash L
 GEMINI_35_FLASH = "gemini-3.5-flash"  # Gemini 3.5 Flash
 GEMINI_36_FLASH = "gemini-3.6-flash"  # Gemini 3.6 Flash
 GEMINI_37_FLASH = "gemini-3.7-flash"  # Gemini 3.7 Flash - Agent recommended model (default)
+GEMINI_38_FLASH = "gemini-3.8-flash"  # Gemini 3.8 Flash - latest flagship
 
 # OpenAI
 GPT35 = "gpt-3.5-turbo"
@@ -85,6 +86,7 @@ GPT_54_MINI = "gpt-5.4-mini"
 GPT_54_NANO = "gpt-5.4-nano"
 GPT_55 = "gpt-5.5"  # GPT-5.5 - top-tier (expensive), not default
 GPT_56_LUNA = "gpt-5.6-luna"    # GPT-5.6 Luna - default flagship model for GPT
+GPT_6_ASTRA = "gpt-6-astra"     # GPT-6 Astra - most intelligent flagship (Responses API, higher cost)
 GPT_56_TERRA = "gpt-5.6-terra"  # GPT-5.6 Terra
 GPT_56_SOL = "gpt-5.6-sol"      # GPT-5.6 Sol - highest intelligence, higher latency
 O1 = "o1-preview"
@@ -218,7 +220,7 @@ MODEL_LIST = [
               "claude", "claude-3-haiku", "claude-3-sonnet", "claude-3-opus", "claude-3.5-sonnet",
 
               # Gemini
-              GEMINI_37_FLASH, GEMINI_36_FLASH, GEMINI_35_FLASH, GEMINI_31_FLASH_LITE_PRE, GEMINI_31_PRO_PRE, GEMINI_3_PRO_PRE, GEMINI_3_FLASH_PRE, GEMINI_25_PRO_PRE, GEMINI_25_FLASH_PRE,
+              GEMINI_38_FLASH, GEMINI_37_FLASH, GEMINI_36_FLASH, GEMINI_35_FLASH, GEMINI_31_FLASH_LITE_PRE, GEMINI_31_PRO_PRE, GEMINI_3_PRO_PRE, GEMINI_3_FLASH_PRE, GEMINI_25_PRO_PRE, GEMINI_25_FLASH_PRE,
               GEMINI_20_FLASH, GEMINI_20_flash_exp, GEMINI_15_PRO, GEMINI_15_flash, GEMINI_PRO, GEMINI,
 
               # OpenAI
