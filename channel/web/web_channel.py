@@ -5049,6 +5049,20 @@ class ModelsHandler:
         file_cfg["chat_fallback"] = dict(payload)
         self._write_file_config(file_cfg)
 
+        # Turning the fallback off must take effect now, not on the next run
+        # boundary. A model that had already switched to the backup keeps its
+        # engaged fallback state on the long-lived AgentLLMModel, so clear it
+        # across all live agents — otherwise disabling the fallback appears to
+        # do nothing and the backup model keeps answering.
+        if not enabled:
+            try:
+                from bridge.bridge import Bridge
+                Bridge().get_agent_bridge().clear_all_model_fallbacks()
+            except Exception as clear_err:
+                logger.warning(
+                    f"[ModelsHandler] failed to clear engaged fallbacks: {clear_err}"
+                )
+
         logger.info(f"[ModelsHandler] chat fallback updated: {payload}")
         return json.dumps({"status": "success", "applied": payload})
 

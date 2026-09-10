@@ -1101,6 +1101,35 @@ class AgentBridge:
         for (agent_id, session_id), agent in sessions:
             yield agent_id, session_id, agent
 
+    def clear_all_model_fallbacks(self) -> int:
+        """Drop any engaged fallback routing on every live agent's model.
+
+        Fallback state lives on the long-lived ``AgentLLMModel`` and is normally
+        cleared at the top of the next run. Disabling the fallback in the UI only
+        rewrites config, so a model that had already switched would stay on the
+        backup until that next run happens to reset it. Called when the user
+        turns the fallback off so the change takes effect immediately, on the
+        very next message, without waiting for a run boundary or a restart.
+
+        Returns the number of models that were actually on a fallback.
+        """
+        cleared = 0
+        for _agent_id, _session_id, agent in self.iter_agent_instances():
+            model = getattr(agent, "model", None)
+            reset = getattr(model, "reset_fallback", None)
+            if not callable(reset):
+                continue
+            if getattr(model, "_fallback_model", None) is None:
+                continue
+            try:
+                reset()
+                cleared += 1
+            except Exception as e:
+                logger.debug(f"[AgentBridge] clear fallback skipped: {e}")
+        if cleared:
+            logger.info(f"[AgentBridge] cleared engaged fallback on {cleared} model(s)")
+        return cleared
+
     def sync_session_messages_from_store(
         self, session_id: str, agent_id: str = None
     ) -> int:
