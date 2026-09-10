@@ -90,7 +90,7 @@ Thanks @zkjqd (#3076)
 - **Skill fixes**: hardened tar archive extraction (Thanks @Whxuan0701 #3063); resolve a repository's default branch instead of defaulting to `main` when installing a skill (Thanks @aniruddhaadak80 #3080).
 - **MCP enhancements**: support tool-name prefixes (Thanks @georgeatparallel #3116); recover expired Streamable HTTP sessions (Thanks @yiheng-kkk ad1f686); reuse the subprocess and drop duplicate load logs when multiple Agents share the same `mcp.json`.
 - **Sub-Agent fix**: fixed a sub-Agent clearing the parent session's fallback settings (Thanks @alanyz106 #3111).
-- **Image generation**: fixed ModelScope `IMAGE_CREATE` failing due to a parameter mismatch (Thanks @Anai-Guo #3097).
+- **Image generation**: fixed ModelScope `IMAGE_CREATE` failing due to a parameter mismatch (Thanks @Anai-Guo #3097); fixed empty base64 data being misdetected and producing an empty image file (Thanks @c020627 #3133, @justinguo7777 #3131).
 - **Streaming error fix**: fixed seven model bots raising a `NameError` on streaming errors because the generator closed over the already-cleared exception variable, masking the real upstream error (Thanks @Anai-Guo #3128).
 - **Interruption detection**: pass `stop_reason` through to the Agent loop to distinguish a model ending on its own from being cut off by the output limit (Thanks @6vision #3074).
 - **Attachment detection**: match keyword attachment URLs against the resolved path (Thanks @Whxuan0701 #3061).
