@@ -9,8 +9,8 @@ name: Release Desktop
 #
 # Full flow:
 #   1. (this workflow) build + upload to R2 + D1 as unpublished.
-#   2. (local) download the mac dmgs, run desktop/build/notarize-dmg.sh to
-#      notarize + staple + re-upload the stapled dmgs to R2.
+#   2. (local, manual) download the mac dmgs, notarize + staple them, then
+#      re-upload the stapled dmgs to R2.
 #   3. (Publish Desktop workflow) flip D1 is_latest=1 and attach GitHub
 #      Release assets — makes the version live on the site.
 #
@@ -383,7 +383,7 @@ jobs:
           # This build job ALWAYS registers rows as unpublished (is_latest=0), so
           # /download/<p>/latest keeps serving the previous release and the new
           # version stays invisible on the site. macOS dmgs still need to be
-          # notarized+stapled locally (build/notarize-dmg.sh) before they're
+          # notarized+stapled locally before they're
           # safe to ship. Promotion to latest happens later, only after
           # notarization, via the separate "Publish Desktop" workflow.
           echo "==> Registering $VER as unpublished (is_latest=0)."

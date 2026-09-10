@@ -85,13 +85,20 @@ Thanks @zkjqd (#3076)
 
 ## 🛠 Improvements & Fixes
 
-- **Structured chunking**: Markdown memory and knowledge documents are chunked by heading structure, with a prompt to rebuild when the chunk version is outdated. Thanks @alanyz106 (#3115)
-- **Memory index fix**: fixed blank text chunks causing the embeddings API to error and the entire memory index build to fail, falling back to keyword search (Thanks @6vision #3121).
-- **Skill fixes**: hardened tar archive extraction (Thanks @Whxuan0701 #3063); resolve a repository's default branch instead of defaulting to `main` when installing a skill (Thanks @aniruddhaadak80 #3080).
-- **MCP enhancements**: support tool-name prefixes (Thanks @georgeatparallel #3116); recover expired Streamable HTTP sessions (Thanks @yiheng-kkk ad1f686); reuse the subprocess and drop duplicate load logs when multiple Agents share the same `mcp.json`.
+- **Skill fixes**:
+  - hardened tar archive extraction (Thanks @Whxuan0701 #3063)
+  - resolve a repository's default branch instead of defaulting to `main` when installing a skill (Thanks @aniruddhaadak80 #3080)
+- **MCP enhancements**:
+  - support tool-name prefixes (Thanks @georgeatparallel #3116)
+  - recover expired Streamable HTTP sessions (Thanks @yiheng-kkk ad1f686)
+  - reuse the subprocess and drop duplicate load logs when multiple Agents share the same `mcp.json`
+- **Image generation**:
+  - fixed ModelScope `IMAGE_CREATE` failing due to a parameter mismatch (Thanks @Anai-Guo #3097)
+  - fixed empty base64 data being misdetected and producing an empty image file (Thanks @c020627 #3133, @justinguo7777 #3131)
 - **Sub-Agent fix**: fixed a sub-Agent clearing the parent session's fallback settings (Thanks @alanyz106 #3111).
-- **Image generation**: fixed ModelScope `IMAGE_CREATE` failing due to a parameter mismatch (Thanks @Anai-Guo #3097); fixed empty base64 data being misdetected and producing an empty image file (Thanks @c020627 #3133, @justinguo7777 #3131).
+- **Structured chunking**: Markdown memory and knowledge documents are chunked by heading structure, with a prompt to rebuild when the chunk version is outdated. Thanks @alanyz106 (#3115)
 - **Streaming error fix**: fixed seven model bots raising a `NameError` on streaming errors because the generator closed over the already-cleared exception variable, masking the real upstream error (Thanks @Anai-Guo #3128).
+- **Memory index fix**: fixed blank text chunks causing the embeddings API to error and the entire memory index build to fail, falling back to keyword search (Thanks @6vision #3121).
 - **Interruption detection**: pass `stop_reason` through to the Agent loop to distinguish a model ending on its own from being cut off by the output limit (Thanks @6vision #3074).
 - **Attachment detection**: match keyword attachment URLs against the resolved path (Thanks @Whxuan0701 #3061).
 - **Gateway attribution**: add source attribution to OrcaRouter gateway requests (Thanks @Marc-oss-hub #3058).
@@ -102,7 +109,9 @@ Thanks @zkjqd (#3076)
 - **Windows client**: fixed an update installation breaking the shortcut.
 - **Desktop client**: fixed numeric Agent settings like max context tokens not being clearable (Thanks @zkjqd #3130).
 - **Backup and restore**: backups now include all Agent workspaces, with fixes for nested archiving, restore layout, and version compatibility in multi-Agent setups.
-- **Docs**: added a Traditional Chinese entry to the Japanese docs language switcher (Thanks @c020627 #3072); added Kimi-related links (Thanks @oriengy #2885).
+- **Docs**:
+  - added a Traditional Chinese entry to the Japanese docs language switcher (Thanks @c020627 #3072)
+  - added Kimi-related links (Thanks @oriengy #2885)
 
 ## 📦 How to Upgrade
 
