@@ -172,6 +172,45 @@ class OpenAIHTTPClient:
             stream=stream,
         )
 
+    def responses(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        api_base: Optional[str] = None,
+        timeout: Optional[float] = None,
+        proxy: Optional[str] = None,
+        extra_headers: Optional[Dict[str, str]] = None,
+        extra_query: Optional[Dict[str, str]] = None,
+        path: str = "/responses",
+        stream: bool = False,
+        **payload,
+    ):
+        """POST /responses (OpenAI Responses API).
+
+        Required for models like gpt-6-astra whose tool calling is only
+        supported on Responses (Chat Completions cannot do tool calling with a
+        non-``none`` reasoning effort, and Astra does not support ``none``).
+
+        Non-streaming returns the raw Responses ``dict``. Streaming returns a
+        generator yielding parsed SSE event ``dict`` objects (each carries a
+        ``type`` such as ``response.output_text.delta``); the caller is
+        responsible for translating them into whatever shape it needs. On
+        error during streaming a single ``{"error": ..., "status_code": ...}``
+        chunk is yielded, matching :meth:`chat_completions`.
+        """
+        payload["stream"] = stream
+        return self._request(
+            path=path,
+            payload=payload,
+            api_key=api_key,
+            api_base=api_base,
+            timeout=timeout,
+            proxy=proxy,
+            extra_headers=extra_headers,
+            extra_query=extra_query,
+            stream=stream,
+        )
+
     def completions(
         self,
         *,
