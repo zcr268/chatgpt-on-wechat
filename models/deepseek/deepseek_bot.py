@@ -6,11 +6,11 @@ DeepSeek Bot — fully OpenAI-compatible, uses its own API key / base config.
 Supported models:
 - deepseek-chat       (V3, no thinking)
 - deepseek-reasoner   (R1, built-in reasoning, no `thinking` switch)
-- deepseek-v4-flash   (V4, supports thinking mode + tool calls)
-- deepseek-v4-flash   (V4 Flash, default; thinking mode + tool calls)
+- deepseek-flash      (V4.1 Flash, default; native multimodal, thinking mode + tool calls)
+- deepseek-v4-flash   (V4 Flash; thinking mode + tool calls)
 - deepseek-v4-pro     (V4 Pro, stronger on complex tasks)
 
-Thinking mode notes (for V4 models):
+Thinking mode notes (for V4 / V4.1 models):
 - Toggle: ``{"thinking": {"type": "enabled" | "disabled"}}`` (default: enabled)
 - Effort: ``reasoning_effort`` ∈ {"low", "high", "xhigh", "max"}
 - In thinking mode, ``temperature``/``top_p``/``presence_penalty``/``frequency_penalty``
@@ -49,9 +49,9 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
         super().__init__()
         self.sessions = SessionManager(
             DeepSeekSession,
-            model=conf().get("model") or const.DEEPSEEK_V4_FLASH,
+            model=conf().get("model") or const.DEEPSEEK_FLASH,
         )
-        conf_model = conf().get("model") or const.DEEPSEEK_V4_FLASH
+        conf_model = conf().get("model") or const.DEEPSEEK_FLASH
         self.args = {
             "model": conf_model,
             "temperature": conf().get("temperature", 0.7),
@@ -80,7 +80,7 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
         return {
             "api_key": self.api_key,
             "api_base": self.api_base,
-            "model": conf().get("model", const.DEEPSEEK_V4_FLASH),
+            "model": conf().get("model", const.DEEPSEEK_FLASH),
             "default_temperature": conf().get("temperature", 0.7),
             "default_top_p": conf().get("top_p", 1.0),
             "default_frequency_penalty": conf().get("frequency_penalty", 0.0),
@@ -89,20 +89,21 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
 
     @property
     def supports_vision(self) -> bool:
-        """Only the dedicated vision model accepts images; the default chat
-        models (deepseek-v4-flash / -pro / -chat / -reasoner) return 400 on
-        image input. Gating on the exact model name lets the vision tool
-        route to deepseek-v4-flash-vision-exp as a fallback instead of
-        misfiring the non-vision main model."""
+        """deepseek-flash (V4.1) is natively multimodal, and the dedicated
+        deepseek-v4-flash-vision-exp accepts images too. The other chat models
+        (deepseek-v4-flash / -pro / -chat / -reasoner) return 400 on image
+        input, so gate on the exact model name to let the vision tool route to
+        a vision-capable model instead of misfiring the non-vision main model."""
         model_name = (conf().get("model") or "").lower()
-        return model_name == const.DEEPSEEK_V4_FLASH_VISION_EXP
+        return model_name in (const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH_VISION_EXP)
 
     @staticmethod
     def _is_v4_model(model_name: str) -> bool:
-        """V4 series: explicit `thinking` switch, and a 384K output ceiling."""
+        """V4 / V4.1 series: explicit `thinking` switch, and a large output ceiling."""
         if not model_name:
             return False
-        return model_name.lower().startswith("deepseek-v4")
+        name = model_name.lower()
+        return name.startswith("deepseek-v4") or name == const.DEEPSEEK_FLASH
 
     @staticmethod
     def _model_supports_thinking(model_name: str) -> bool:
@@ -678,7 +679,7 @@ class DeepSeekBot(Bot, OpenAICompatibleBot):
                     max_tokens: int = 1000) -> dict:
         """Analyse an image via DeepSeek's OpenAI-compatible /chat/completions endpoint."""
         try:
-            vision_model = model or self.args.get("model", const.DEEPSEEK_V4_FLASH)
+            vision_model = model or self.args.get("model", const.DEEPSEEK_FLASH)
             payload = {
                 "model": vision_model,
                 "max_tokens": max_tokens,

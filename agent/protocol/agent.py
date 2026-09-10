@@ -38,8 +38,10 @@ _MODEL_SPECS = {
     # gpt-5.x / gpt-6 / future: 1M context, 128K max output.
     "gpt": {"version_min": 5.0, "window": 1000000, "max_output": 128000},
     # deepseek V4+: 1M context, 384K max output; legacy chat/reasoner: 64K.
+    # full_cap_names lists version-less flagship names that should also get the
+    # large window even though they carry no numeric version (e.g. deepseek-flash).
     "deepseek": {"version_min": 4.0, "window": 1000000, "max_output": 384000,
-                 "fallback_window": 64000},
+                 "fallback_window": 64000, "full_cap_names": ("deepseek-flash",)},
     # gemini: 1M context, 64K max output.
     "gemini": {"window": 1000000, "max_output": 64000},
     # claude: 200K context, 64K max output.
@@ -350,6 +352,10 @@ class Agent:
                     else:
                         window = spec.get("fallback_window", 128000)
                         max_output = None
+                elif model_name in spec.get("full_cap_names", ()):
+                    # Version-less flagship (e.g. deepseek-flash = V4.1): full window.
+                    window = spec["window"]
+                    max_output = spec.get("max_output")
                 elif version_min is not None and (version is None or version < version_min):
                     # Older release of a family that only bumped at version_min
                     # (e.g. deepseek < v4): use its conservative fallback window.

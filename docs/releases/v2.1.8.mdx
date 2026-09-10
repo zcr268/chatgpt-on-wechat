@@ -64,7 +64,7 @@ Thanks @chimyves (#3087), @sufan721 (#3079)
 
 ## 🤖 Model Capabilities
 
-- **New models**: added the flagship `gpt-6-astra`, `claude-fable-5-1`, `qwen3.8-flash`, `glm-5.3-flash`, `gemini-3.8-flash`, and the vision model `deepseek-v4-flash-vision-exp` (Thanks @a1094174619 #3094).
+- **New models**: added `deepseek-flash` (DeepSeek V4.1 Flash), `gpt-6-astra`, `claude-fable-5-1`, `qwen3.8-flash`, `glm-5.3-flash`, `gemini-3.8-flash`, and the vision model `deepseek-v4-flash-vision-exp` (Thanks @a1094174619 #3094).
 - **Model fallback**: configure a fallback model under Model Config > Primary Model, which takes over automatically when the primary model fails, preventing interruptions from a single provider outage. Thanks @alanyz106 (#3099)
 - **Six new search providers**:
   - **AnySearch** (supports anonymous mode). Thanks @WangPan59 (#3083)
@@ -100,6 +100,7 @@ Thanks @zkjqd (#3076)
 - **Evaluation tool**: added a minimal Agent trajectory evaluation flow. Thanks @yanzhiliaoliao (#3100)
 - **DingTalk channel**: disable the proxy on streaming connections and back off on reconnect, eliminating recurring errors.
 - **Windows client**: fixed an update installation breaking the shortcut.
+- **Desktop client**: fixed numeric Agent settings like max context tokens not being clearable (Thanks @zkjqd #3130).
 - **Backup and restore**: backups now include all Agent workspaces, with fixes for nested archiving, restore layout, and version compatibility in multi-Agent setups.
 - **Docs**: added a Traditional Chinese entry to the Japanese docs language switcher (Thanks @c020627 #3072); added Kimi-related links (Thanks @oriengy #2885).
 

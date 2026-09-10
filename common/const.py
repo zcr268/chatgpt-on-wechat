@@ -98,7 +98,8 @@ TTS_1_HD = "tts-1-hd"
 # DeepSeek
 DEEPSEEK_CHAT = "deepseek-chat"  # DeepSeek-V3 chat model
 DEEPSEEK_REASONER = "deepseek-reasoner"  # DeepSeek-R1 model
-DEEPSEEK_V4_FLASH = "deepseek-v4-flash"  # DeepSeek V4 Flash - default recommendation (thinking + tool calls)
+DEEPSEEK_FLASH = "deepseek-flash"  # DeepSeek V4.1 Flash - default recommendation (native multimodal, thinking + tool calls)
+DEEPSEEK_V4_FLASH = "deepseek-v4-flash"  # DeepSeek V4 Flash (thinking + tool calls)
 DEEPSEEK_V4_PRO = "deepseek-v4-pro"  # DeepSeek V4 Pro - stronger on complex tasks (thinking + tool calls)
 DEEPSEEK_V4_FLASH_VISION_EXP = "deepseek-v4-flash-vision-exp"  # DeepSeek V4 Flash vision (experimental, multimodal)
 
@@ -202,7 +203,7 @@ MODELSCOPE_MODEL_LIST = ["deepseek-ai/DeepSeek-R1-0528", "deepseek-ai/DeepSeek-R
 
 MODEL_LIST = [
               # DeepSeek
-              DEEPSEEK_V4_FLASH, DEEPSEEK_V4_PRO, DEEPSEEK_CHAT, DEEPSEEK_REASONER,
+              DEEPSEEK_FLASH, DEEPSEEK_V4_FLASH, DEEPSEEK_V4_PRO, DEEPSEEK_CHAT, DEEPSEEK_REASONER,
 
               # Baidu Qianfan / ERNIE
               QIANFAN, ERNIE_5_1, ERNIE_5, ERNIE_X1_1, ERNIE_45_TURBO_128K, ERNIE_45_TURBO_32K, ERNIE_4_TURBO_8K,
@@ -264,7 +265,7 @@ MODEL_LIST = MODEL_LIST + GITEE_AI_MODEL_LIST + MODELSCOPE_MODEL_LIST
 # Fallback model when `model` is missing from the config. Keep in sync with
 # config-template.json so a config without an explicit model behaves the same
 # as a fresh install.
-DEFAULT_MODEL = DEEPSEEK_V4_FLASH
+DEFAULT_MODEL = DEEPSEEK_FLASH
 
 # channel
 FEISHU = "feishu"

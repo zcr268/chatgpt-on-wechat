@@ -2724,7 +2724,7 @@ class ChatHandler:
 class ConfigHandler:
 
     _RECOMMENDED_MODELS = [
-        const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
+        const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
         const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
         # claude-opus-5 is the Claude default; claude-sonnet-5 / claude-fable-5 follow right after it.
         const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5_1, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
@@ -2756,7 +2756,7 @@ class ConfigHandler:
             "api_base_key": "deepseek_api_base",
             "api_base_default": "https://api.deepseek.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
+            "models": [const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
         }),
         ("claudeAPI", {
             "label": "Claude",
@@ -3449,11 +3449,10 @@ class ModelsHandler:
     # Anything not listed here intentionally hides the model dropdown so
     # users cannot pin a chat-only model and silently get a 4xx at runtime.
     _VISION_PROVIDER_MODELS = {
-        # DeepSeek 视觉模型：V4 Flash vision（experimental, multimodal）。
-        # Placed first so it's the default image-understanding vendor —
-        # deepseek-v4-flash is the project's default main model, so a single
-        # DeepSeek key covers both chat and vision.
-        "deepseek":  [const.DEEPSEEK_V4_FLASH_VISION_EXP],
+        # DeepSeek 视觉模型：deepseek-flash（V4.1，原生多模态），其次是
+        # deepseek-v4-flash-vision-exp。deepseek-flash 是项目默认主模型，一把
+        # DeepSeek key 即可同时覆盖对话与视觉。
+        "deepseek":  [const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH_VISION_EXP],
         # OpenAI ordering puts the GPT-5.6 family first, then GPT-5.5/5.4,
         # GPT-5 and the GPT-4.1/4o backstops.
         "openai":    [
@@ -4388,6 +4387,7 @@ class ModelsHandler:
     # extra tags the preset lists don't reflect yet (e.g. native-multimodal
     # models). Fields left off fall back to auto-detection.
     _PRESET_MODEL_META = {
+        "deepseek-flash": {"capabilities": ["text", "vision"], "context_window": 1000000, "max_output_tokens": 393216},
         "deepseek-v4-flash": {"context_window": 1000000, "max_output_tokens": 393216},
         "deepseek-v4-pro": {"context_window": 1000000, "max_output_tokens": 393216},
         "glm-5.3-flash": {"context_window": 1000000, "max_output_tokens": 131072},
