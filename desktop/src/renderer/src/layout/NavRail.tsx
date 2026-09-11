@@ -36,8 +36,6 @@ import { useTheme } from '../hooks/useTheme'
 import { usePlatform } from '../hooks/usePlatform'
 import { useUpdateStore, hasPendingUpdate, hasAvailableUpdate } from '../store/updateStore'
 import UpdateBanner from '../components/UpdateBanner'
-import { selectMultiAgent } from '../store/agentStore'
-import { useAgentStore } from '../store/agentStore'
 import { product } from '@product'
 
 // Fallback shown when app.getVersion() is unavailable (dev/web preview). Keep
@@ -104,11 +102,10 @@ const NavRail: React.FC<NavRailProps> = ({ onLangChange }) => {
     navigate(path)
   }
 
-  // Surface the Team page only in multi-Agent mode (derived from the roster).
-  const multiAgent = useAgentStore(selectMultiAgent)
-  const navItems = multiAgent
-    ? [NAV_ITEMS[0], AGENTS_ITEM, ...NAV_ITEMS.slice(1)]
-    : NAV_ITEMS
+  // Always surface the Team entry: it is the only way to add a second Agent,
+  // so gating it on multi-Agent mode created a chicken-and-egg trap where a
+  // single-Agent install could never opt into a team. Inserted after Chat.
+  const navItems = [NAV_ITEMS[0], AGENTS_ITEM, ...NAV_ITEMS.slice(1)]
 
   const updateState = useUpdateStore()
   // Footer dot: hidden once dismissed for this version (user asked for this).

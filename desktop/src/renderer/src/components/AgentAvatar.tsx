@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import apiClient from '../api/client'
 import type { AgentProfile } from '../types'
 import { useAgentStore, findAgent } from '../store/agentStore'
+import brandLogo from '../assets/logo.png'
 
 /**
  * An Agent's face: its uploaded image when it has one, else a tinted disc with
@@ -65,6 +66,26 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({ agent, size = 32, className =
   const hasImage = !!agent && agent.avatar === 'image' && !failed
   const px = { width: size, height: size }
   const id = agent?.id || ''
+
+  // The default (built-in) Agent has no uploaded avatar; show the CowAgent
+  // brand logo instead of a bare initial disc, so its face matches the app.
+  const isDefault = !!agent && !!defaultAgentId && agent.id === defaultAgentId
+  if (!hasImage && isDefault) {
+    return (
+      <span
+        style={px}
+        className={`${radius} bg-surface-2 flex items-center justify-center flex-shrink-0 overflow-hidden ${className}`}
+      >
+        <img
+          src={brandLogo}
+          alt={agent?.name || 'CowAgent'}
+          draggable={false}
+          style={{ width: Math.round(size * 0.72), height: Math.round(size * 0.72) }}
+          className="object-contain"
+        />
+      </span>
+    )
+  }
 
   if (hasImage && agent) {
     // Prefer the per-file token (avatar mtime) so a re-upload busts the cache
