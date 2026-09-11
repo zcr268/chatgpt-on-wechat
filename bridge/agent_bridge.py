@@ -336,7 +336,12 @@ class AgentLLMModel(LLMModel):
         cur_model = self.model
         cur_bot_type = self._resolve_bot_type(cur_model)
         if self._bot is None or self._bot_model != cur_model or getattr(self, '_bot_type', None) != cur_bot_type:
-            self._bot = create_bot(cur_bot_type)
+            # Hand the resolved type to create_bot as the credential provider
+            # too. cur_bot_type already encodes the engaged fallback / session
+            # override, and the bot must resolve api_key+api_base from *that*
+            # provider — reading the global bot_type instead would pair this
+            # link's model id with the primary provider's endpoint.
+            self._bot = create_bot(cur_bot_type, credential_bot_type=cur_bot_type)
             self._bot = add_openai_compatible_support(self._bot)
             self._bot_model = cur_model
             self._bot_type = cur_bot_type
