@@ -4325,6 +4325,27 @@ function _addCodeBlockHeaders(container) {
 // =====================================================================
 let isPolling = false;
 let pollGeneration = 0;   // incremented on each restart to cancel stale poll loops
+// Auth gate for background pollers. When a web_password is set, the /poll and
+// /api/scheduler/runs loops must NOT run before the user logs in — otherwise
+// they fire every few seconds with no cookie and spam the server log with
+// "401 Unauthorized (credentials offered: none)". Both loops call
+// requestAuthGatedStart(); the actual start is deferred until the login/auth
+// check opens the gate via openAuthGate(). When no password is set the gate is
+// opened immediately at startup so behavior is unchanged.
+let authGateOpen = false;
+const _pendingAuthGatedStarts = [];
+function requestAuthGatedStart(fn) {
+    if (authGateOpen) { fn(); return; }
+    _pendingAuthGatedStarts.push(fn);
+}
+function openAuthGate() {
+    if (authGateOpen) return;
+    authGateOpen = true;
+    while (_pendingAuthGatedStarts.length) {
+        const fn = _pendingAuthGatedStarts.shift();
+        try { fn(); } catch (_) {}
+    }
+}
 let loadingContainers = {};
 let activeStreams = {};   // request_id -> EventSource
 let sessionActiveRequest = {};   // agent_id + session_id -> request_id
@@ -4437,8 +4458,9 @@ fetch('/config').then(r => r.json()).then(data => {
     loadHistory(1);
 }).catch(() => { loadHistory(1); });
 
-// Start polling immediately so scheduler/push messages are received at any time
-startPolling();
+// Start polling so scheduler/push messages are received. Gated behind auth so a
+// password-protected console doesn't poll (and log 401s) before login.
+requestAuthGatedStart(startPolling);
 
 const chatInput = document.getElementById('chat-input');
 const sendBtn = document.getElementById('send-btn');
@@ -7340,7 +7362,7 @@ function startSchedulerNotifyPolling() {
 // errors (_sessCfg, sessionPanelOpen, ...). Deferring to window load runs it
 // after all declarations are initialized.
 if (typeof window !== 'undefined') {
-    window.addEventListener('load', startSchedulerNotifyPolling);
+    window.addEventListener('load', () => requestAuthGatedStart(startSchedulerNotifyPolling));
 }
 
 // Scheduler deliveries stream over a request id shaped ``scheduler_<taskid>_<hex>``
@@ -15465,6 +15487,8 @@ function showLoginScreen() {
                 document.getElementById('app').classList.remove('hidden');
                 const logoutBtn = document.getElementById('logout-btn-header');
                 if (logoutBtn) logoutBtn.classList.remove('hidden');
+                // Now that the auth cookie is set, release the parked pollers.
+                openAuthGate();
                 initApp();
             } else {
                 if (currentLang === 'zh-Hant') {
@@ -15552,15 +15576,21 @@ applyI18n();
 
 fetch('/auth/check').then(r => r.json()).then(data => {
     if (data.auth_required && !data.authenticated) {
+        // Keep background pollers parked until login succeeds (openAuthGate is
+        // called from the login handler), so they don't spam 401s meanwhile.
         showLoginScreen();
     } else {
         if (data.auth_required) {
             const logoutBtn = document.getElementById('logout-btn-header');
             if (logoutBtn) logoutBtn.classList.remove('hidden');
         }
+        openAuthGate();
         initApp();
     }
 }).catch(() => {
+    // No auth info available (e.g. request failed): fall back to running so a
+    // password-less deployment still works.
+    openAuthGate();
     initApp();
 });
 

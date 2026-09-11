@@ -58,7 +58,8 @@ def load_config_json() -> dict:
     if not os.path.exists(config_path):
         return {}
     try:
-        with open(config_path, "r", encoding="utf-8") as f:
+        # utf-8-sig tolerates a UTF-8 BOM (e.g. edited with Windows Notepad).
+        with open(config_path, "r", encoding="utf-8-sig") as f:
             return json.load(f)
     except Exception:
         return {}
