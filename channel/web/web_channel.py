@@ -27,6 +27,7 @@ from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
 from common import const
 from common import i18n
+from common.channel_registry import get_channel_manager
 from common.log import logger
 from common.singleton import singleton
 from config import (
@@ -51,6 +52,21 @@ VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
 # Cap for a file the desktop client asks us to import by path. Matches the
 # multipart body cap on the HTTP server so both upload routes agree.
 MAX_LOCAL_IMPORT_BYTES = 512 * 1024 * 1024
+
+
+def _live_channel_manager():
+    """Return the running ChannelManager, or None if the app is not up yet.
+
+    app.py runs as ``python app.py``, so ``__main__`` is a *distinct* module
+    object from a later ``import app``; reading ``_channel_mgr`` off
+    ``sys.modules['__main__']`` therefore always yielded None and the console
+    silently refused to start a newly configured channel. The manager is
+    published through ``common.channel_registry`` instead (issue #3120).
+    """
+    try:
+        return get_channel_manager()
+    except Exception:
+        return None
 
 
 def _is_loopback_request() -> bool:
@@ -5475,9 +5491,7 @@ class ChannelsHandler:
     @staticmethod
     def _get_weixin_login_status() -> str:
         try:
-            import sys
-            app_module = sys.modules.get('__main__') or sys.modules.get('app')
-            mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+            mgr = _live_channel_manager()
             if mgr:
                 ch = mgr.get_channel("weixin")
                 if ch and hasattr(ch, 'login_status'):
@@ -5758,9 +5772,7 @@ class ChannelsHandler:
         if channel_name in active_channels and changed:
             should_restart = True
             try:
-                import sys
-                app_module = sys.modules.get('__main__') or sys.modules.get('app')
-                mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+                mgr = _live_channel_manager()
                 if mgr:
                     threading.Thread(
                         target=mgr.restart,
@@ -5835,7 +5847,7 @@ class ChannelsHandler:
                 import sys
                 app_module = sys.modules.get('__main__') or sys.modules.get('app')
                 clear_fn = getattr(app_module, '_clear_singleton_cache', None) if app_module else None
-                mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+                mgr = _live_channel_manager()
                 if mgr is None:
                     logger.warning(f"[WebChannel] ChannelManager not available, cannot start '{channel_name}'")
                     return
@@ -5881,9 +5893,7 @@ class ChannelsHandler:
 
         def _do_stop():
             try:
-                import sys
-                app_module = sys.modules.get('__main__') or sys.modules.get('app')
-                mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+                mgr = _live_channel_manager()
                 clear_fn = getattr(app_module, '_clear_singleton_cache', None) if app_module else None
                 if mgr:
                     mgr.stop(channel_name)
@@ -5909,9 +5919,7 @@ class ChannelsHandler:
     # ------------------------------------------------------------------
     @staticmethod
     def _channel_mgr():
-        import sys
-        app_module = sys.modules.get('__main__') or sys.modules.get('app')
-        return getattr(app_module, '_channel_mgr', None) if app_module else None
+        return _live_channel_manager()
 
     def _clean_credentials(self, channel_name: str, updates: dict) -> dict:
         """Keep only real, unmasked credential values for this channel type."""
@@ -6157,9 +6165,7 @@ class WeixinQrHandler:
     @staticmethod
     def _get_running_channel():
         try:
-            import sys
-            app_module = sys.modules.get('__main__') or sys.modules.get('app')
-            mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+            mgr = _live_channel_manager()
             if mgr:
                 return mgr.get_channel("weixin")
         except Exception:
@@ -7384,9 +7390,7 @@ def _bind_channel_instance(channel_type: str, instance_id: str = "", agent_id: s
     )
 
     try:
-        import sys
-        app_module = sys.modules.get("__main__") or sys.modules.get("app")
-        mgr = getattr(app_module, "_channel_mgr", None) if app_module else None
+        mgr = _live_channel_manager()
         channel = mgr.get_channel(target_id) if mgr else None
         if channel is not None:
             # Live-update owner + team on the running instance. Empty owner means
