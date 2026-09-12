@@ -192,8 +192,24 @@ class AgentRegistry:
 
         raw_agents = settings.get("agents")
         if raw_agents is None or raw_agents == []:
-            profile = AgentProfile(id="default", name="CowAgent", workspace=instance_root)
-            return cls([profile], "default")
+            # Single-agent install: the sole agent owns the instance root. Its id
+            # is normally the built-in "default", but a provisioner may inject one
+            # so the id is stable and meaningful from first boot; an invalid or
+            # absent value falls back to "default" and never breaks startup.
+            builtin_id = settings.get("default_agent_id")
+            # A value injected via env may arrive as a non-string (e.g. an
+            # all-digit id parsed as int), so coerce before validating.
+            builtin_id = str(builtin_id).strip() if builtin_id is not None else ""
+            if not builtin_id or not _AGENT_ID_RE.match(builtin_id):
+                builtin_id = "default"
+            builtin_name = settings.get("default_agent_name")
+            builtin_name = str(builtin_name).strip() if builtin_name is not None else ""
+            profile = AgentProfile(
+                id=builtin_id,
+                name=builtin_name or "CowAgent",
+                workspace=instance_root,
+            )
+            return cls([profile], builtin_id)
 
         if not isinstance(raw_agents, list):
             raise AgentRegistryError("agents must be a list")
