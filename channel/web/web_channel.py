@@ -3825,13 +3825,14 @@ class ModelsHandler:
         }
 
     @staticmethod
-    def _chat_provider_models() -> dict:
+    def _chat_preset_models() -> dict:
         """{provider_id: [model, ...]} for every chat-capable vendor.
 
         ``ConfigHandler.PROVIDER_MODELS`` carries per-vendor metadata
         (label, api_key_field, ...) around the model list; the console's model
-        picker wants only the lists. Kept as its own helper so the two chat
-        cards can never drift apart.
+        picker wants only the lists. Used as the base for the fallback card's
+        model lists, so a vendor without a catalog still offers its presets
+        while a catalogued one offers its catalog instead.
         """
         out = {}
         for pid, meta in ConfigHandler.PROVIDER_MODELS.items():
@@ -3841,34 +3842,61 @@ class ModelsHandler:
 
     @classmethod
     def _chat_fallback_capability(cls, local_config: dict) -> dict:
-        """The backup chat model, tried only after the primary one fails.
+        """The fallback chain, tried in order after the primary model fails.
 
         Deliberately separate from ``_chat_capability``: the primary model is
         the one that answers, while this is a safety net that stays idle until
-        an outage. It is opt-in (``enabled`` defaults to false) and needs both
-        a provider and a model — a half-filled entry is treated as "off" so a
-        partially configured fallback can never hijack a healthy setup.
+        an outage. It is opt-in (``enabled`` defaults to false) and every link
+        needs both a provider and a model — a half-filled link is dropped so a
+        partially configured chain can never hijack a healthy setup.
+
+        The chain is ordered and unbounded: the console renders one editable
+        row per link and the runtime walks them front to back, so the number of
+        links the user saves *is* the number of backups a turn gets.
         """
         cfg = local_config.get("chat_fallback") or {}
         if not isinstance(cfg, dict):
             cfg = {}
-        provider_id = (cfg.get("provider") or "").strip()
-        model = (cfg.get("model") or "").strip()
-        # Same provider list as the primary chat card, so the two dropdowns
-        # always offer identical choices (including expanded custom:<id>).
+        raw_chain = cfg.get("chain")
+        chain = []
+        if isinstance(raw_chain, list):
+            for item in raw_chain:
+                if not isinstance(item, dict):
+                    continue
+                chain.append({
+                    "provider": (item.get("provider") or "").strip(),
+                    "model": (item.get("model") or "").strip(),
+                })
+        elif isinstance(cfg, dict) and (cfg.get("provider") or cfg.get("model")):
+            # Pre-chain config: surface it as a one-link chain so the console
+            # shows what is configured instead of an empty list.
+            chain = [{
+                "provider": (cfg.get("provider") or "").strip(),
+                "model": (cfg.get("model") or "").strip(),
+            }]
+        # Same provider list as the primary chat card, so the dropdowns always
+        # offer identical choices (including expanded custom:<id>).
         primary = cls._chat_capability(local_config)
+        # Same model lists too: start from the vendors' presets and let a
+        # catalog override them, which is what the primary card does. Building
+        # this from the presets alone would leave the fallback on a free-form
+        # model field for a vendor whose models the primary card can list.
+        custom_cards = cls._custom_provider_cards(local_config)
         return {
             "editable": True,
             "enabled": bool(cfg.get("enabled", False)),
-            "current_provider": provider_id,
-            "current_model": model,
             "providers": primary.get("providers", []),
             # The model picker expects {provider_id: [models]}. PROVIDER_MODELS
             # is richer ({provider_id: {label, models, ...}}), so reduce it to
             # just the lists — handing over the raw dict makes the web console
             # call .slice() on a mapping and throw.
-            "provider_models": cls._chat_provider_models(),
-            "max_switches": cfg.get("max_switches", 1),
+            "provider_models": cls._apply_catalog(
+                cls._chat_preset_models(), "text", custom_cards),
+            "chain": chain,
+            # Kept for older clients that still read a single backup model:
+            # link 1 of the chain, so a downgraded console does not show blank.
+            "current_provider": chain[0]["provider"] if chain else "",
+            "current_model": chain[0]["model"] if chain else "",
             # Shown in the UI so it's obvious the fallback is inactive.
             "primary_provider": primary.get("current_provider", ""),
             "primary_model": primary.get("current_model", ""),
@@ -4873,7 +4901,7 @@ class ModelsHandler:
                 provider_id,
                 model,
                 bool(data.get("enabled")),
-                data.get("max_switches"),
+                chain=data.get("chain"),
             )
         if capability == "vision":
             return self._set_vision(provider_id, model)
@@ -5018,52 +5046,87 @@ class ModelsHandler:
         self._reset_bridge()
         return json.dumps({"status": "success", "applied": applied})
 
-    def _set_chat_fallback(self, provider_id: str, model: str, enabled: bool,
-                           max_switches=None) -> str:
-        """Persist the backup chat model under ``chat_fallback``.
+    def _normalized_custom_provider(self, provider_id: str):
+        """Resolve a ``custom:<id>`` provider id, or None for a builtin one.
 
-        Validation mirrors ``_set_chat`` (custom:<id> ids included), with two
-        differences: the entry is opt-in via ``enabled``, and turning it on
-        requires both a provider and a model so a half-configured fallback can
-        never hijack a healthy primary model.
+        Returns ``(provider_entry, error_json)``; exactly one is set. Kept
+        separate so a chain can reuse it per link instead of duplicating the
+        lookup.
         """
-        custom_provider = None
+        if not provider_id:
+            return None, None
         if provider_id.startswith("custom:"):
             from models.custom_provider import parse_custom_bot_type
             _, custom_id = parse_custom_bot_type(provider_id)
             providers = self._normalize_custom_providers(conf().get("custom_providers"))
             custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
             if custom_provider is None:
-                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
-        elif provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
-            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+                return None, json.dumps({"status": "error",
+                                         "message": f"unknown custom provider id: {custom_id}"})
+            return custom_provider, None
+        if provider_id not in ConfigHandler.PROVIDER_MODELS:
+            return None, json.dumps({"status": "error",
+                                     "message": f"unknown provider: {provider_id}"})
+        return None, None
 
-        # Fall back to the custom provider's default model when none is given.
-        if not model and custom_provider:
-            model = custom_provider.get("model") or ""
+    def _set_chat_fallback(self, provider_id: str, model: str, enabled: bool,
+                           chain=None) -> str:
+        """Persist the fallback chain under ``chat_fallback``.
 
-        # Enabling is all-or-nothing; disabling is always allowed (it is the
-        # safe direction, and lets a user clear a broken entry).
-        if enabled and (not provider_id or not model):
+        ``chain`` is an ordered list of ``{"provider", "model"}`` links, tried
+        front to back after the primary model fails a turn for good. It is
+        unbounded: however many links are saved is how many backups a turn
+        gets, so there is no cap to configure.
+
+        For callers still sending the single-model shape (``provider_id`` /
+        ``model``), the pair is folded into a one-link chain, so an older
+        client keeps working against the new config.
+
+        Validation mirrors ``_set_chat`` (custom:<id> ids included), with two
+        differences: the chain is opt-in via ``enabled``, and turning it on
+        requires at least one fully specified link so a half-configured
+        fallback can never hijack a healthy primary model. Individual links
+        that are incomplete or repeat the primary model are dropped rather
+        than rejected — one bad row should not block saving the good ones.
+        """
+        links = []
+        if chain is not None:
+            if not isinstance(chain, list):
+                return json.dumps({"status": "error", "message": "chain must be a list"})
+            raw_links = chain
+        else:
+            raw_links = [{"provider": provider_id or "", "model": model or ""}]
+
+        for item in raw_links:
+            if not isinstance(item, dict):
+                continue
+            link_provider = (item.get("provider") or "").strip()
+            link_model = (item.get("model") or "").strip()
+            if not link_provider and not link_model:
+                continue  # an empty row the user never filled in
+            custom_provider, err = self._normalized_custom_provider(link_provider)
+            if err:
+                return err
+            # Fall back to the custom provider's default model when none given.
+            if not link_model and custom_provider:
+                link_model = custom_provider.get("model") or ""
+            if not link_provider or not link_model:
+                continue  # half a link routes nowhere
+            links.append({"provider": link_provider, "model": link_model})
+
+        # Enabling needs at least one usable link; disabling is always allowed
+        # (it is the safe direction, and lets a user clear a broken entry).
+        if enabled and not links:
             return json.dumps({
                 "status": "error",
-                "message": "both a provider and a model are required to enable the fallback",
+                "message": "at least one provider/model pair is required to enable the fallback",
             })
-
-        try:
-            switches = int(max_switches) if max_switches is not None else 1
-        except (TypeError, ValueError):
-            switches = 1
-        # At least one switch, or the fallback could never engage at all.
-        switches = max(1, min(switches, 5))
 
         local_config = conf()
         file_cfg = self._read_file_config()
         payload = {
             "enabled": bool(enabled),
-            "provider": provider_id or "",
-            "model": model or "",
-            "max_switches": switches,
+            "chain": links,
         }
         # Written as a whole so a stale key from an older shape can't survive.
         local_config["chat_fallback"] = dict(payload)
