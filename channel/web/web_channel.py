@@ -5893,6 +5893,8 @@ class ChannelsHandler:
 
         def _do_stop():
             try:
+                import sys
+                app_module = sys.modules.get('__main__') or sys.modules.get('app')
                 mgr = _live_channel_manager()
                 clear_fn = getattr(app_module, '_clear_singleton_cache', None) if app_module else None
                 if mgr:
