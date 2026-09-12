@@ -61,7 +61,9 @@ def read(settings: Mapping[str, Any]) -> Dict[str, Any]:
     """
     path = team_file(settings)
     try:
-        raw = path.read_text(encoding="utf-8")
+        # utf-8-sig so a BOM (e.g. hand-edited on Windows) does not make an
+        # otherwise valid roster look like broken JSON and get discarded.
+        raw = path.read_text(encoding="utf-8-sig")
     except FileNotFoundError:
         return _legacy(settings)
     except OSError as e:
@@ -208,7 +210,8 @@ def retire_legacy(config_path: Optional[Path]) -> None:
         return
     path = Path(config_path)
     try:
-        settings = json.loads(path.read_text(encoding="utf-8"))
+        # utf-8-sig tolerates a UTF-8 BOM on a hand-edited config.json.
+        settings = json.loads(path.read_text(encoding="utf-8-sig"))
         if not isinstance(settings, dict):
             return
         if not any(key in settings for key in TEAM_KEYS):

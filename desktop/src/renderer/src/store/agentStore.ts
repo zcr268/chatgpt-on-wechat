@@ -22,6 +22,28 @@ import type { AgentProfile, ChannelInstanceRecord, RosterSnapshot } from '../typ
 
 const ACTIVE_KEY = 'cow_active_agent'
 
+// The backend synthesizes a default Agent (id="default", name="CowAgent")
+// whenever the roster is empty, so GET /api/agents should always return at
+// least one Agent. The team page must therefore never render truly empty. When
+// the fetch can't be completed (a transient local-service hiccup on startup,
+// see the retry note in refresh()), fall back to this same synthesized default
+// so the built-in CowAgent card is always shown. Its id matches the backend's,
+// which is what makes AgentAvatar render the brand logo for it.
+const DEFAULT_AGENT_ID = 'default'
+const DEFAULT_AGENT_NAME = 'CowAgent'
+
+function syntheticDefaultRoster(): {
+  agents: AgentProfile[]
+  defaultAgentId: string
+  channelInstances: ChannelInstanceRecord[]
+} {
+  return {
+    agents: [{ id: DEFAULT_AGENT_ID, name: DEFAULT_AGENT_NAME, enabled: true }],
+    defaultAgentId: DEFAULT_AGENT_ID,
+    channelInstances: [],
+  }
+}
+
 interface AgentStore {
   /** All Agents in the roster (enabled and disabled), newest snapshot. */
   agents: AgentProfile[]
@@ -68,19 +90,47 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
   loaded: false,
 
   refresh: async () => {
+    // On startup the local WSGI backend can be momentarily busy (an SSE stream
+    // or a concurrent poll holding threads), and a plain fetch then throws a
+    // bare TypeError. That is a transient hiccup, not "the backend has no
+    // agents", so retrying a few times before giving up keeps the team page
+    // from coming up empty on a cold start. postFormData() retries the same
+    // failure for uploads; getAgents() went through the no-retry request()
+    // path, which is why the roster used to vanish.
     let snap: RosterSnapshot | null = null
-    try {
-      snap = await apiClient.getAgents()
-    } catch {
-      // Legacy/broken backend or network hiccup: stay single-Agent. Mark loaded
-      // so the UI stops waiting, but keep the roster empty so nothing lights up.
-      syncClient('', false)
-      set({ loaded: true })
-      return
+    const maxAttempts = 4
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) await new Promise((r) => setTimeout(r, 400 * attempt))
+      try {
+        snap = await apiClient.getAgents()
+        break
+      } catch (e) {
+        // A real HTTP status (e.g. 401/404 from a legacy backend) is final and
+        // must not be retried; only the network-level TypeError is transient.
+        if (e instanceof Error && e.message.startsWith('HTTP ')) break
+      }
     }
-    if (!snap || snap.status === 'error' || !Array.isArray(snap.agents)) {
+
+    if (!snap || snap.status === 'error' || !Array.isArray(snap.agents) || snap.agents.length === 0) {
+      // Never strand the team page on an empty roster: the backend always has
+      // at least the synthesized default Agent, so if we couldn't read it, keep
+      // whatever we last loaded and otherwise fall back to that same default so
+      // the built-in CowAgent card is always present.
+      const existing = get().agents
+      if (existing.length > 0) {
+        syncClient(get().activeAgentId, enabledAgents(existing).length > 1)
+        set({ loaded: true })
+        return
+      }
+      const fb = syntheticDefaultRoster()
       syncClient('', false)
-      set({ loaded: true })
+      set({
+        agents: fb.agents,
+        defaultAgentId: fb.defaultAgentId,
+        activeAgentId: '',
+        channelInstances: fb.channelInstances,
+        loaded: true,
+      })
       return
     }
 
