@@ -341,6 +341,34 @@ class TestAnySearchBackend(unittest.TestCase):
         )
         self.assertNotIn("summary", mock_post.call_args[1]["json"])
 
+    def test_search_anysearch_forwards_zone_and_language(self):
+        with patch.object(web_search_module, "_get_api_key", return_value="test-key-123"), \
+                patch.object(web_search_module, "_tools_web_search_conf",
+                             return_value={"anysearch_zone": "cn",
+                                           "anysearch_language": "zh-CN"}), \
+                patch.object(web_search_module.requests, "post",
+                             return_value=_fake_response(200, _anysearch_payload([]))) as mock_post:
+            result = self.tool._search_anysearch("q", 10)
+
+        self.assertEqual(result.status, "success")
+        sent = mock_post.call_args[1]["json"]
+        self.assertEqual(sent["zone"], "cn")
+        self.assertEqual(sent["language"], "zh-CN")
+
+    def test_search_anysearch_drops_invalid_zone_and_language(self):
+        with patch.object(web_search_module, "_get_api_key", return_value="test-key-123"), \
+                patch.object(web_search_module, "_tools_web_search_conf",
+                             return_value={"anysearch_zone": "eu",
+                                           "anysearch_language": "fr"}), \
+                patch.object(web_search_module.requests, "post",
+                             return_value=_fake_response(200, _anysearch_payload([]))) as mock_post:
+            result = self.tool._search_anysearch("q", 10)
+
+        self.assertEqual(result.status, "success")
+        sent = mock_post.call_args[1]["json"]
+        self.assertNotIn("zone", sent)
+        self.assertNotIn("language", sent)
+
 
 def _serply_payload(results):
     """Build a Serply /v1/search response body in the documented shape."""
