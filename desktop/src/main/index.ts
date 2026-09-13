@@ -243,9 +243,19 @@ async function fetchImageBuffer(srcURL: string): Promise<Uint8Array> {
     return new Uint8Array(buf)
   }
   // net.fetch lands in Electron 28; the Win7 legacy build (Electron 22) lacks
-  // it, so fall back to a raw http(s) request there.
-  if (typeof net?.fetch === 'function') {
-    const res = await net.fetch(srcURL)
+  // it, so fall back to a raw http(s) request there. Access it through a loose
+  // type: the Win7 build compiles against Electron 22's typings where `Net` has
+  // no `fetch`, and a hard reference would fail `tsc` even though the runtime
+  // guard below already keeps it off that build.
+  type NetFetchResponse = {
+    ok: boolean
+    status: number
+    arrayBuffer: () => Promise<ArrayBuffer>
+  }
+  const netFetch = (net as unknown as { fetch?: (url: string) => Promise<NetFetchResponse> })
+    ?.fetch
+  if (typeof netFetch === 'function') {
+    const res = await netFetch(srcURL)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return new Uint8Array(await res.arrayBuffer())
   }
