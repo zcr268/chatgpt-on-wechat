@@ -584,7 +584,12 @@ class WebSearch(BaseTool):
         # AnySearch accepts 1-10 results; the shared tool schema allows 1-10.
         max_results = max(1, min(int(count or 10), 10))
         payload = {"query": query, "max_results": max_results, "format": "json"}
-
+        zone = (_tools_web_search_conf().get("anysearch_zone") or "").strip().lower()
+        if zone in ("cn", "intl"):
+            payload["zone"] = zone
+        language = (_tools_web_search_conf().get("anysearch_language") or "").strip()
+        if language in ("zh-CN", "en"):
+            payload["language"] = language
         logger.debug(f"[WebSearch] anysearch: query='{query}', max_results={max_results}, has_key={bool(api_key)}")
         resp = requests.post(url, headers=headers, json=payload, timeout=DEFAULT_TIMEOUT)
 
