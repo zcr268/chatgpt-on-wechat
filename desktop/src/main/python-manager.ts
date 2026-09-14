@@ -805,11 +805,13 @@ export class PythonBackend extends EventEmitter {
 
     const onOutput = (data: Buffer) => {
       const text = data.toString()
-      // Persist raw output to run.log first, so nothing is lost even if the
-      // per-line handling below throws. The backend already writes its own
-      // structured lines here once up; this captures the pre-logging bootstrap
-      // output (and anything it prints straight to stdout/stderr) as well.
-      if (this.logStream) {
+      // Mirror to run.log ONLY before the backend is ready. Once Python's own
+      // logging is up it writes every line to this same file via its FileHandler,
+      // so mirroring the same stdout here would duplicate every line. Before that
+      // (bootstrap crash: missing DLL, broken onedir, antivirus block) Python
+      // logging isn't running yet, and this is the only thing that captures the
+      // real cause — the reason this mirror exists at all.
+      if (this.logStream && this.status !== 'ready') {
         try {
           this.logStream.write(text)
         } catch {

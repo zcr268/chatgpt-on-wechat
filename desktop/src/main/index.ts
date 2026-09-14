@@ -517,7 +517,14 @@ async function startBackend() {
   })
 
   pythonBackend.on('log', (line: string) => {
-    console.log(`[backend] ${line}`)
+    // Write straight to stdout instead of console.log: initDesktopLogging()
+    // patches console.* to also append to run.log, and the backend already
+    // writes these same lines to run.log via Python's FileHandler. Routing this
+    // mirror through console.log would persist a second (`[MAIN] [backend] ...`)
+    // copy of every line. stdout keeps them visible for `npm run dev` without
+    // the duplicate on disk. Shell-side diagnostics (crash/exit) are persisted
+    // separately by python-manager's own [SHELL] writes.
+    process.stdout.write(`[backend] ${line}\n`)
     mainWindow?.webContents.send('backend-log', line)
   })
 
