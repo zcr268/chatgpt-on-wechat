@@ -212,13 +212,40 @@
             <div class="px-4 py-3 border-t border-white/10 flex-shrink-0">
                 <div class="flex items-center gap-2 text-xs text-neutral-600">
                     <i class="fas fa-circle text-[6px] text-primary-400"></i>
-                    <a id="sidebar-version"
-                       href="https://github.com/zhayujie/CowAgent/releases"
-                       target="_blank" rel="noopener noreferrer"
-                       class="hover:text-primary-400 transition-colors duration-150 cursor-pointer"></a>
+                    <button type="button" id="sidebar-version" onclick="openUpdatePanel()"
+                       class="hover:text-primary-400 transition-colors duration-150 cursor-pointer bg-transparent border-0 p-0 text-left"
+                       aria-haspopup="dialog" aria-controls="update-panel"></button>
                 </div>
             </div>
         </aside>
+
+
+        <div id="update-panel-overlay" class="update-panel-overlay hidden" onclick="closeUpdatePanel()"></div>
+        <div id="update-panel" class="update-panel hidden" role="dialog" aria-modal="true" aria-labelledby="update-panel-title">
+            <div class="update-panel-handle"></div>
+            <div class="update-panel-header">
+                <h3 id="update-panel-title" data-i18n="update_title">Update</h3>
+                <button type="button" class="update-panel-close" onclick="closeUpdatePanel()" data-i18n-aria-label="update_close" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="update-panel-body">
+                <p class="update-current"><span data-i18n="update_current">Current version</span>: <strong id="update-current-version"></strong></p>
+                <p id="update-kind-note" class="update-kind-note"></p>
+                <div id="update-status-line" class="update-status-line"></div>
+                <div id="update-changelog" class="update-changelog hidden"></div>
+                <pre id="update-output" class="update-output hidden"></pre>
+                <p id="update-rollback-hint" class="update-rollback-hint hidden" data-i18n="update_rollback_hint"></p>
+            </div>
+            <div class="update-panel-actions">
+                <button type="button" id="update-check-btn" class="confirm-btn confirm-btn-cancel" onclick="checkForConsoleUpdate()">
+                    <span data-i18n="update_check">Check for update</span>
+                </button>
+                <button type="button" id="update-now-btn" class="confirm-btn confirm-btn-ok" onclick="startConsoleUpdate()" disabled>
+                    <span data-i18n="update_now">Update now</span>
+                </button>
+            </div>
+        </div>
 
         <!-- Mobile Overlay -->
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden cursor-pointer" onclick="toggleSidebar()"></div>

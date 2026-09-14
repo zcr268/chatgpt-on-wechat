@@ -23,6 +23,36 @@ The command runs the following automatically:
   If the Cow CLI is not installed, `./run.sh update` performs the same operations.
 </Note>
 
+
+## Web console one-click update
+
+Source installs can also upgrade from the Web console without opening a terminal.
+
+1. Click the version string in the left sidebar footer. Opening the panel does **not** contact GitHub.
+2. Click **Check for update** to fetch newer release notes. This is the only network request.
+3. If a newer version exists, click **Update now**. The console reuses the same path as `cow update` (`git pull`, dependency install, CLI reinstall) and then restarts the service.
+
+Before code is replaced, CowAgent writes a user-data archive to `backups/cow-pre-update-<timestamp>.zip` (config, workspaces, skills, knowledge, schedules). The updater also records the current git commit. If the new code fails to import, it resets the checkout to that commit and leaves the running process untouched.
+
+After a successful update the console reconnects on its own and shows the new version.
+
+<Note>
+  Docker images and the packaged desktop app cannot use this button. Docker stays on `docker compose pull`; the desktop client keeps its built-in updater. On Windows, run `cow update` in a terminal — the Web console cannot restart that process from inside itself.
+</Note>
+
+### Rollback
+
+If a successful update misbehaves:
+
+```bash
+cow stop
+git reset --hard <previous-commit>   # shown in the update panel / tmp/web-update-status.json
+cow restore backups/cow-pre-update-<timestamp>.zip --yes
+cow start
+```
+
+`cow restore` refuses to run while the service is up, so stop first.
+
 ## Manual upgrade
 
 Run the following inside the project root:
