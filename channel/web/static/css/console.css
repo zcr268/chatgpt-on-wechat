@@ -3629,6 +3629,7 @@ textarea.doc-editor {
 .agent-modal-card-wide { width: min(560px, calc(100% - 32px)) !important; }
 .agent-modal-card {
     width: min(460px, calc(100% - 32px));
+    max-height: calc(100vh - 48px);
     max-height: calc(100dvh - 48px);
     display: flex; flex-direction: column;
     background: #fff; border-radius: 18px;
@@ -3638,16 +3639,20 @@ textarea.doc-editor {
 .agent-modal-title {
     font-size: 16px; font-weight: 600; color: #1e293b;
     padding: 22px 24px 4px;
+    flex: 0 0 auto;
 }
 .dark .agent-modal-title { color: #f1f5f9; }
-/* overflow stays visible so an opened dropdown's menu can spill past the last
-   field instead of being clipped into a scroll area (which would show a
-   scrollbar and trap the options). The card itself scrolls if a form ever
-   outgrows the viewport. */
-.agent-modal-body { padding: 12px 24px; overflow: visible; }
+/* The body scrolls when a form outgrows the viewport (e.g. small laptops or
+   narrow mobile widths) so the footer's action buttons stay reachable. While a
+   dropdown is open we let the body overflow so its menu can spill past the last
+   field instead of being clipped; the menu's own max-height (and drop-up flip)
+   keeps it inside the viewport. */
+.agent-modal-body { padding: 12px 24px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.agent-modal-body:has(.cfg-dropdown.open) { overflow: visible; }
 .agent-modal-foot {
     display: flex; align-items: center; gap: 10px;
     padding: 16px 24px 20px; border-top: 1px solid #f1f5f9;
+    flex: 0 0 auto;
 }
 .dark .agent-modal-foot { border-color: rgba(255,255,255,.06); }
 
