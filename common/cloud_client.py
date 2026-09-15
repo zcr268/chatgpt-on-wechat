@@ -742,7 +742,11 @@ class CloudClient(LinkAIClient):
         payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_memory: action={action}")
 
-        svc = self._memory_service_for(payload.get("agent_id") or payload.get("agentId"))
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._memory_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "MemoryService not available", "payload": None}
 
@@ -750,8 +754,8 @@ class CloudClient(LinkAIClient):
 
     def _memory_service_for(self, agent_id):
         """A MemoryService bound to the requested agent's workspace. Falls back
-        to the process-wide default-agent service when no agent is requested or
-        it cannot be resolved, so single-agent installs are unaffected."""
+        to the process-wide default-agent service when no agent is requested,
+        so single-agent installs are unaffected."""
         workspace = self._agent_workspace(agent_id)
         if workspace is None:
             return self.memory_service
@@ -777,7 +781,11 @@ class CloudClient(LinkAIClient):
         payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_knowledge: action={action}")
 
-        svc = self._knowledge_service_for(payload.get("agent_id") or payload.get("agentId"))
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._knowledge_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "KnowledgeService not available", "payload": None}
 
@@ -786,9 +794,8 @@ class CloudClient(LinkAIClient):
     def _knowledge_service_for(self, agent_id):
         """A KnowledgeService bound to the requested agent's workspace. Falls
         back to the process-wide default-agent service when no agent is
-        requested or it cannot be resolved, so single-agent installs are
-        unaffected. An agent with its own knowledge/ reads that; otherwise it
-        transparently reads the shared one."""
+        requested, so single-agent installs are unaffected. An agent with its
+        own knowledge/ reads that; otherwise it transparently reads the shared one."""
         workspace = self._agent_workspace(agent_id)
         if workspace is None:
             return self.knowledge_service
@@ -892,10 +899,13 @@ class CloudClient(LinkAIClient):
                     send_chunk_fn=send_chunk_fn, agent_id=agent_id)
 
     def _resolve_chat_agent_id(self, agent_id):
-        """Validate a requested agent id, or fall back to the default agent.
+        """Validate a requested agent id, or fall back to the default agent
+        when none is requested.
 
         Returns None when no bridge is available yet so callers keep their
-        existing default-agent behaviour.
+        existing default-agent behaviour. A requested agent that is unknown or
+        disabled is an error: answering as the default agent instead would
+        silently mix up two agents' sessions and memory.
         """
         agent_id = str(agent_id).strip() if agent_id is not None else ""
         bridge = self._agent_bridge()
@@ -904,23 +914,31 @@ class CloudClient(LinkAIClient):
         try:
             return bridge.agent_router.resolve(explicit_agent_id=agent_id or None)
         except Exception as e:
+            if agent_id:
+                raise RuntimeError(f"agent unavailable: {agent_id}") from e
             logger.warning(f"[CloudClient] agent route fallback to default: {e}")
             return None
 
     def _agent_workspace(self, agent_id):
         """Resolve a requested agent id to its workspace root, or None to keep
-        the default-agent behaviour. Read-only queries (memory/history) use this
-        to scope results to the requested agent instead of the default one."""
+        the default-agent behaviour when no agent is requested. An agent that is
+        requested but unknown raises KeyError rather than silently serving the
+        default agent's data (see AgentRegistry.get_addressed for the ids that
+        are tolerated)."""
         agent_id = str(agent_id).strip() if agent_id is not None else ""
         if not agent_id:
             return None
         try:
             from agent.registry import get_agent_registry
-            profile = get_agent_registry().get(agent_id, require_enabled=False)
-            return profile.workspace
+            registry = get_agent_registry()
         except Exception as e:
-            logger.warning(f"[CloudClient] workspace resolve fallback to default: {e}")
+            logger.warning(f"[CloudClient] agent registry unavailable, using default: {e}")
             return None
+        return registry.get_addressed(agent_id, require_enabled=False).workspace
+
+    @staticmethod
+    def _agent_not_found(action, agent_id):
+        return {"action": action, "code": 404, "message": f"agent not found: {agent_id}", "payload": None}
 
     @contextmanager
     def _chat_identity(self, agent_id, user_id, session_id):
@@ -1058,6 +1076,11 @@ class CloudClient(LinkAIClient):
             return {
                 "action": "query",
                 "payload": {"status": "success", **result},
+            }
+        except KeyError as e:
+            return {
+                "action": "query",
+                "payload": {"status": "error", "message": f"agent not found: {e.args[0] if e.args else ''}"},
             }
         except Exception as e:
             logger.error(f"[CloudClient] History query error: {e}")

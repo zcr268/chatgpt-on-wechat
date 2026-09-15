@@ -18,6 +18,10 @@ from common.utils import expand_path
 
 _AGENT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$")
 
+# Id of the built-in single agent, and the reserved alias by which the default
+# agent can always be addressed (see AgentRegistry.get_addressed).
+DEFAULT_AGENT_ALIAS = "default"
+
 
 class AgentRegistryError(ValueError):
     """Raised when agent configuration is invalid."""
@@ -201,7 +205,7 @@ class AgentRegistry:
             # all-digit id parsed as int), so coerce before validating.
             builtin_id = str(builtin_id).strip() if builtin_id is not None else ""
             if not builtin_id or not _AGENT_ID_RE.match(builtin_id):
-                builtin_id = "default"
+                builtin_id = DEFAULT_AGENT_ALIAS
             builtin_name = settings.get("default_agent_name")
             builtin_name = str(builtin_name).strip() if builtin_name is not None else ""
             profile = AgentProfile(
@@ -276,6 +280,20 @@ class AgentRegistry:
             if require_enabled and not profile.enabled:
                 raise AgentRegistryError(f"agent '{resolved_id}' is disabled")
             return profile
+
+    def get_addressed(self, agent_id: Optional[str], require_enabled: bool = True) -> AgentProfile:
+        """The agent an inbound request addresses by id.
+
+        Like ``get``, except that the reserved id ``"default"`` always means
+        the default agent, whatever id it was actually given. Remote callers
+        can therefore address the default agent without knowing its real id.
+        Any other unknown id still raises, so a request is never silently
+        answered by a different agent.
+        """
+        requested = (agent_id or "").strip()
+        if requested == DEFAULT_AGENT_ALIAS:
+            requested = ""
+        return self.get(requested or None, require_enabled=require_enabled)
 
     def get_or_default(self, agent_id: Optional[str]) -> AgentProfile:
         with self._lock:
