@@ -10,9 +10,10 @@ import {
   Terminal,
   type LucideIcon,
 } from 'lucide-react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import MessageBubble from '../components/MessageBubble'
 import ChatInput, { type ChatInputHandle } from '../components/ChatInput'
+import { TeamChatModal } from '../components/NewChatMenu'
 import { product } from '@product'
 import { t } from '../i18n'
 import apiClient from '../api/client'
@@ -69,6 +70,20 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputResetRef = useRef<ChatInputHandle>(null)
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // The Agents page can hand the user straight into a group chat: it navigates
+  // here with ?team=1 to pop the group-chat picker over the conversation. Clear
+  // the flag once consumed so a back/refresh doesn't reopen it.
+  const [teamOpen, setTeamOpen] = useState(false)
+  useEffect(() => {
+    if (searchParams.get('team') === '1') {
+      setTeamOpen(true)
+      searchParams.delete('team')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
   // "Config" action on the context pie: jump to settings and flag the budget
   // field to scroll/highlight (read in BasicSettings on mount).
   const handleAdjustContext = useCallback(() => {
@@ -359,6 +374,12 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
         sessionId={activeId}
         onAdjustContext={handleAdjustContext}
         ref={inputResetRef}
+      />
+
+      <TeamChatModal
+        open={teamOpen}
+        onClose={() => setTeamOpen(false)}
+        onStarted={() => setTeamOpen(false)}
       />
     </div>
   )

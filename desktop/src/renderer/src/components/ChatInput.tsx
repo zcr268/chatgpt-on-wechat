@@ -845,7 +845,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
             onPaste={handlePaste}
             onCompositionStart={() => (composingRef.current = true)}
             onCompositionEnd={() => (composingRef.current = false)}
-            placeholder={compacting ? t('ctx_compacting') : t('input_placeholder')}
+            placeholder={
+              compacting
+                ? t('ctx_compacting')
+                : t(sharedConversation ? 'input_placeholder_team' : 'input_placeholder')
+            }
             rows={1}
             disabled={compacting}
             className="w-full px-4 pt-3 pb-0 bg-transparent text-content placeholder:text-content-tertiary focus:outline-none text-sm leading-relaxed resize-none overflow-y-hidden disabled:opacity-60 disabled:cursor-not-allowed"

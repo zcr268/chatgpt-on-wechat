@@ -28,13 +28,16 @@ class LinkAIVoice(Voice):
             apply_cloud_user(headers)
             # Pin whisper-1: gateway ignores any other ASR model id.
             model = const.WHISPER_1
-            if voice_file.endswith(".amr"):
+            # Whisper only accepts amr/mp3/wav/m4a; WeChat voice notes arrive as
+            # .silk/.slk, so normalise the extension before deciding.
+            lower = voice_file.lower()
+            if lower.endswith(".amr") or lower.endswith(".silk") or lower.endswith(".slk"):
                 try:
                     mp3_file = os.path.splitext(voice_file)[0] + ".mp3"
                     audio_convert.any_to_mp3(voice_file, mp3_file)
                     voice_file = mp3_file
                 except Exception as e:
-                    logger.warning(f"[LinkVoice] amr file transfer failed, directly send amr voice file: {e}")
+                    logger.warning(f"[LinkVoice] voice file transfer failed, directly send voice file: {e}")
             with open(voice_file, "rb") as file:
                 res = requests.post(
                     url,

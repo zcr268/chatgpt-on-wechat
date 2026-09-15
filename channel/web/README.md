@@ -11,7 +11,7 @@
 
 # 前端目录结构
 
-控制台前端原本是三个巨型文件（`console.js` 16149 行、`console.css` 3908 行、`chat.html` 2108 行），
+控制台前端原本是三个巨型文件（`console.js` 17315 行、`console.css` 4039 行、`chat.html` 2186 行），
 现已按功能拆分。这里没有打包器：所有脚本都是普通的 classic script，靠 `defer` 按文档顺序执行，
 共享同一个全局作用域。
 
@@ -37,7 +37,7 @@ include 的两条规则：
 | 文件 | 行数 | 内容 |
 |---|---|---|
 | `layout/login.html` | 33 | 登录遮罩层 |
-| `layout/sidebar.html` | 107 | 左侧导航栏（`data-view` 决定跳转目标）与移动端遮罩 |
+| `layout/sidebar.html` | 124 | 左侧导航栏（`data-view` 决定跳转目标）、版本行的更新菜单与移动端遮罩 |
 | `layout/session-panel.html` | 20 | 历史会话侧栏 |
 | `layout/header.html` | 90 | 顶栏：面板开关、面包屑、语言/主题切换、登出 |
 | `views/chat.html` | 279 | 对话视图，含消息区、composer 卡片、工作区面板 |
@@ -54,9 +54,9 @@ include 的两条规则：
 | `modals/confirm-dialog.html` | 25 | 静态确认对话框 |
 | `modals/rename-dialog.html` | 28 | 通道实例重命名 |
 | `modals/folder-picker.html` | 31 | 打开项目目录选择器 |
-| `modals/vendor.html` | 78 | 厂商凭据配置 |
-| `modals/custom-provider.html` | 59 | 自定义 OpenAI 兼容供应商 |
-| `modals/task-edit.html` | 199 | 定时任务创建/编辑 |
+| `modals/vendor.html` | 110 | 厂商凭据配置与模型目录编辑 |
+| `modals/custom-provider.html` | 87 | 自定义 OpenAI 兼容供应商 |
+| `modals/task-edit.html` | 200 | 定时任务创建/编辑 |
 | `modals/run-detail.html` | 33 | 执行记录详情 |
 
 几个容易被名字误导的地方：
@@ -112,15 +112,15 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `core/version.js` | 9 | 版本号，由后端 `/VERSION` 填充 |
-| `core/i18n.js` | 1744 | 翻译表与 `t()` / `applyI18n()` / `setLanguage()` |
+| `core/version.js` | 238 | 版本号（由后端 `/VERSION` 填充）与版本行上的一键更新菜单 |
+| `core/i18n.js` | 1860 | 翻译表与 `t()` / `applyI18n()` / `setLanguage()` |
 | `core/theme.js` | 26 | 明暗主题切换 |
 | `core/utils.js` | 148 | `escapeHtml`、时间格式化、滚动辅助、工具参数摘要 |
 | `core/markdown.js` | 287 | markdown-it 初始化、图片/视频/代码块渲染 |
 | `core/confirm.js` | 29 | 脚本化确认对话框，各视图共用 |
 | `core/notify.js` | 322 | 任务完成通知与通知权限 |
 | `core/nav.js` | 131 | `navigateTo` 路由与各视图的懒加载钩子 |
-| `core/auth.js` | 137 | 登录页、登出、`fetch` 的 401 拦截。**排在最后，见下** |
+| `core/auth.js` | 169 | 登录页、登出、`fetch` 的 401 拦截、后台轮询的鉴权闸门。**排在最后，见下** |
 
 ### chat/ — 对话视图
 
@@ -129,7 +129,7 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 | `chat/state.js` | 905 | 会话与流式状态、历史加载、附件、`fetch` 的 agent_id 注入 |
 | `chat/context-usage.js` | 410 | 清空上下文按钮上的用量弹窗与压缩操作 |
 | `chat/workspace-selector.js` | 305 | 输入框上方的项目选择器与文件选择对话框 |
-| `chat/session-settings.js` | 273 | 权限模式与模型的按会话设置，即输入框下方的两个 chip |
+| `chat/session-settings.js` | 283 | 权限模式与模型的按会话设置，即输入框下方的两个 chip |
 | `chat/composer-input.js` | 379 | 拖放上传、粘贴、斜杠命令菜单、输入框按键处理 |
 | `chat/message-actions.js` | 175 | 语音消息、复制、编辑已发送消息 |
 | `chat/send.js` | 906 | 发送、重新生成、SSE 流式接收与轮询兜底 |
@@ -141,23 +141,23 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `views/sessions.js` | 868 | 会话历史面板：列表、置顶、重命名、项目分组 |
-| `views/agents.js` | 1412 | 智能体列表、详情抽屉、头像、核心文件 |
+| `views/sessions.js` | 871 | 会话历史面板：列表、置顶、重命名、项目分组 |
+| `views/agents.js` | 1407 | 智能体列表、详情抽屉、头像、核心文件 |
 | `views/config.js` | 661 | 基础配置 tab |
-| `views/models.js` | 1804 | 模型配置 tab：厂商、能力卡、回退链 |
-| `views/models-custom-provider.js` | 152 | 自定义 OpenAI 兼容供应商的增改弹窗 |
-| `views/channels.js` | 640 | 通道列表、绑定与配置 |
+| `views/models.js` | 2483 | 模型配置 tab：厂商、能力卡、回退链、模型目录 |
+| `views/models-custom-provider.js` | 170 | 自定义 OpenAI 兼容供应商的增改弹窗 |
+| `views/channels.js` | 648 | 通道列表、绑定与配置 |
 | `views/channels-weixin.js` | 175 | 微信扫码登录 |
 | `views/channels-wecom.js` | 198 | 企微机器人扫码授权 |
 | `views/channels-feishu.js` | 279 | 飞书一键注册应用 |
 | `views/tasks.js` | 521 | 定时任务与执行记录 |
 | `views/tasks-modal.js` | 690 | 定时任务创建/编辑弹窗 |
-| `views/skills.js` | 266 | 内置工具与已安装技能 |
+| `views/skills.js` | 338 | 内置工具与已安装技能 |
 | `views/memory.js` | 83 | 记忆文件列表 |
 | `views/doc-viewers.js` | 105 | 记忆文件与技能定义的查看/编辑器 |
 | `views/knowledge.js` | 955 | 知识库树、导入、关系图 |
 | `views/logs.js` | 84 | 实时日志流 |
-| `boot.js` | 36 | 启动：应用主题与语言、鉴权闸门、首次拉取配置与历史 |
+| `boot.js` | 43 | 启动：应用主题与语言、鉴权闸门、首次拉取配置与历史 |
 
 ### 和拆分前的版本做对比
 
@@ -197,6 +197,8 @@ python app.py -old
    两者都包装了 `window.fetch`：`chat/state.js` 往 URL 上追加 `agent_id`，
    `core/auth.js` 检查 URL 前缀来决定 401 是否跳登录页。
    后装的在外层，这样 401 判断看到的是调用方原本的 URL。
+   鉴权闸门（`requestAuthGatedStart` / `openAuthGate`）也在这个文件里，
+   唯一在顶层调用它的是 `boot.js`，而 `boot.js` 排在更后面，所以不会踩到 TDZ。
 3. **`boot.js` 必须排在 `workspace.js` 之前**，也就是 `console.js` 原来的位置。
    `applyI18n()` 里用 `typeof` 守卫探测 `relocalizeWorkspacePanel`，
    它一直是在 `workspace.js` 定义该函数之前运行的；放到后面会改变这个行为。
@@ -224,7 +226,7 @@ python app.py -old
 - `chat/send.js` 里的 `startSSE()` 单个函数就有 637 行，是整个前端最大的一块。
 - `chat/composer-input.js` 里输入框的 `keydown` 处理器有 92 行，同时负责斜杠命令导航和发送。
 - `views/agents.js` 尾部混着三个记忆页用的辅助函数。
-- `views/models.js`（1804 行）和 `core/i18n.js`（1744 行）仍然偏大。
+- `views/models.js`（2483 行）和 `core/i18n.js`（1860 行）仍然偏大。
   后者主要是翻译表本身，拆开意义不大。
 
 ## 样式表 `static/css/`
@@ -233,14 +235,14 @@ python app.py -old
 
 | 文件 | 行数 | 职责 |
 |---|---|---|
-| `base.css` | 88 | 关键帧动画、滚动条、通用 tooltip、`.view` 视图切换、聊天区分栏 |
+| `base.css` | 115 | 关键帧动画、滚动条、通用 tooltip、`.view` 视图切换、聊天区分栏、移动端适配 |
 | `sessions.css` | 502 | 侧边栏、会话历史面板与列表、项目分组、拖拽排序、重命名 |
-| `components.css` | 464 | 跨视图共用控件：`cfg-dropdown` 下拉、表单控件、确认弹窗、API key 掩码、浮动 tooltip |
+| `components.css` | 556 | 跨视图共用控件：`cfg-dropdown` 下拉、表单控件、确认弹窗、更新菜单、API key 掩码、浮动 tooltip |
 | `markdown.css` | 428 | 消息正文渲染：markdown、思考/工具/子代理步骤、日志着色、代码块外框 |
 | `chat.css` | 1059 | 输入框与 composer 卡片、附件栏、斜杠命令菜单、上下文用量弹窗、拖放蒙层、语音胶囊 |
 | `workspace.css` | 667 | 工作区面板与项目选择器、文档编辑器、产物文件卡片、`@` 提及菜单 |
 | `knowledge.css` | 196 | 知识库文档树与关系图 |
-| `agents.css` | 536 | 智能体卡片、详情抽屉、composer 身份标识 |
+| `agents.css` | 548 | 智能体卡片、详情抽屉、composer 身份标识 |
 
 拆分时的两个注意点：
 

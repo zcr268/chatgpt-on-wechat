@@ -66,6 +66,24 @@ const AgentAvatar: React.FC<AgentAvatarProps> = ({ agent, size = 32, className =
   const px = { width: size, height: size }
   const id = agent?.id || ''
 
+  // The default (built-in) Agent has no uploaded avatar; wear the CowAgent
+  // brand logo instead of a bare initial disc, so its face matches the rest of
+  // the app. Use the same round logo.jpg the login/chat screens and web console
+  // use (not the wide-margin square logo.png), filled edge-to-edge with
+  // object-cover so a circle face reads as a clean disc, not an octagon.
+  const isDefault = !!agent && !!defaultAgentId && agent.id === defaultAgentId
+  if (!hasImage && isDefault) {
+    return (
+      <img
+        src="./logo.jpg"
+        alt={agent?.name || 'CowAgent'}
+        draggable={false}
+        style={px}
+        className={`${radius} object-cover flex-shrink-0 ${className}`}
+      />
+    )
+  }
+
   if (hasImage && agent) {
     // Prefer the per-file token (avatar mtime) so a re-upload busts the cache
     // even when the roster revision is unchanged; fall back to it otherwise.

@@ -57,7 +57,7 @@ function startSchedulerNotifyPolling() {
 // errors (_sessCfg, sessionPanelOpen, ...). Deferring to window load runs it
 // after all declarations are initialized.
 if (typeof window !== 'undefined') {
-    window.addEventListener('load', startSchedulerNotifyPolling);
+    window.addEventListener('load', () => requestAuthGatedStart(startSchedulerNotifyPolling));
 }
 
 // Scheduler deliveries stream over a request id shaped ``scheduler_<taskid>_<hex>``

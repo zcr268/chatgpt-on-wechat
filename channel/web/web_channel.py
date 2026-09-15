@@ -27,6 +27,7 @@ from channel.chat_channel import ChatChannel, check_prefix
 from channel.chat_message import ChatMessage
 from common import const
 from common import i18n
+from common.channel_registry import get_channel_manager
 from common.log import logger
 from common.singleton import singleton
 from config import (
@@ -52,6 +53,21 @@ VIDEO_EXTENSIONS = {".mp4", ".webm", ".avi", ".mov", ".mkv"}
 # Cap for a file the desktop client asks us to import by path. Matches the
 # multipart body cap on the HTTP server so both upload routes agree.
 MAX_LOCAL_IMPORT_BYTES = 512 * 1024 * 1024
+
+
+def _live_channel_manager():
+    """Return the running ChannelManager, or None if the app is not up yet.
+
+    app.py runs as ``python app.py``, so ``__main__`` is a *distinct* module
+    object from a later ``import app``; reading ``_channel_mgr`` off
+    ``sys.modules['__main__']`` therefore always yielded None and the console
+    silently refused to start a newly configured channel. The manager is
+    published through ``common.channel_registry`` instead (issue #3120).
+    """
+    try:
+        return get_channel_manager()
+    except Exception:
+        return None
 
 
 def _is_loopback_request() -> bool:
@@ -120,7 +136,10 @@ def _read_config_file_for_write() -> dict:
     """
     config_path = os.path.join(get_data_root(), "config.json")
     if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
+        # utf-8-sig tolerates a UTF-8 BOM (common when the file was edited with
+        # Windows Notepad / PowerShell). Plain utf-8 would raise "Unexpected
+        # UTF-8 BOM" here and fail every config write from the web console.
+        with open(config_path, "r", encoding="utf-8-sig") as f:
             return json.load(f)
     return read_config_template()
 
@@ -462,6 +481,76 @@ def _build_preview_url(abs_path: str) -> str:
     directory = os.path.dirname(abs_path)
     name = os.path.basename(abs_path)
     return f"/preview/{_encode_dir_token(directory)}/{quote(name)}"
+
+
+# Media links the agent embeds in its reply markdown are workspace-relative
+# (e.g. `images/x.png`, saved under the agent workspace by the image/video
+# skills). The browser would resolve those against the console URL and 404,
+# so they only render for the default agent whose workspace happens to match
+# the serve root. Rewriting them to an absolute /api/file URL makes them load
+# for every agent. Only *relative* refs are touched — absolute paths, http(s)
+# URLs, file:// and already-routed /api or /preview links are left untouched,
+# so nothing that worked before (including the default agent) changes.
+_MD_IMAGE_RE = re.compile(r"(!\[[^\]]*\]\()([^)\s]+)(\s*(?:\"[^\"]*\")?\s*\))")
+_HTML_IMG_SRC_RE = re.compile(r"(<img\b[^>]*?\bsrc=[\"'])([^\"']+)([\"'])", re.IGNORECASE)
+
+
+def _is_relative_media_ref(ref: str) -> bool:
+    """True for a workspace-relative media ref that needs absolutizing."""
+    if not ref:
+        return False
+    ref = ref.strip()
+    # Scheme (http, https, data, file, mailto), protocol-relative, site-absolute
+    # (/api/file, /preview), home (~) or Windows drive paths all resolve on their
+    # own — leave them alone.
+    if re.match(r"^[a-zA-Z][\w+.-]*:", ref):
+        return False
+    if ref.startswith(("//", "/", "~")):
+        return False
+    if re.match(r"^[A-Za-z]:[\\/]", ref):
+        return False
+    return True
+
+
+def _rewrite_relative_media(content: str, workspace_root: str) -> str:
+    """Rewrite workspace-relative media refs in markdown/HTML to /api/file URLs.
+
+    ``workspace_root`` is the absolute root the relative refs are anchored to
+    (the agent's workspace, or the open project dir). Refs that escape the root
+    or don't resolve to an existing file are left untouched, so this never turns
+    a harmless relative link into a broken absolute one.
+    """
+    if not content or not workspace_root:
+        return content
+    root_real = os.path.realpath(workspace_root)
+
+    def _to_api_url(ref: str) -> Optional[str]:
+        if not _is_relative_media_ref(ref):
+            return None
+        rel = ref.split("?", 1)[0].split("#", 1)[0]
+        abs_path = os.path.realpath(os.path.join(root_real, rel))
+        # Confine to the workspace root: a ref like `../../etc/passwd` must not
+        # be turned into a servable URL.
+        try:
+            if os.path.commonpath([abs_path, root_real]) != root_real:
+                return None
+        except ValueError:
+            return None
+        if not os.path.isfile(abs_path):
+            return None
+        return f"/api/file?path={quote(abs_path)}"
+
+    def _md_repl(m: re.Match) -> str:
+        url = _to_api_url(m.group(2))
+        return f"{m.group(1)}{url}{m.group(3)}" if url else m.group(0)
+
+    def _img_repl(m: re.Match) -> str:
+        url = _to_api_url(m.group(2))
+        return f"{m.group(1)}{url}{m.group(3)}" if url else m.group(0)
+
+    out = _MD_IMAGE_RE.sub(_md_repl, content)
+    out = _HTML_IMG_SRC_RE.sub(_img_repl, out)
+    return out
 
 
 def _build_artifact_payload(data: dict) -> dict:
@@ -928,9 +1017,20 @@ class WebChannel(ChatChannel):
                 seqs = self._fetch_latest_pair_seqs(
                     session_id, context.get("agent_id")
                 )
+                # Absolutize workspace-relative media so images/videos the agent
+                # embedded render for non-default agents too. Only affects the
+                # displayed copy; TTS below still reads the original text.
+                display_content = content
+                if reply.type == ReplyType.TEXT and content:
+                    try:
+                        display_content = _rewrite_relative_media(
+                            content, _get_workspace_root(session_id, agent_id)
+                        )
+                    except Exception as e:
+                        logger.debug(f"[WebChannel] media rewrite skipped: {e}")
                 self._publish_sse_event(request_id, {
                     "type": "done",
-                    "content": content,
+                    "content": display_content,
                     "request_id": request_id,
                     "timestamp": time.time(),
                     "user_seq": seqs.get("user_seq"),
@@ -974,6 +1074,13 @@ class WebChannel(ChatChannel):
                 if reply.type == ReplyType.TEXT and context.get("on_event") is not None:
                     logger.debug(f"Polling skipped SSE text reply for session {session_id}")
                     return
+                if reply.type == ReplyType.TEXT and content:
+                    try:
+                        content = _rewrite_relative_media(
+                            content, _get_workspace_root(session_id, agent_id)
+                        )
+                    except Exception as e:
+                        logger.debug(f"[WebChannel] media rewrite skipped: {e}")
                 response_data = {
                     "type": str(reply.type),
                     "content": content,
@@ -2221,6 +2328,9 @@ class WebChannel(ChatChannel):
             '/api/logs/download', 'LogsDownloadHandler',
             '/api/logs', 'LogsHandler',
             '/api/version', 'VersionHandler',
+            '/api/update/check', 'UpdateCheckHandler',
+            '/api/update/start', 'UpdateStartHandler',
+            '/api/update/status', 'UpdateStatusHandler',
             '/mcp/oauth/callback', 'McpOAuthCallbackHandler',
             '/assets/(.*)', 'AssetsHandler',
         )
@@ -2747,12 +2857,12 @@ class ChatHandler:
 class ConfigHandler:
 
     _RECOMMENDED_MODELS = [
-        const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
+        const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO,
         const.MINIMAX_M3, const.MINIMAX_M2_7_HIGHSPEED, const.MINIMAX_M2_7,
         # claude-opus-5 is the Claude default; claude-sonnet-5 / claude-fable-5 follow right after it.
         const.CLAUDE_OPUS_5, const.CLAUDE_SONNET_5, const.CLAUDE_FABLE_5_1, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS,
-        const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
-        const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
+        const.GPT_56_LUNA, const.GPT_6_ASTRA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o,
+        const.GEMINI_38_FLASH, const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE,
         const.GLM_5_3_FLASH, const.GLM_5_3, const.GLM_5_2, const.GLM_5_1, const.GLM_5_TURBO, const.GLM_5, const.GLM_4_7,
         const.QWEN38_FLASH, const.QWEN38_MAX, const.QWEN37_PLUS, const.QWEN37_MAX, const.QWEN36_PLUS,
         const.DOUBAO_SEED_2_1_PRO, const.DOUBAO_SEED_2_1_TURBO, const.DOUBAO_SEED_2_CODE,
@@ -2779,7 +2889,7 @@ class ConfigHandler:
             "api_base_key": "deepseek_api_base",
             "api_base_default": "https://api.deepseek.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
+            "models": [const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH, const.DEEPSEEK_V4_PRO],
         }),
         ("claudeAPI", {
             "label": "Claude",
@@ -2795,7 +2905,7 @@ class ConfigHandler:
             "api_base_key": "open_ai_api_base",
             "api_base_default": "https://api.openai.com/v1",
             "api_base_placeholder": _PLACEHOLDER_V1,
-            "models": [const.GPT_56_LUNA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
+            "models": [const.GPT_56_LUNA, const.GPT_6_ASTRA, const.GPT_56_TERRA, const.GPT_56_SOL, const.GPT_55, const.GPT_54, const.GPT_54_MINI, const.GPT_54_NANO, const.GPT_5, const.GPT_41, const.GPT_4o],
         }),
         ("gemini", {
             "label": "Gemini",
@@ -2803,7 +2913,7 @@ class ConfigHandler:
             "api_base_key": "gemini_api_base",
             "api_base_default": "https://generativelanguage.googleapis.com",
             "api_base_placeholder": _PLACEHOLDER_GEMINI,
-            "models": [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+            "models": [const.GEMINI_38_FLASH, const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         }),
         ("minimax", {
             "label": "MiniMax",
@@ -3472,11 +3582,10 @@ class ModelsHandler:
     # Anything not listed here intentionally hides the model dropdown so
     # users cannot pin a chat-only model and silently get a 4xx at runtime.
     _VISION_PROVIDER_MODELS = {
-        # DeepSeek 视觉模型：V4 Flash vision（experimental, multimodal）。
-        # Placed first so it's the default image-understanding vendor —
-        # deepseek-v4-flash is the project's default main model, so a single
-        # DeepSeek key covers both chat and vision.
-        "deepseek":  [const.DEEPSEEK_V4_FLASH_VISION_EXP],
+        # DeepSeek 视觉模型：deepseek-flash（V4.1，原生多模态），其次是
+        # deepseek-v4-flash-vision-exp。deepseek-flash 是项目默认主模型，一把
+        # DeepSeek key 即可同时覆盖对话与视觉。
+        "deepseek":  [const.DEEPSEEK_FLASH, const.DEEPSEEK_V4_FLASH_VISION_EXP],
         # OpenAI ordering puts the GPT-5.6 family first, then GPT-5.5/5.4,
         # GPT-5 and the GPT-4.1/4o backstops.
         "openai":    [
@@ -3499,7 +3608,7 @@ class ModelsHandler:
         # entry is the auto-picked vision model, and image understanding does
         # not justify the Opus price.
         "claudeAPI": [const.CLAUDE_SONNET_5, const.CLAUDE_OPUS_5, const.CLAUDE_FABLE_5_1, const.CLAUDE_FABLE_5, const.CLAUDE_4_8_OPUS, const.CLAUDE_4_7_OPUS, const.CLAUDE_4_6_SONNET, const.CLAUDE_4_6_OPUS],
-        "gemini":    [const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
+        "gemini":    [const.GEMINI_38_FLASH, const.GEMINI_37_FLASH, const.GEMINI_36_FLASH, const.GEMINI_35_FLASH, const.GEMINI_31_FLASH_LITE_PRE, const.GEMINI_31_PRO_PRE, const.GEMINI_3_FLASH_PRE],
         "qianfan":   [const.ERNIE_45_TURBO_VL],
         # glm-5.3-flash is natively multimodal and dispatched as-is; the
         # text-only chat models (glm-5.2, glm-5-turbo, etc.) fall back to the
@@ -3547,7 +3656,7 @@ class ModelsHandler:
     # The skill itself maps either form to the real vendor endpoint, so the
     # hint is purely cosmetic.
     _IMAGE_PROVIDER_MODELS = {
-        "openai":    ["gpt-image-2", "gpt-image-1"],
+        "openai":    ["gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2", "gpt-image-1"],
         "gemini": [
             {"value": "gemini-3.1-flash-image-preview", "hint": "Nano Banana 2"},
             {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
@@ -3557,6 +3666,8 @@ class ModelsHandler:
         "dashscope": ["qwen-image-2.0-pro", "qwen-image-2.0"],
         "minimax":   ["image-01"],
         "linkai": [
+            "gpt-image-2.5-flare",
+            "gpt-image-2.5-sunburst",
             "gpt-image-2",
             {"value": "gemini-3.1-flash-image-preview", "hint": "Nano Banana 2"},
             {"value": "gemini-3-pro-image-preview",     "hint": "Nano Banana Pro"},
@@ -3611,6 +3722,7 @@ class ModelsHandler:
 
         meta = ConfigHandler.PROVIDER_MODELS.get("custom") or {}
         catalog_map = model_catalog.get_catalog_map()
+        hidden_map = model_catalog.get_hidden_map()
         cards = []
         for p in providers:
             pid = p.get("id") or ""
@@ -3622,6 +3734,8 @@ class ModelsHandler:
             # as configured once it has an api_base, so a keyless-but-valid
             # endpoint isn't shown as an unconfigured (greyed-out) vendor.
             configured = bool(raw_base) or cls._is_real_key(raw_key)
+            # A custom endpoint has no presets, so its overrides are its whole
+            # list and there is nothing to tombstone.
             catalog = catalog_map.get(f"custom:{pid}") or []
             cards.append({
                 "id": f"custom:{pid}",
@@ -3642,6 +3756,9 @@ class ModelsHandler:
                 "api_base_default": "",
                 "api_base_placeholder": meta.get("api_base_placeholder") or "",
                 "catalog": catalog,
+                "hidden": hidden_map.get(f"custom:{pid}") or [],
+                "seed": [],
+                "effective": catalog,
                 "models": ([e["name"] for e in catalog] if catalog
                            else ([p.get("model")] if p.get("model") else [])),
             })
@@ -3676,6 +3793,7 @@ class ModelsHandler:
         # filled, so existing single-provider setups never disappear from the UI.
         keep_legacy_custom = cls._legacy_custom_in_use(local_config)
         catalog_map = model_catalog.get_catalog_map()
+        hidden_map = model_catalog.get_hidden_map()
         items = []
         for pid, p in ConfigHandler.PROVIDER_MODELS.items():
             if pid == "custom" and custom_cards:
@@ -3689,7 +3807,13 @@ class ModelsHandler:
             raw_key = local_config.get(key_field, "") if key_field else ""
             raw_base = local_config.get(base_field, "") if base_field else ""
             configured = cls._is_real_key(raw_key)
-            catalog = catalog_map.get(pid) or []
+            overrides = catalog_map.get(pid) or []
+            hidden = hidden_map.get(pid) or []
+            seed = [] if pid == "custom" else cls._preset_seed(pid)
+            # The editor prefills from the effective list (presets minus
+            # removals, plus overrides), so the user always edits the full
+            # list — adding one model can no longer wipe the rest.
+            effective = cls._merged_catalog(pid, seed, catalog_map, hidden_map)
             items.append({
                 "id": pid,
                 "label": p["label"],
@@ -3701,12 +3825,17 @@ class ModelsHandler:
                 "api_base": raw_base or (p.get("api_base_default") or ""),
                 "api_base_default": p.get("api_base_default") or "",
                 "api_base_placeholder": p.get("api_base_placeholder") or "",
-                "catalog": catalog,
-                # Preset models pre-typed with their real capabilities, used
-                # by the catalog editor as seed rows (before the user saves
-                # an explicit catalog).
-                "seed": [] if pid == "custom" else cls._preset_seed(pid),
-                "models": [e["name"] for e in catalog] if catalog else list(p.get("models") or []),
+                # Raw stored overlay (overrides + tombstones), so the editor can
+                # tell what the user actually changed from the presets.
+                "catalog": overrides,
+                "hidden": hidden,
+                # Preset models pre-typed with their real capabilities: the base
+                # the editor diffs against and the "restore presets" reset uses.
+                "seed": seed,
+                # The full effective list the editor loads as its rows.
+                "effective": effective,
+                "models": [e["name"] for e in effective] if effective
+                          else list(p.get("models") or []),
             })
 
         def _sort_key(it):
@@ -3828,13 +3957,14 @@ class ModelsHandler:
         }
 
     @staticmethod
-    def _chat_provider_models() -> dict:
+    def _chat_preset_models() -> dict:
         """{provider_id: [model, ...]} for every chat-capable vendor.
 
         ``ConfigHandler.PROVIDER_MODELS`` carries per-vendor metadata
         (label, api_key_field, ...) around the model list; the console's model
-        picker wants only the lists. Kept as its own helper so the two chat
-        cards can never drift apart.
+        picker wants only the lists. Used as the base for the fallback card's
+        model lists, so a vendor without a catalog still offers its presets
+        while a catalogued one offers its catalog instead.
         """
         out = {}
         for pid, meta in ConfigHandler.PROVIDER_MODELS.items():
@@ -3844,34 +3974,61 @@ class ModelsHandler:
 
     @classmethod
     def _chat_fallback_capability(cls, local_config: dict) -> dict:
-        """The backup chat model, tried only after the primary one fails.
+        """The fallback chain, tried in order after the primary model fails.
 
         Deliberately separate from ``_chat_capability``: the primary model is
         the one that answers, while this is a safety net that stays idle until
-        an outage. It is opt-in (``enabled`` defaults to false) and needs both
-        a provider and a model — a half-filled entry is treated as "off" so a
-        partially configured fallback can never hijack a healthy setup.
+        an outage. It is opt-in (``enabled`` defaults to false) and every link
+        needs both a provider and a model — a half-filled link is dropped so a
+        partially configured chain can never hijack a healthy setup.
+
+        The chain is ordered and unbounded: the console renders one editable
+        row per link and the runtime walks them front to back, so the number of
+        links the user saves *is* the number of backups a turn gets.
         """
         cfg = local_config.get("chat_fallback") or {}
         if not isinstance(cfg, dict):
             cfg = {}
-        provider_id = (cfg.get("provider") or "").strip()
-        model = (cfg.get("model") or "").strip()
-        # Same provider list as the primary chat card, so the two dropdowns
-        # always offer identical choices (including expanded custom:<id>).
+        raw_chain = cfg.get("chain")
+        chain = []
+        if isinstance(raw_chain, list):
+            for item in raw_chain:
+                if not isinstance(item, dict):
+                    continue
+                chain.append({
+                    "provider": (item.get("provider") or "").strip(),
+                    "model": (item.get("model") or "").strip(),
+                })
+        elif isinstance(cfg, dict) and (cfg.get("provider") or cfg.get("model")):
+            # Pre-chain config: surface it as a one-link chain so the console
+            # shows what is configured instead of an empty list.
+            chain = [{
+                "provider": (cfg.get("provider") or "").strip(),
+                "model": (cfg.get("model") or "").strip(),
+            }]
+        # Same provider list as the primary chat card, so the dropdowns always
+        # offer identical choices (including expanded custom:<id>).
         primary = cls._chat_capability(local_config)
+        # Same model lists too: start from the vendors' presets and let a
+        # catalog override them, which is what the primary card does. Building
+        # this from the presets alone would leave the fallback on a free-form
+        # model field for a vendor whose models the primary card can list.
+        custom_cards = cls._custom_provider_cards(local_config)
         return {
             "editable": True,
             "enabled": bool(cfg.get("enabled", False)),
-            "current_provider": provider_id,
-            "current_model": model,
             "providers": primary.get("providers", []),
             # The model picker expects {provider_id: [models]}. PROVIDER_MODELS
             # is richer ({provider_id: {label, models, ...}}), so reduce it to
             # just the lists — handing over the raw dict makes the web console
             # call .slice() on a mapping and throw.
-            "provider_models": cls._chat_provider_models(),
-            "max_switches": cfg.get("max_switches", 1),
+            "provider_models": cls._apply_catalog(
+                cls._chat_preset_models(), "text", custom_cards),
+            "chain": chain,
+            # Kept for older clients that still read a single backup model:
+            # link 1 of the chain, so a downgraded console does not show blank.
+            "current_provider": chain[0]["provider"] if chain else "",
+            "current_model": chain[0]["model"] if chain else "",
             # Shown in the UI so it's obvious the fallback is inactive.
             "primary_provider": primary.get("current_provider", ""),
             "primary_model": primary.get("current_model", ""),
@@ -3890,7 +4047,7 @@ class ModelsHandler:
         ("doubao",    "ark_api_key",       const.DOUBAO_SEED_2_PRO),
         ("dashscope", "dashscope_api_key", const.QWEN37_PLUS),
         ("claudeAPI", "claude_api_key",    const.CLAUDE_SONNET_5),
-        ("gemini",    "gemini_api_key",    const.GEMINI_37_FLASH),
+        ("gemini",    "gemini_api_key",    const.GEMINI_38_FLASH),
         ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
         ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
         ("minimax",   "minimax_api_key",   const.MINIMAX_TEXT_01),
@@ -4148,12 +4305,12 @@ class ModelsHandler:
     # provider-card id to the script's per-provider DEFAULT_MODEL so the
     # hint matches what the runtime would actually request.
     _IMAGE_AUTO_ORDER = [
-        ("openai",    "gpt-image-2"),
+        ("openai",    "gpt-image-2.5-flare"),
         ("gemini",    "gemini-3.1-flash-image-preview"),  # nano-banana-2
         ("doubao",    "seedream-5.0-lite"),
         ("dashscope", "qwen-image-2.0"),
         ("minimax",   "image-01"),
-        ("linkai",    "gpt-image-2"),
+        ("linkai",    "gpt-image-2.5-flare"),
     ]
 
     @classmethod
@@ -4388,22 +4545,27 @@ class ModelsHandler:
 
     @classmethod
     def _apply_catalog(cls, presets: dict, capability, custom_cards=None) -> dict:
-        """Merge per-provider catalog overrides into a capability's model
-        list. A provider with a catalog offers its entries tagged with
-        `capability` ("text" for the main chat model). Providers without a
-        catalog keep the presets."""
+        """Layer per-provider catalog overlays onto a capability's model list.
+
+        A provider without any overlay keeps its presets untouched. When the
+        user has an overlay, the provider's effective list (preset base minus
+        tombstones, plus overrides) is filtered to `capability` ("text" for the
+        main chat model) so only models that can serve this role are offered."""
         merged = dict(presets)
         catalog_map = model_catalog.get_catalog_map()
+        hidden_map = model_catalog.get_hidden_map()
         ids = [pid for pid in list(merged.keys()) + list(ConfigHandler.PROVIDER_MODELS.keys())
                if pid != "custom"]
         ids += [c["id"] for c in (custom_cards or [])]
         for pid in dict.fromkeys(ids):  # dedupe, keep order
-            entries = catalog_map.get(pid)
-            if entries:
-                merged[pid] = [
-                    {"value": e["name"]} for e in entries
-                    if capability is None or capability in (e.get("capabilities") or [])
-                ]
+            if not catalog_map.get(pid) and not hidden_map.get(pid):
+                continue  # no overlay: presets stand as-is
+            base_seed = [] if pid.startswith("custom:") else cls._preset_seed(pid)
+            effective = cls._merged_catalog(pid, base_seed, catalog_map, hidden_map)
+            merged[pid] = [
+                {"value": e["name"]} for e in effective
+                if capability is None or capability in (e.get("capabilities") or [])
+            ]
         return merged
 
     # Researched specs (context window / max output) for built-in preset
@@ -4411,6 +4573,7 @@ class ModelsHandler:
     # extra tags the preset lists don't reflect yet (e.g. native-multimodal
     # models). Fields left off fall back to auto-detection.
     _PRESET_MODEL_META = {
+        "deepseek-flash": {"capabilities": ["text", "vision"], "context_window": 1000000, "max_output_tokens": 393216},
         "deepseek-v4-flash": {"context_window": 1000000, "max_output_tokens": 393216},
         "deepseek-v4-pro": {"context_window": 1000000, "max_output_tokens": 393216},
         "glm-5.3-flash": {"context_window": 1000000, "max_output_tokens": 131072},
@@ -4502,17 +4665,58 @@ class ModelsHandler:
         for cap, table in tables:
             for m in table.get(pid) or []:
                 add(m if isinstance(m, str) else m.get("value"), cap)
+        from agent.protocol.agent import resolve_family_spec
         for entry in merged.values():
-            extra = cls._PRESET_MODEL_META.get(entry["name"])
-            if not extra:
-                continue
+            extra = cls._PRESET_MODEL_META.get(entry["name"]) or {}
             for cap in extra.get("capabilities", []):
                 if cap not in entry["capabilities"]:
                     entry["capabilities"].append(cap)
-            if extra.get("context_window"):
-                entry["context_window"] = extra["context_window"]
-            if extra.get("max_output_tokens"):
-                entry["max_output_tokens"] = extra["max_output_tokens"]
+            # Explicit researched specs win; otherwise fall back to the runtime
+            # family table so the editor shows the same budget that actually
+            # takes effect (e.g. gpt-6-astra -> 1M/128K) instead of a blank.
+            fam_window, fam_output = resolve_family_spec(entry["name"])
+            window = extra.get("context_window") or fam_window
+            output = extra.get("max_output_tokens") or fam_output
+            if window:
+                entry["context_window"] = window
+            if output:
+                entry["max_output_tokens"] = output
+        return list(merged.values())
+
+    @classmethod
+    def _merged_catalog(cls, pid, base_seed=None, catalog_map=None, hidden_map=None) -> List[dict]:
+        """The provider's effective model list: preset base, minus removals,
+        with user overrides layered on.
+
+        The catalog is an overlay, not a replacement — a preset the user never
+        touched stays on the list (and keeps following the code-side metadata),
+        an overridden preset takes the user's values, a tombstoned preset drops
+        out, and an override with a new name is appended.
+
+        ``base_seed`` is the preset base; for a built-in vendor it defaults to
+        ``_preset_seed(pid)``, and a custom provider passes ``[]`` (no presets,
+        so its overrides are simply its whole list)."""
+        if catalog_map is None:
+            catalog_map = model_catalog.get_catalog_map()
+        if hidden_map is None:
+            hidden_map = model_catalog.get_hidden_map()
+        overrides = catalog_map.get(pid) or []
+        hidden = set(hidden_map.get(pid) or [])
+        if base_seed is None:
+            base_seed = [] if pid == "custom" else cls._preset_seed(pid)
+
+        override_by_name = {e["name"]: e for e in overrides}
+        merged: "OrderedDict[str, dict]" = OrderedDict()
+        for entry in base_seed:
+            name = entry.get("name")
+            if not name or name in hidden:
+                continue
+            merged[name] = override_by_name.get(name, entry)
+        # Appended models (overrides the presets don't carry), order preserved.
+        for entry in overrides:
+            name = entry.get("name")
+            if name and name not in merged:
+                merged[name] = entry
         return list(merged.values())
 
     def GET(self):
@@ -4857,7 +5061,8 @@ class ModelsHandler:
         if provider_id not in ConfigHandler.PROVIDER_MODELS and not provider_id.startswith("custom:"):
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
         try:
-            entries = model_catalog.save_catalog(provider_id, data.get("models"))
+            entries = model_catalog.save_catalog(
+                provider_id, data.get("models"), data.get("hidden"))
         except ValueError as e:
             return json.dumps({"status": "error", "message": str(e)})
         logger.info(f"[ModelsHandler] catalog saved: provider={provider_id} models={len(entries)}")
@@ -4875,7 +5080,7 @@ class ModelsHandler:
                 provider_id,
                 model,
                 bool(data.get("enabled")),
-                data.get("max_switches"),
+                chain=data.get("chain"),
             )
         if capability == "vision":
             return self._set_vision(provider_id, model)
@@ -5020,57 +5225,106 @@ class ModelsHandler:
         self._reset_bridge()
         return json.dumps({"status": "success", "applied": applied})
 
-    def _set_chat_fallback(self, provider_id: str, model: str, enabled: bool,
-                           max_switches=None) -> str:
-        """Persist the backup chat model under ``chat_fallback``.
+    def _normalized_custom_provider(self, provider_id: str):
+        """Resolve a ``custom:<id>`` provider id, or None for a builtin one.
 
-        Validation mirrors ``_set_chat`` (custom:<id> ids included), with two
-        differences: the entry is opt-in via ``enabled``, and turning it on
-        requires both a provider and a model so a half-configured fallback can
-        never hijack a healthy primary model.
+        Returns ``(provider_entry, error_json)``; exactly one is set. Kept
+        separate so a chain can reuse it per link instead of duplicating the
+        lookup.
         """
-        custom_provider = None
+        if not provider_id:
+            return None, None
         if provider_id.startswith("custom:"):
             from models.custom_provider import parse_custom_bot_type
             _, custom_id = parse_custom_bot_type(provider_id)
             providers = self._normalize_custom_providers(conf().get("custom_providers"))
             custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
             if custom_provider is None:
-                return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
-        elif provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
-            return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
+                return None, json.dumps({"status": "error",
+                                         "message": f"unknown custom provider id: {custom_id}"})
+            return custom_provider, None
+        if provider_id not in ConfigHandler.PROVIDER_MODELS:
+            return None, json.dumps({"status": "error",
+                                     "message": f"unknown provider: {provider_id}"})
+        return None, None
 
-        # Fall back to the custom provider's default model when none is given.
-        if not model and custom_provider:
-            model = custom_provider.get("model") or ""
+    def _set_chat_fallback(self, provider_id: str, model: str, enabled: bool,
+                           chain=None) -> str:
+        """Persist the fallback chain under ``chat_fallback``.
 
-        # Enabling is all-or-nothing; disabling is always allowed (it is the
-        # safe direction, and lets a user clear a broken entry).
-        if enabled and (not provider_id or not model):
+        ``chain`` is an ordered list of ``{"provider", "model"}`` links, tried
+        front to back after the primary model fails a turn for good. It is
+        unbounded: however many links are saved is how many backups a turn
+        gets, so there is no cap to configure.
+
+        For callers still sending the single-model shape (``provider_id`` /
+        ``model``), the pair is folded into a one-link chain, so an older
+        client keeps working against the new config.
+
+        Validation mirrors ``_set_chat`` (custom:<id> ids included), with two
+        differences: the chain is opt-in via ``enabled``, and turning it on
+        requires at least one fully specified link so a half-configured
+        fallback can never hijack a healthy primary model. Individual links
+        that are incomplete or repeat the primary model are dropped rather
+        than rejected — one bad row should not block saving the good ones.
+        """
+        links = []
+        if chain is not None:
+            if not isinstance(chain, list):
+                return json.dumps({"status": "error", "message": "chain must be a list"})
+            raw_links = chain
+        else:
+            raw_links = [{"provider": provider_id or "", "model": model or ""}]
+
+        for item in raw_links:
+            if not isinstance(item, dict):
+                continue
+            link_provider = (item.get("provider") or "").strip()
+            link_model = (item.get("model") or "").strip()
+            if not link_provider and not link_model:
+                continue  # an empty row the user never filled in
+            custom_provider, err = self._normalized_custom_provider(link_provider)
+            if err:
+                return err
+            # Fall back to the custom provider's default model when none given.
+            if not link_model and custom_provider:
+                link_model = custom_provider.get("model") or ""
+            if not link_provider or not link_model:
+                continue  # half a link routes nowhere
+            links.append({"provider": link_provider, "model": link_model})
+
+        # Enabling needs at least one usable link; disabling is always allowed
+        # (it is the safe direction, and lets a user clear a broken entry).
+        if enabled and not links:
             return json.dumps({
                 "status": "error",
-                "message": "both a provider and a model are required to enable the fallback",
+                "message": "at least one provider/model pair is required to enable the fallback",
             })
-
-        try:
-            switches = int(max_switches) if max_switches is not None else 1
-        except (TypeError, ValueError):
-            switches = 1
-        # At least one switch, or the fallback could never engage at all.
-        switches = max(1, min(switches, 5))
 
         local_config = conf()
         file_cfg = self._read_file_config()
         payload = {
             "enabled": bool(enabled),
-            "provider": provider_id or "",
-            "model": model or "",
-            "max_switches": switches,
+            "chain": links,
         }
         # Written as a whole so a stale key from an older shape can't survive.
         local_config["chat_fallback"] = dict(payload)
         file_cfg["chat_fallback"] = dict(payload)
         self._write_file_config(file_cfg)
+
+        # Turning the fallback off must take effect now, not on the next run
+        # boundary. A model that had already switched to the backup keeps its
+        # engaged fallback state on the long-lived AgentLLMModel, so clear it
+        # across all live agents — otherwise disabling the fallback appears to
+        # do nothing and the backup model keeps answering.
+        if not enabled:
+            try:
+                from bridge.bridge import Bridge
+                Bridge().get_agent_bridge().clear_all_model_fallbacks()
+            except Exception as clear_err:
+                logger.warning(
+                    f"[ModelsHandler] failed to clear engaged fallbacks: {clear_err}"
+                )
 
         logger.info(f"[ModelsHandler] chat fallback updated: {payload}")
         return json.dumps({"status": "success", "applied": payload})
@@ -5481,9 +5735,7 @@ class ChannelsHandler:
     @staticmethod
     def _get_weixin_login_status() -> str:
         try:
-            import sys
-            app_module = sys.modules.get('__main__') or sys.modules.get('app')
-            mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+            mgr = _live_channel_manager()
             if mgr:
                 ch = mgr.get_channel("weixin")
                 if ch and hasattr(ch, 'login_status'):
@@ -5682,7 +5934,15 @@ class ChannelsHandler:
             # "create a new instance".
             from channel.channel_instances import MULTI_INSTANCE_READY
             instance_id = (body.get("instance_id") or "").strip()
-            if self._multi_agent_mode() and channel_name in MULTI_INSTANCE_READY:
+            # A multi-instance-ready type (feishu) is only an *instance* when it
+            # carries an instance_id (connect with an empty id creates one). But
+            # the same type can still be active the legacy way — enabled in
+            # config.json's channel_type before this install went multi-Agent —
+            # in which case its card has no instance_id. Disconnect/rename on
+            # such a card must fall through to the legacy per-type path, or it
+            # would be rejected ("instance_id is required") and never removed.
+            is_instance_op = action in ("save", "connect") or bool(instance_id)
+            if self._multi_agent_mode() and channel_name in MULTI_INSTANCE_READY and is_instance_op:
                 if action == "save":
                     return self._handle_instance_save(channel_name, instance_id, body.get("config", {}))
                 elif action == "connect":
@@ -5756,9 +6016,7 @@ class ChannelsHandler:
         if channel_name in active_channels and changed:
             should_restart = True
             try:
-                import sys
-                app_module = sys.modules.get('__main__') or sys.modules.get('app')
-                mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+                mgr = _live_channel_manager()
                 if mgr:
                     threading.Thread(
                         target=mgr.restart,
@@ -5833,7 +6091,7 @@ class ChannelsHandler:
                 import sys
                 app_module = sys.modules.get('__main__') or sys.modules.get('app')
                 clear_fn = getattr(app_module, '_clear_singleton_cache', None) if app_module else None
-                mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+                mgr = _live_channel_manager()
                 if mgr is None:
                     logger.warning(f"[WebChannel] ChannelManager not available, cannot start '{channel_name}'")
                     return
@@ -5881,7 +6139,7 @@ class ChannelsHandler:
             try:
                 import sys
                 app_module = sys.modules.get('__main__') or sys.modules.get('app')
-                mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+                mgr = _live_channel_manager()
                 clear_fn = getattr(app_module, '_clear_singleton_cache', None) if app_module else None
                 if mgr:
                     mgr.stop(channel_name)
@@ -5907,9 +6165,7 @@ class ChannelsHandler:
     # ------------------------------------------------------------------
     @staticmethod
     def _channel_mgr():
-        import sys
-        app_module = sys.modules.get('__main__') or sys.modules.get('app')
-        return getattr(app_module, '_channel_mgr', None) if app_module else None
+        return _live_channel_manager()
 
     def _clean_credentials(self, channel_name: str, updates: dict) -> dict:
         """Keep only real, unmasked credential values for this channel type."""
@@ -6043,10 +6299,25 @@ class ChannelsHandler:
 
     def _handle_instance_disconnect(self, channel_name: str, instance_id: str):
         """Remove one instance record from team.json and stop its channel."""
-        from channel.channel_instances import remove_instance
+        from channel.channel_instances import remove_instance, read_raw_instances
 
         if not instance_id:
             return json.dumps({"status": "error", "message": "instance_id is required"})
+
+        # A legacy channel (enabled the old way via config.json's channel_type)
+        # is folded into channel_instances on every team.json write by
+        # bootstrap_legacy_instances. Just dropping the record isn't enough:
+        # remove_instance itself writes team.json, whose bootstrap immediately
+        # re-materializes the record straight from channel_type — so the card
+        # comes right back. Prune the type from channel_type *first* (when this
+        # is the last instance of it), so by the time remove_instance writes,
+        # the bootstrap has nothing to recreate.
+        remaining = [
+            r for r in read_raw_instances(conf())
+            if str(r.get("instance_id") or "").strip() != instance_id
+        ]
+        self._prune_legacy_channel_type(channel_name, remaining)
+
         remove_instance(conf(), instance_id)
 
         def _do_stop():
@@ -6068,6 +6339,46 @@ class ChannelsHandler:
 
         threading.Thread(target=_do_stop, daemon=True).start()
         return json.dumps({"status": "success", "instance_id": instance_id}, ensure_ascii=False)
+
+    def _prune_legacy_channel_type(self, channel_name: str, remaining):
+        """Drop *channel_name* from config.json's channel_type once no instance
+        of that type is left (``remaining`` = the instance records that will
+        survive this disconnect).
+
+        Without this, bootstrap_legacy_instances (which runs on every team.json
+        write and is keyed off channel_type) would recreate the instance we just
+        removed, so the disconnect would never stick. Only prunes when the last
+        instance of the type is gone, so removing one of several Feishu bots
+        leaves the type — and the others — untouched.
+        """
+        from channel.channel_instances import _normalize_type
+
+        target = _normalize_type(channel_name)
+        if any(_normalize_type(str(r.get("channel_type") or "")) == target for r in remaining):
+            return
+
+        existing = self._parse_channel_list(conf().get("channel_type", ""))
+        pruned = [ch for ch in existing if _normalize_type(ch) != target]
+        if len(pruned) == len(existing):
+            return
+        new_channel_type = ",".join(pruned)
+
+        conf()["channel_type"] = new_channel_type
+        try:
+            config_path = os.path.join(get_data_root(), "config.json")
+            file_cfg = _read_config_file_for_write()
+            file_cfg["channel_type"] = new_channel_type
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(file_cfg, f, indent=4, ensure_ascii=False)
+            logger.info(
+                f"[WebChannel] Pruned legacy channel_type '{channel_name}', "
+                f"channel_type={new_channel_type}"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[WebChannel] Failed to prune legacy channel_type '{channel_name}': {e}",
+                exc_info=True,
+            )
 
 
 class WeixinQrHandler:
@@ -6100,9 +6411,7 @@ class WeixinQrHandler:
     @staticmethod
     def _get_running_channel():
         try:
-            import sys
-            app_module = sys.modules.get('__main__') or sys.modules.get('app')
-            mgr = getattr(app_module, '_channel_mgr', None) if app_module else None
+            mgr = _live_channel_manager()
             if mgr:
                 return mgr.get_channel("weixin")
         except Exception:
@@ -7327,9 +7636,7 @@ def _bind_channel_instance(channel_type: str, instance_id: str = "", agent_id: s
     )
 
     try:
-        import sys
-        app_module = sys.modules.get("__main__") or sys.modules.get("app")
-        mgr = getattr(app_module, "_channel_mgr", None) if app_module else None
+        mgr = _live_channel_manager()
         channel = mgr.get_channel(target_id) if mgr else None
         if channel is not None:
             # Live-update owner + team on the running instance. Empty owner means
@@ -8096,6 +8403,7 @@ def _session_model_catalog() -> List[dict]:
         active_provider = "linkai"
     active_model = str(local_config.get("model") or "").strip()
     catalog_map = model_catalog.get_catalog_map()
+    hidden_map = model_catalog.get_hidden_map()
 
     catalog: List[dict] = []
     for pid, pinfo in ConfigHandler.PROVIDER_MODELS.items():
@@ -8105,11 +8413,13 @@ def _session_model_catalog() -> List[dict]:
         has_key = bool(key_field and str(local_config.get(key_field) or "").strip())
         if not has_key and pid != active_provider:
             continue
-        # A provider catalog replaces the preset list, filtered to entries
-        # tagged "text" — only those belong in the conversation switcher.
-        entries = catalog_map.get(pid)
-        if entries:
-            models = [e["name"] for e in entries if "text" in (e.get("capabilities") or [])]
+        # Overlay onto the presets, then keep only text-tagged entries — only
+        # those belong in the conversation switcher. Without an overlay this is
+        # just the preset model list.
+        if catalog_map.get(pid) or hidden_map.get(pid):
+            effective = ModelsHandler._merged_catalog(
+                pid, ModelsHandler._preset_seed(pid), catalog_map, hidden_map)
+            models = [e["name"] for e in effective if "text" in (e.get("capabilities") or [])]
         else:
             models = list(pinfo["models"])
         if not models:
@@ -8139,8 +8449,12 @@ def _session_model_catalog() -> List[dict]:
                 continue
             pid = f"custom:{cid}"
             is_active = pid == active_provider
-            has_key = bool(str(cp.get("api_key") or "").strip())
-            if not has_key and not is_active:
+            # Mirror the config page's "configured" test (_custom_provider_cards):
+            # a keyless-but-based endpoint (self-hosted / gateway) is valid, so
+            # having an api_base counts just like having a key.
+            configured = bool(str(cp.get("api_base") or "").strip()) \
+                or bool(str(cp.get("api_key") or "").strip())
+            if not configured and not is_active:
                 continue
             entries = catalog_map.get(pid)
             if entries:
@@ -8548,18 +8862,33 @@ class HistoryHandler:
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
 
+            agent_id = _request_agent_id(params)
             from agent.memory import get_conversation_store
             store = get_conversation_store(
-                _get_workspace_root(agent_id=_request_agent_id(params))
+                _get_workspace_root(agent_id=agent_id)
             )
             result = store.load_history_page(
                 session_id=session_id,
                 page=int(params.page),
                 page_size=int(params.page_size),
             )
+            # Same workspace-relative media rewrite the live SSE path applies,
+            # so images/videos survive a page reload for non-default agents.
+            history_root = None
+            try:
+                history_root = _get_workspace_root(session_id, agent_id)
+            except Exception as e:
+                logger.debug(f"[WebChannel] history workspace root skipped: {e}")
             for msg in result.get("messages") or []:
                 if msg.get("role") != "assistant":
                     continue
+                if history_root and isinstance(msg.get("content"), str):
+                    try:
+                        msg["content"] = _rewrite_relative_media(
+                            msg["content"], history_root
+                        )
+                    except Exception as e:
+                        logger.debug(f"[WebChannel] history media rewrite skipped: {e}")
                 _add_subagent_displays(msg.get("steps"))
                 _add_delegate_displays(msg.get("steps"))
                 artifacts = _artifacts_from_steps(msg.get("steps"), session_id)
@@ -9402,5 +9731,61 @@ class KnowledgeImportHandler:
 class VersionHandler:
     def GET(self):
         web.header('Content-Type', 'application/json; charset=utf-8')
-        from cli import __version__
-        return json.dumps({"version": __version__})
+        from cli.update_service import version_payload
+        # Local metadata only — never contacts GitHub.
+        return json.dumps(version_payload(), ensure_ascii=False)
+
+
+class UpdateCheckHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from cli.update_service import check_for_updates, version_payload
+            payload = version_payload()
+            logger.info("[WebChannel] update check requested (current v%s)", payload["version"])
+            result = check_for_updates(payload["version"])
+            result.update({
+                "install_kind": payload["install_kind"],
+                "update_supported": payload["update_supported"],
+                "unsupported_reason": payload["unsupported_reason"],
+            })
+            if result.get("up_to_date"):
+                logger.info("[WebChannel] update check: already up to date (v%s)", payload["version"])
+            else:
+                latest = (result.get("latest") or {}).get("tag") or "?"
+                logger.info("[WebChannel] update check: newer version available -> %s", latest)
+            return json.dumps(result, ensure_ascii=False)
+        except Exception as e:
+            logger.error("[WebChannel] update check failed: %s", e, exc_info=True)
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class UpdateStartHandler:
+    def POST(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        try:
+            from cli.update_service import UpdateError, schedule_web_update
+            logger.info("[WebChannel] one-click update requested")
+            status = schedule_web_update()
+            return json.dumps({"status": "success", "update": status}, ensure_ascii=False)
+        except UpdateError as e:
+            logger.error("[WebChannel] update could not start at step '%s': %s", e.step, e.message)
+            return json.dumps({
+                "status": "error",
+                "step": e.step,
+                "message": e.message,
+                "output": e.output,
+            })
+        except Exception as e:
+            logger.error("[WebChannel] update start failed: %s", e, exc_info=True)
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class UpdateStatusHandler:
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        from cli.update_service import read_update_status
+        return json.dumps(read_update_status(), ensure_ascii=False)

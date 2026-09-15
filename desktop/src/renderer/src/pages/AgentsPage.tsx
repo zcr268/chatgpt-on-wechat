@@ -28,6 +28,7 @@ type DetailTab = 'profile' | 'skills' | 'files'
  * otherwise), so it can assume a real roster.
  */
 const AgentsPage: React.FC<AgentsPageProps> = ({ baseUrl }) => {
+  const navigate = useNavigate()
   const agents = useAgentStore((s) => s.agents)
   const defaultAgentId = useAgentStore((s) => s.defaultAgentId)
   const loaded = useAgentStore((s) => s.loaded)
@@ -68,12 +69,22 @@ const AgentsPage: React.FC<AgentsPageProps> = ({ baseUrl }) => {
           <h2 className="text-xl font-bold text-content">{t('agents_title')}</h2>
           <p className="text-xs text-content-tertiary mt-1">{t('agents_desc')}</p>
         </div>
-        <Btn variant="primary" onClick={() => setCreateOpen(true)}>
-          <span className="flex items-center gap-1.5">
-            <Plus size={15} />
-            {t('agents_create')}
-          </span>
-        </Btn>
+        <div className="flex items-center gap-2">
+          {agents.length >= 2 && (
+            <Btn onClick={() => navigate('/?team=1')}>
+              <span className="flex items-center gap-1.5">
+                <Users size={15} />
+                {t('agents_new_team_chat')}
+              </span>
+            </Btn>
+          )}
+          <Btn variant="primary" onClick={() => setCreateOpen(true)}>
+            <span className="flex items-center gap-1.5">
+              <Plus size={15} />
+              {t('agents_create')}
+            </span>
+          </Btn>
+        </div>
       </div>
 
       <div className="flex-1 overflow-hidden border-t border-default flex min-h-0">

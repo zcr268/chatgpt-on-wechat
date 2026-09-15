@@ -50,6 +50,19 @@ OP_HEARTBEAT_ACK = 11
 # Resumable error codes
 RESUMABLE_CLOSE_CODES = {4008, 4009}
 
+# WebSocket transport-level keepalive. Without this the client never sends
+# protocol pings, so a half-open connection (NAT/container network drop with no
+# TCP FIN/RST) is never detected and _on_close never fires — the socket looks
+# alive but no events arrive. ping_timeout closes the socket when a pong is
+# missed, which routes into the existing _on_close reconnect path.
+WS_PING_INTERVAL = 20
+WS_PING_TIMEOUT = 10
+
+# Heartbeat-ACK watchdog: if the QQ gateway stops acking our heartbeats for this
+# many missed intervals, the connection is silently dead — force it closed so the
+# reconnect path runs. Guards against a stall the transport ping alone can miss.
+HEARTBEAT_ACK_TIMEOUT_FACTOR = 3
+
 
 @singleton
 class QQChannel(ChatChannel):
@@ -72,6 +85,10 @@ class QQChannel(ChatChannel):
         self._session_id = None
         self._last_seq = None
         self._heartbeat_interval = 45000
+        # Timestamp of the last heartbeat ACK from the gateway, used by the
+        # heartbeat loop to detect a silently-dead connection and force a
+        # reconnect. Reset whenever a fresh connection starts sending heartbeats.
+        self._last_heartbeat_ack = 0.0
         self._can_resume = False
         # Bumped on every stop so a superseded socket cannot reconnect itself.
         self._generation = 0
@@ -245,7 +262,12 @@ class QQChannel(ChatChannel):
 
         def run_forever():
             try:
-                websocket_app_run_forever(self._ws, ping_interval=0, reconnect=0)
+                websocket_app_run_forever(
+                    self._ws,
+                    ping_interval=WS_PING_INTERVAL,
+                    ping_timeout=WS_PING_TIMEOUT,
+                    reconnect=0,
+                )
             except (SystemExit, KeyboardInterrupt):
                 logger.info("[QQ] WebSocket thread interrupted")
             except Exception as e:
@@ -295,6 +317,10 @@ class QQChannel(ChatChannel):
             return
         self._heartbeat_interval = interval_ms
         interval_sec = interval_ms / 1000.0
+        # Seed the ACK clock so the watchdog measures silence from now, not from
+        # a stale value left by a previous connection.
+        self._last_heartbeat_ack = time.time()
+        ack_timeout = interval_sec * HEARTBEAT_ACK_TIMEOUT_FACTOR
 
         def heartbeat_loop():
             while not self._stop_event.is_set() and self._connected:
@@ -307,6 +333,23 @@ class QQChannel(ChatChannel):
                     logger.warning(f"[QQ] Heartbeat send failed: {e}")
                     break
                 self._stop_event.wait(interval_sec)
+                # A live socket whose gateway has gone silent (no ACKs) still
+                # passes ws_send, so detect the stall here and force a close so
+                # the _on_close reconnect path runs.
+                if self._stop_event.is_set() or not self._connected:
+                    break
+                if time.time() - self._last_heartbeat_ack > ack_timeout:
+                    logger.warning(
+                        f"[QQ] No heartbeat ACK for over {ack_timeout:.0f}s, "
+                        f"connection appears dead, forcing reconnect"
+                    )
+                    ws = self._ws
+                    if ws:
+                        try:
+                            ws.close()
+                        except Exception:
+                            pass
+                    break
 
         self._heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
         self._heartbeat_thread.start()
@@ -334,7 +377,7 @@ class QQChannel(ChatChannel):
                 self._send_identify()
 
         elif op == OP_HEARTBEAT_ACK:
-            pass
+            self._last_heartbeat_ack = time.time()
 
         elif op == OP_HEARTBEAT:
             self._ws_send({"op": OP_HEARTBEAT, "d": self._last_seq})

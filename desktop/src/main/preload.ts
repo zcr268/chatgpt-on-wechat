@@ -1,4 +1,11 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import * as electron from 'electron'
+
+const { contextBridge, ipcRenderer } = electron
+
+// webUtils.getPathForFile was added in Electron 32. The Win7 legacy build pins
+// Electron to 22, whose typings don't declare webUtils, so we look it up off
+// the runtime module instead of a static named import to keep tsc happy there.
+const webUtils = (electron as { webUtils?: { getPathForFile(file: File): string } }).webUtils
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getBackendPort: () => ipcRenderer.invoke('get-backend-port'),
@@ -11,7 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // '' for files with no path (e.g. a pasted clipboard image).
   getPathForFile: (file: File): string => {
     try {
-      return webUtils.getPathForFile(file) || ''
+      return webUtils?.getPathForFile(file) || ''
     } catch {
       return ''
     }

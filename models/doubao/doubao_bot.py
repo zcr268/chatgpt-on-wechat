@@ -265,12 +265,13 @@ class DoubaoBot(Bot):
                 return self._handle_sync_response(request_body)
 
         except Exception as e:
+            error_msg = str(e)
             logger.error(f"[DOUBAO] call_with_tools error: {e}")
             import traceback
             logger.error(traceback.format_exc())
 
             def error_generator():
-                yield {"error": True, "message": str(e), "status_code": 500}
+                yield {"error": True, "message": error_msg, "status_code": 500}
             return error_generator()
 
     # -------------------- streaming --------------------

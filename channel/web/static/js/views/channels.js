@@ -51,6 +51,9 @@ function channelRenderList() {
             list.push(Object.assign({}, inst, { iid: inst.instance_id }));
         });
     }
+    // Show WeChat cards first; keep every other card in its existing relative
+    // order (stable sort: weixin -> 0, everything else -> 1).
+    list.sort((a, b) => (a.name === 'weixin' ? 0 : 1) - (b.name === 'weixin' ? 0 : 1));
     return list;
 }
 
@@ -455,12 +458,17 @@ function disconnectChannel(chName, instanceId) {
                     if (instanceId) {
                         loadChannelsView();
                     } else {
-                        if (ch) ch.active = false;
-                        renderActiveChannels();
+                    if (ch) ch.active = false;
+                    renderActiveChannels();
                     }
+                } else {
+                    // Surface the failure instead of silently leaving the card in
+                    // place — otherwise a rejected disconnect looks like nothing
+                    // happened at all.
+                    _wsToast(data.message || t('channels_disconnect_error'));
                 }
             })
-            .catch(() => {});
+            .catch(() => _wsToast(t('channels_disconnect_error')));
         }
     });
 }

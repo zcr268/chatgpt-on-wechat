@@ -113,6 +113,9 @@ function _applyInputTooltips() {
     // are repainted here too (this runs on every language switch).
     _renderPermissionChip();
     _renderModelChip();
+    // applyI18n resets the placeholder to the solo hint via data-i18n-placeholder,
+    // so re-apply the team-aware variant for group conversations.
+    _renderInputPlaceholder();
 }
 
 // A session that exists in the browser but not yet in the database: the user

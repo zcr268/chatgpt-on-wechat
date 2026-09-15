@@ -17,7 +17,7 @@
 [<a href="../../README.md">English</a>] | [<a href="README.md">中文</a>] | [繁體中文] | [<a href="../ja/README.md">日本語</a>]
 </p>
 
-**CowAgent** 是一個開源的超級 AI 助理，能夠主動思考和規劃任務、操作電腦和外部資源、創造和執行 Skills、構建知識庫與長期記憶、透過自主進化與你一同成長，是 Agent Harness 工程的最佳實踐之一。
+**CowAgent** 是一個開源的超級 AI 助理，能夠主動思考和規劃任務、操作電腦和外部資源、創造和執行 Skills、構建知識庫與長期記憶、創建多智能體團隊，並透過自主進化與你一同成長，是 Agent Harness 工程的最佳實踐之一。
 
 CowAgent 輕量、易部署、可擴充，自由接入主流大模型，覆蓋微信、飛書、釘釘、企微、QQ、Telegram、Slack、網頁等多渠道，7×24 執行於個人電腦或伺服器中。
 
@@ -48,6 +48,7 @@ CowAgent 輕量、易部署、可擴充，自由接入主流大模型，覆蓋�
 | 能力 | 說明 |
 | :--- | :--- |
 | [任務規劃](https://docs.cowagent.ai/zh/intro/architecture) | 理解複雜任務並自主分解執行，迴圈呼叫工具直到完成目標 |
+| [多智能體](https://docs.cowagent.ai/zh/multi-agent/team) | 創建多個 Agent 組成團隊，各自擁有獨立的職責、模型、技能與知識，在同一會話中分工協作 |
 | [長期記憶](https://docs.cowagent.ai/zh/memory) | 三層記憶架構（上下文 → 天級 → 核心），夢境蒸餾自動整理，支援關鍵詞與向量混合檢索 |
 | [知識庫](https://docs.cowagent.ai/zh/knowledge) | 自動整理結構化知識為 Markdown Wiki，構建持續增長的知識圖譜，視覺化瀏覽 |
 | [自主進化](https://docs.cowagent.ai/zh/memory/self-evolution) | 自動覆盤對話，最佳化技能、處理未完成事項、沉澱記憶與知識，在使用中持續成長 |
@@ -113,16 +114,26 @@ cow install-browser                # 安裝瀏覽器工具
 
 <br/>
 
+## 👥 多智能體團隊
+
+支援創建多個 Agent 組成團隊，每個成員擁有獨立的記憶、能力、知識與工作空間，既能專注各自領域，也能在同一會話中透過協作完成複雜任務。多 Agent 團隊支援在 Web 端、桌面客戶端、IM 通道接入端使用。
+
+<img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/agent-team-overview.png" alt="CowAgent 多智能體團隊" width="800"/>
+
+> 詳見 [Agent 團隊](https://docs.cowagent.ai/zh/multi-agent/team)。
+
+<br/>
+
 ## 🤖 模型支援
 
 CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像理解、影像生成、語音識別/合成、向量** 等能力均可獨立設定廠商。
 
 | 廠商 | 代表模型 | 文字 | 影像理解 | 影像生成 | 語音識別 | 語音合成 | 向量 |
 | --- | --- | :-: | :-: | :-: | :-: | :-: | :-: |
-| [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-v4-flash / pro | ✅ | | | | | |
-| [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-5 / sonnet-5 | ✅ | ✅ | | | | |
-| [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-3.7-flash | ✅ | ✅ | ✅ | | | |
+| [DeepSeek](https://docs.cowagent.ai/zh/models/deepseek) | deepseek-flash (V4.1) / pro | ✅ | ✅ | | | | |
+| [Claude](https://docs.cowagent.ai/zh/models/claude) | claude-opus-5 / fable-5.1 | ✅ | ✅ | | | | |
+| [OpenAI](https://docs.cowagent.ai/zh/models/openai) | gpt-6-astra / gpt-5.6 系列 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| [Gemini](https://docs.cowagent.ai/zh/models/gemini) | gemini-3.8-flash | ✅ | ✅ | ✅ | | | |
 | [MiniMax](https://docs.cowagent.ai/zh/models/minimax) | MiniMax-M3 | ✅ | ✅ | ✅ | | ✅ | |
 | [智譜 GLM](https://docs.cowagent.ai/zh/models/glm) | glm-5.3-flash、glm-5v-turbo | ✅ | ✅ | | ✅ | | ✅ |
 | [通義千問](https://docs.cowagent.ai/zh/models/qwen) | qwen3.8-flash | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
@@ -215,6 +226,10 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 <br/>
 
 ## 🏷 更新日誌
+
+> **2026.09.14：** [v2.1.9](https://github.com/zhayujie/CowAgent/releases/tag/2.1.9) — 多 Agent 協作體驗優化、模型列表配置與多兜底模型、通道接入修復、新增圖像模型（gpt-image-2.5）、語音修復
+
+> **2026.09.10：** [v2.1.8](https://github.com/zhayujie/CowAgent/releases/tag/2.1.8) — 推出多 Agent 團隊、定時任務支援手動建立、上下文用量視覺化、模型和搜尋工具接入、工作空間檔案編輯
 
 > **2026.08.20：** [v2.1.7](https://github.com/zhayujie/CowAgent/releases/tag/2.1.7) — 多工作空間與會話隔離、會話級權限模式、任務通知、桌面端最佳化、新模型接入
 

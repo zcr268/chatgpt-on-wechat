@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Loader2, Wrench, Zap, Puzzle, ArrowLeft, Lock } from 'lucide-react'
+import { Loader2, Wrench, Zap, Puzzle, ArrowLeft, Lock, Pencil } from 'lucide-react'
 import { t } from '../i18n'
 import apiClient from '../api/client'
 import type { ApiResult } from '../api/client'
@@ -32,6 +32,54 @@ const skillEditor = createDocEditorStore<SkillRef, SkillContent & ApiResult>({
     apiClient.writeSkill({ name: doc.name, content, expectedMtime }),
   refusal: (data) => (data.ships_with_install ? t('skill_builtin_readonly') : docRefusal(data)),
 })
+
+/**
+ * Split a skill's SKILL.md into its YAML frontmatter fields and the markdown
+ * body. The `---` header is metadata, not prose: handed to the markdown
+ * renderer as-is it becomes a giant bold heading and a horizontal rule. Pull it
+ * out so name/description show as a proper header instead.
+ */
+function parseSkillFrontmatter(content: string): { fields: Array<[string, string]>; body: string } {
+  const text = content || ''
+  const match = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/)
+  if (!match) return { fields: [], body: text }
+
+  const fields: Array<[string, string]> = []
+  for (const raw of match[1].split(/\r?\n/)) {
+    const line = raw.trim()
+    if (!line || line.startsWith('#')) continue
+    const idx = line.indexOf(':')
+    if (idx === -1) continue
+    const key = line.slice(0, idx).trim()
+    // Drop surrounding quotes a YAML scalar may carry.
+    const value = line
+      .slice(idx + 1)
+      .trim()
+      .replace(/^['"]|['"]$/g, '')
+    if (key) fields.push([key, value])
+  }
+  return { fields, body: text.slice(match[0].length) }
+}
+
+/** A skill's read-only view: frontmatter as a titled header, body as markdown. */
+const SkillContentView: React.FC<{ content: string }> = ({ content }) => {
+  const { fields, body } = parseSkillFrontmatter(content)
+  return (
+    <>
+      {fields.length > 0 && (
+        <div className="mb-5 pb-5 border-b border-subtle space-y-2">
+          {fields.map(([key, value]) => (
+            <div key={key} className="flex gap-3 text-sm">
+              <span className="flex-shrink-0 w-24 font-medium text-content-tertiary">{key}</span>
+              <span className="flex-1 min-w-0 text-content break-words">{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <Markdown content={body} />
+    </>
+  )
+}
 
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [tools, setTools] = useState<ToolInfo[]>([])
@@ -73,6 +121,16 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
     } catch {
       setSkills((prev) => prev.map((s) => (s.name === skill.name ? { ...s, enabled: !enabled } : s)))
     }
+  }
+
+  // The card's pencil opens the viewer and jumps straight into editing,
+  // skipping the read-only view. `startEdit` no-ops for a read-only skill, so
+  // the built-in ones simply open to their content.
+  const openSkillForEdit = async (skill: SkillInfo) => {
+    await skillEditor
+      .getState()
+      .open({ name: skill.name, label: skill.display_name || skill.name })
+    await skillEditor.getState().startEdit()
   }
 
   const closeViewer = async () => {
@@ -147,7 +205,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                     <Loader2 size={16} className="animate-spin mr-2" />
                   </div>
                 ) : (
-                  <Markdown content={content} />
+                  <SkillContentView content={content} />
                 )}
               </div>
             </div>
@@ -205,8 +263,19 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                             <span className="text-sm font-medium text-content truncate flex-1">
                               {skill.display_name || skill.name}
                             </span>
-                            {/* The switch sits inside a card that opens the skill,
-                                so its clicks must not reach the card. */}
+                            {/* The pencil and switch sit inside a card that opens
+                                the skill, so their clicks must not reach it. */}
+                            <button
+                              type="button"
+                              title={t('skill_edit_hint')}
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                void openSkillForEdit(skill)
+                              }}
+                              className="flex-shrink-0 p-1 -mx-1 -mt-1.5 -mb-1 rounded text-content-tertiary hover:text-content-secondary transition-colors cursor-pointer"
+                            >
+                              <Pencil size={11} />
+                            </button>
                             <span onClick={(e) => e.stopPropagation()}>
                               <Toggle checked={skill.enabled} onChange={(v) => toggle(skill, v)} />
                             </span>

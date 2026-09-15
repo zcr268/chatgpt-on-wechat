@@ -6,8 +6,7 @@ description: 将多个 Agent 组建成团队，让它们各司其职，在同一
 CowAgent 不再只是一个 Agent，你可以创建多个 Agent 组成一支团队：每个成员有自己的职责、模型、技能和知识，既能各自独立工作，也能被拉进同一个会话里一起协作。
 
 <Frame>
-  {/* 截图占位：Web 控制台 / 桌面端「智能体团队」页面全景，左侧成员列表 + 右侧详情 */}
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/cow-team-overview.png" style={{ maxWidth: "800px" }} />
+  <img src="https://cdn.link-ai.tech/doc/e0750df7b766ee63dfb341e30e181859.png" alt="Multi-agent team" width="800"/>
 </Frame>
 
 ## 为什么需要团队
@@ -32,9 +31,9 @@ CowAgent 不再只是一个 Agent，你可以创建多个 Agent 组成一支团�
 - **从已有 Agent 复制**：新建时可以复制一个现有 Agent 的配置、技能与知识作为起点。
 
 <Frame>
-  {/* 截图占位：创建 Agent 的表单，名称、头像、职责、模型、知识库模式 */}
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/cow-team-create.png" style={{ maxWidth: "600px" }} />
+  <img src="https://cdn.link-ai.tech/doc/20260908192724.png" alt="Agent-create" width="800"/>
 </Frame>
+
 
 创建后，Agent 会出现在团队列表中。点击任意成员，右侧可以在「概况 / 技能 / 核心文件」之间切换，分别配置它的基本信息、启用的技能，以及它的人设与规则文件（`AGENT.md`、`RULE.md` 等）。
 
@@ -62,11 +61,11 @@ CowAgent 不再只是一个 Agent，你可以创建多个 Agent 组成一支团�
 - **移除成员**：将成员移出当前会话。
 
 <Frame>
-  {/* 截图占位：对话框左下角的 Agent 选择器，展示当前会话成员 + 可添加的成员 */}
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/cow-team-composer.png" style={{ maxWidth: "600px" }} />
+  <img src="https://cdn.link-ai.tech/doc/20260908194946.png" alt="Agent-team-group" width="800"/>
 </Frame>
 
-群聊里，每个 Agent 用自己配置的模型作答，气泡上会显示是哪个 Agent 在发言。
+
+群聊里，每个 Agent 用自己配置的模型作答，气泡上会显示是哪个 Agent 在发言。同一会话里的成员读到的是同一份记录，能看到其他人说过什么。
 
 <Note>
 群聊不使用会话级的模型选择，每个 Agent 都用自己配置的默认模型，因此群聊里不会出现模型选择器。
@@ -74,17 +73,18 @@ CowAgent 不再只是一个 Agent，你可以创建多个 Agent 组成一支团�
 
 ## 通道接入
 
-同一种通道可运行多个实例，每个实例绑定不同的 Agent 或团队，对外呈现为各自独立的助手，例如两个飞书机器人分别由客服 Agent 和研发 Agent 接管。
+同一种类型的通道可运行多个实例，每个实例可以绑定不同的单 Agent 或整个 Agent 团队，对外呈现为各自独立的助手。
 
 在「通道」页面，为一个已连接的实例设置绑定智能体即可：
 
 - 第一个选中的是负责人（owner），负责接收这个通道的所有任务。
-- 可以再添加若干成员，负责人可以把某轮对话交给他们处理。
+- 可以再添加若干成员，负责人会根据成员职责，将合适的任务分配给他们处理。
+- 在通道中通过 `@` 加成员名称或 ID，即可直接与某个成员对话。
 
 <Frame>
-  {/* 截图占位：通道页面的「绑定智能体」下拉，owner + 成员 */}
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/cow-team-channel-bind.png" style={{ maxWidth: "600px" }} />
+  <img src="https://cdn.link-ai.tech/doc/20260908204924.png" alt="Agent-team-channel" width="800"/>
 </Frame>
+
 
 绑定的改动会即时生效，无需重启通道。支持多实例的通道包括微信、企业微信机器人、钉钉、飞书、QQ、Telegram、Slack、Discord 等。
 
@@ -97,9 +97,9 @@ CowAgent 不再只是一个 Agent，你可以创建多个 Agent 组成一支团�
 在群聊里，用 `@` 加上成员的名字，就能把这一轮交给指定的 Agent 回答。输入 `@` 时会弹出当前会话里的成员供你选择，发送后气泡里也会带上被指定 Agent 的头像，标明这轮由谁负责。
 
 <Frame>
-  {/* 截图占位：群聊中 @ 某个成员，以及气泡里显示的 @成员 头像 */}
-  <img src="https://cdn.jsdelivr.net/gh/zhayujie/cowagent-assets@main/screenshots/zh/cow-team-mention.png" style={{ maxWidth: "600px" }} />
+  <img src="https://cdn.link-ai.tech/doc/20260911094642.png" alt="Agent-team-group" width="800"/>
 </Frame>
+
 
 ### 2. 主 Agent 与委派
 
@@ -110,6 +110,13 @@ CowAgent 不再只是一个 Agent，你可以创建多个 Agent 组成一支团�
 - **回复**：主 Agent 汇总后统一回复用户，用户始终面对同一个入口。
 
 委派的范围、链路深度、时间预算等细节由 [agent_delegate 工具](/zh/tools/delegate) 承载，可在配置中调整。
+
+
+<Frame>
+  <img src="https://cdn.link-ai.tech/doc/8c2cae749a7994d5fedbce3b0723fa7b.png" alt="Agent-team-delegate" width="800"/>
+</Frame>
+
+
 
 ## 与子 Agent 的区别
 

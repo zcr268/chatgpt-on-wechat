@@ -54,6 +54,7 @@ async function refreshSessionSettings() {
     }
     _renderPermissionChip();
     _renderModelChip();
+    _renderInputPlaceholder();
     renderComposerIdentity();
 }
 
@@ -79,6 +80,15 @@ function _renderPermissionChip() {
     btn.setAttribute('data-tooltip', tip);
     btn.setAttribute('data-tooltip-pos', 'top');
     btn.setAttribute('data-tip-float', '');
+}
+
+// The composer placeholder only advertises "@ an Agent" when the conversation
+// actually has other members to address. A solo chat can only @ files, so it
+// falls back to the file-only hint. Runs whenever the session's team changes.
+function _renderInputPlaceholder() {
+    const input = document.getElementById('chat-input');
+    if (!input) return;
+    input.placeholder = t(sharedConversation() ? 'input_placeholder_team' : 'input_placeholder');
 }
 
 function _renderModelChip() {

@@ -172,6 +172,23 @@ def env_file(identity=None, base=None) -> Path:
     return _shared_or_own(identity, base, ".env")
 
 
+def system_dir(base=None, ensure: bool = False) -> Path:
+    """Instance-wide system state that isn't user config.
+
+    Shared, not per Agent: things like the per-provider model catalog are a
+    property of the instance (same as the global model keys), not of whichever
+    Agent happens to be talking. Kept out of ``config.json`` so derived/managed
+    documents don't bloat the hand-editable config.
+    """
+    root = Path(base) if base is not None else shared_root()
+    return _ensure(root / "system", ensure)
+
+
+def models_catalog_file(base=None) -> Path:
+    """The per-provider model catalog overlay (overrides + hidden)."""
+    return system_dir(base) / "models.json"
+
+
 def scheduler_recipients_file(base=None) -> Path:
     """The one directory of people/groups observed on inbound IM channels.
 

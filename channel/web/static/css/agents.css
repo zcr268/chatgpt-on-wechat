@@ -225,6 +225,7 @@
 .agent-modal-card {
     width: min(460px, calc(100% - 32px));
     max-height: calc(100vh - 48px);
+    max-height: calc(100dvh - 48px);
     display: flex; flex-direction: column;
     background: #fff; border-radius: 18px;
     box-shadow: 0 24px 60px -20px rgba(0,0,0,.4);
@@ -233,16 +234,20 @@
 .agent-modal-title {
     font-size: 16px; font-weight: 600; color: #1e293b;
     padding: 22px 24px 4px;
+    flex: 0 0 auto;
 }
 .dark .agent-modal-title { color: #f1f5f9; }
-/* overflow stays visible so an opened dropdown's menu can spill past the last
-   field instead of being clipped into a scroll area (which would show a
-   scrollbar and trap the options). The card itself scrolls if a form ever
-   outgrows the viewport. */
-.agent-modal-body { padding: 12px 24px; overflow: visible; }
+/* The body scrolls when a form outgrows the viewport (e.g. small laptops or
+   narrow mobile widths) so the footer's action buttons stay reachable. While a
+   dropdown is open we let the body overflow so its menu can spill past the last
+   field instead of being clipped; the menu's own max-height (and drop-up flip)
+   keeps it inside the viewport. */
+.agent-modal-body { padding: 12px 24px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.agent-modal-body:has(.cfg-dropdown.open) { overflow: visible; }
 .agent-modal-foot {
     display: flex; align-items: center; gap: 10px;
     padding: 16px 24px 20px; border-top: 1px solid #f1f5f9;
+    flex: 0 0 auto;
 }
 .dark .agent-modal-foot { border-color: rgba(255,255,255,.06); }
 
@@ -442,11 +447,18 @@ button.composer-menu-item.joined:hover { background: #FEF2F2; color: #b91c1c; cu
 button.composer-menu-item.joined:hover .joined-check { display: none; }
 button.composer-menu-item.joined:hover .joined-remove { display: inline; color: #b91c1c; }
 .composer-menu-item.joined.is-owner { cursor: default; }
+/* The owner row never turns into a red "remove" affordance on hover — it is the
+   main Agent and stays put. */
+.composer-menu-item.joined.is-owner:hover { background: transparent; color: inherit; }
 .composer-menu-badge {
     font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 999px;
     background: #f1f5f9; color: #64748b;
 }
 .dark .composer-menu-badge { background: rgba(255,255,255,.08); color: #94a3b8; }
+/* The "main Agent" badge is the one standing marker in the roster, so it reads
+   in the brand green rather than the muted grey of an ordinary badge. */
+.composer-menu-badge.owner-badge { background: #4ABE6E; color: #fff; }
+.dark .composer-menu-badge.owner-badge { background: #4ABE6E; color: #fff; }
 .composer-menu-item .agent-avatar { flex-shrink: 0; }
 .composer-menu-sep { height: 1px; margin: 5px 6px; background: #eef2f6; }
 .dark .composer-menu-sep { background: rgba(255, 255, 255, 0.08); }

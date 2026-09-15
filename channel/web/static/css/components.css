@@ -74,6 +74,92 @@
 }
 .confirm-btn-ok:hover { background: #dc2626; }
 
+/* Web console updater — compact up-popover on the sidebar version row */
+#sidebar-version { color: inherit; position: relative; }
+.update-version-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.update-menu {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(100% - 4px);
+    z-index: 60;
+    padding: 5px;
+    border-radius: 10px;
+    background: #171717;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 30px -6px rgba(0, 0, 0, 0.5), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    animation: slashMenuIn 0.15s ease-out;
+}
+.update-menu.hidden { display: none; }
+
+/* Every row is a single fixed-height line: icon slot + label (+ trailing).
+   The icon slot has a fixed size so labels always start at the same x, no
+   matter how the text/state changes. */
+.update-menu-item {
+    width: 100%;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 9px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: #d4d4d4;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+    text-align: left;
+}
+.update-menu-item:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+.update-menu-icon {
+    position: relative;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #8f8f8f;
+}
+.update-menu-item:hover .update-menu-icon { color: #4ABE6E; }
+.update-menu-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.update-menu-item.is-new .update-menu-label { color: #ef4444; }
+.update-menu-item.is-new:hover .update-menu-label { color: #ef4444; }
+.update-menu-item.is-ok .update-menu-label { color: #4ABE6E; }
+.update-menu-ext { flex-shrink: 0; font-size: 10px; color: #6b6b6b; }
+.update-menu-item.is-disabled { cursor: default; }
+.update-menu-item.is-disabled:hover { background: transparent; color: #d4d4d4; }
+.update-menu-item.is-disabled:hover .update-menu-icon { color: #8f8f8f; }
+
+/* Red dot flagging a newer version, pinned to the top-right of the icon slot
+   so it never shifts the label (mirrors the desktop NavRail badge). */
+.update-dot {
+    position: absolute;
+    top: -1px;
+    right: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    box-shadow: 0 0 0 1.5px #171717;
+    pointer-events: none;
+}
+.update-dot.hidden { display: none; }
+.fa-spin-update { animation: fa-spin 0.9s linear infinite; }
+
 /* Config form controls */
 #view-config input[type="text"],
 #view-config input[type="number"],
@@ -200,6 +286,12 @@
     box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
 }
 .cfg-dropdown.open .cfg-dropdown-menu { display: block; }
+/* A dropdown inside a scrolling modal body (e.g. the "add vendor" provider
+   picker) would otherwise be clipped by the body's overflow-y-auto. While one
+   is open, let the body overflow so the menu can extend past it; the menu's own
+   max-height keeps it from running off the modal. */
+.modal-scroll-body:has(.cfg-dropdown.open) { overflow: visible; }
+.modal-scroll-body:has(.cfg-dropdown.open) .cfg-dropdown.open { z-index: 60; }
 /* When flipped, anchor the menu above the control so it isn't clipped at the
    bottom of the viewport (e.g. the last channel's config dropdown). */
 .cfg-dropdown.drop-up .cfg-dropdown-menu {

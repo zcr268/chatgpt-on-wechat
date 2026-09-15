@@ -951,17 +951,19 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
             "",
             *[f"- {line}" for line in roster],
             "",
-            "Everyone here reads the same history. A reply that starts with "
-            "someone's name in brackets was written by them; an unmarked one "
-            "is your own. Do not take a teammate's work, or their promises, "
-            "for yours.",
+            "Everyone here reads the same history. A teammate's earlier "
+            "reply is shown as `Name(@id)：` before their words; an unmarked "
+            "one is your own. Do not take a teammate's work, or their "
+            "promises, for yours.",
             "",
-            "This turn is yours to answer. Answer as yourself. When the user "
-            "wants a teammate's own words, let them address that teammate.",
+            "This turn is yours to answer. Answer as yourself, and do NOT "
+            "prefix your reply with your own name or id — that label is only "
+            "how others' past turns are shown to you.",
             "",
             "Use agent_delegate for work that belongs to a teammate, passing "
             "their id above as agent_id (without the @), and say who you handed "
-            "it to and what you asked for. Refer to teammates by name to the user.",
+            "it to and what you asked for. Refer to teammates by name to the "
+            "user, without the @id — the id is internal.",
             "",
         ]
     return [
@@ -971,14 +973,15 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
         "",
         *[f"- {line}" for line in roster],
         "",
-        "大家读到的是同一份记录。以方括号加名字开头的回复出自那位同事，"
-        "没有标注的才是你自己说的。不要把同事做过的事、许下的承诺当成你的。",
+        "大家读到的是同一份记录。以「名字(@id)：」开头的是那位同事说过的话，"
+        "没有前缀的才是你自己说的。不要把同事做过的事、许下的承诺当成你的。",
         "",
-        "这一轮由你来回答，以你自己的身份回答即可。用户想听某位同事亲口说，"
-        "让他去点那位同事。",
+        "这一轮由你来回答，以你自己的身份回答即可，回答时不要在开头加自己的名字或 id "
+        "前缀（前缀只是用来向你标记其他成员的历史发言）。",
         "",
         "该由某位同事做的事，用 agent_delegate 交出去：把那位同事上面的 id "
-        "作为 agent_id 传入 (不含@符号)，并说明交给了谁、交办了什么。对用户提到同事时用名字。",
+        "作为 agent_id 传入 (不含@符号)，并说明交给了谁、交办了什么。对用户提到同事时只用名字，"
+        "不要带 @id，id 只用于内部。",
         "",
     ]
 

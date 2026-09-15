@@ -821,7 +821,8 @@ class CowCliPlugin(Plugin):
         from config import get_data_root
         config_path = os.path.join(get_data_root(), "config.json")
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            # utf-8-sig tolerates a UTF-8 BOM (e.g. edited with Windows Notepad).
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 file_config = _json.load(f)
             file_config.update(updates)
             with open(config_path, "w", encoding="utf-8") as f:
@@ -1823,7 +1824,8 @@ class CowCliPlugin(Plugin):
         from config import get_data_root
         config_path = os.path.join(get_data_root(), "config.json")
         try:
-            with open(config_path, "r", encoding="utf-8") as f:
+            # utf-8-sig tolerates a UTF-8 BOM (e.g. edited with Windows Notepad).
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 file_config = _json.load(f)
             file_config["knowledge"] = enabled
             with open(config_path, "w", encoding="utf-8") as f:

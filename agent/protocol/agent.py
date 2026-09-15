@@ -38,8 +38,10 @@ _MODEL_SPECS = {
     # gpt-5.x / gpt-6 / future: 1M context, 128K max output.
     "gpt": {"version_min": 5.0, "window": 1000000, "max_output": 128000},
     # deepseek V4+: 1M context, 384K max output; legacy chat/reasoner: 64K.
+    # full_cap_names lists version-less flagship names that should also get the
+    # large window even though they carry no numeric version (e.g. deepseek-flash).
     "deepseek": {"version_min": 4.0, "window": 1000000, "max_output": 384000,
-                 "fallback_window": 64000},
+                 "fallback_window": 64000, "full_cap_names": ("deepseek-flash",)},
     # gemini: 1M context, 64K max output.
     "gemini": {"window": 1000000, "max_output": 64000},
     # claude: 200K context, 64K max output.
@@ -51,6 +53,40 @@ _MODEL_SPECS = {
     "qwen": {"prefix": "qwen3.8-flash", "window": 1000000, "max_output": None,
              "fallback_window": 128000},
 }
+
+
+def resolve_family_spec(model_name: str):
+    """Infer (context_window, max_output_tokens) for a model from the family
+    table, or (None, None) when no family matches.
+
+    Single source of truth for the built-in budgets: both the runtime budget
+    resolver and the console's catalog editor (to show a model's inferred
+    numbers) go through here, so a new family entry updates both at once.
+    ``max_output`` may be None (no published cap)."""
+    name = (model_name or "").lower()
+    if not name:
+        return None, None
+    version = _first_version(name)
+    for family, spec in _MODEL_SPECS.items():
+        if family not in name:
+            continue
+        prefix = spec.get("prefix")
+        version_min = spec.get("version_min")
+        if prefix is not None:
+            # Family where only a specific model gets the large window
+            # (e.g. glm-5.3-flash); everything else uses the fallback.
+            if name.startswith(prefix):
+                return spec["window"], spec.get("max_output")
+            return spec.get("fallback_window", 128000), None
+        if name in spec.get("full_cap_names", ()):
+            # Version-less flagship (e.g. deepseek-flash = V4.1): full window.
+            return spec["window"], spec.get("max_output")
+        if version_min is not None and (version is None or version < version_min):
+            # Older release of a family that only bumped at version_min
+            # (e.g. deepseek < v4): use its conservative fallback window.
+            return spec.get("fallback_window", 128000), None
+        return spec["window"], spec.get("max_output")
+    return None, None
 from agent.protocol.models import LLMRequest, LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
 from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
@@ -334,31 +370,7 @@ class Agent:
         window = None
         max_output = None
         if self.model and hasattr(self.model, 'model'):
-            model_name = self.model.model.lower()
-            version = _first_version(model_name)
-            for family, spec in _MODEL_SPECS.items():
-                if family not in model_name:
-                    continue
-                prefix = spec.get("prefix")
-                version_min = spec.get("version_min")
-                if prefix is not None:
-                    # Family where only a specific model gets the large window
-                    # (e.g. glm-5.3-flash); everything else uses the fallback.
-                    if model_name.startswith(prefix):
-                        window = spec["window"]
-                        max_output = spec.get("max_output")
-                    else:
-                        window = spec.get("fallback_window", 128000)
-                        max_output = None
-                elif version_min is not None and (version is None or version < version_min):
-                    # Older release of a family that only bumped at version_min
-                    # (e.g. deepseek < v4): use its conservative fallback window.
-                    window = spec.get("fallback_window", 128000)
-                    max_output = None
-                else:
-                    window = spec["window"]
-                    max_output = spec.get("max_output")
-                break
+            window, max_output = resolve_family_spec(self.model.model)
 
         # Catalog values override the family table (the user knows their model).
         if catalog_window:

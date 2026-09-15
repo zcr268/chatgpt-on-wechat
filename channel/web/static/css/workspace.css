@@ -313,7 +313,7 @@
 textarea.doc-editor {
     display: block;
     width: 100%;
-    height: calc(100vh - 280px);
+    height: calc(100dvh - 280px);
     min-height: 240px;
     border: 0;
     outline: none;

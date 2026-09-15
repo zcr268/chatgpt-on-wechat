@@ -19,6 +19,7 @@ import { t, localizedLabel } from '../../i18n'
 import apiClient from '../../api/client'
 import type {
   CapabilityState,
+  ModelCatalogEntry,
   ModelsData,
   ModelProvider,
   SearchCapabilityState,
@@ -27,6 +28,13 @@ import type {
 import { Card, Field, Dropdown, TextInput, Modal, Btn, MASK_RE } from './primitives'
 import CapabilityCard from './CapabilityCard'
 import { ChatFallbackButton } from './ChatFallbackCard'
+import {
+  ModelCatalogEditor,
+  toDraftRows,
+  diffAgainstSeed,
+  normalizeRows,
+  type CatalogDraftRow,
+} from './ModelCatalogEditor'
 import { normEntries, providerLabel, resolveVoices, CUSTOM_OPTION } from './modelsHelpers'
 import { product } from '@product'
 
@@ -141,14 +149,12 @@ const ModelsTab: React.FC<ModelsTabProps> = ({ baseUrl }) => {
             data={data}
             busy={busy === 'chat_fallback'}
             status={statusMap.chat_fallback}
-            onSave={({ providerId, model, enabled, maxSwitches }) =>
+            onSave={({ enabled, chain }) =>
               run('chat_fallback', {
                 action: 'set_capability',
                 capability: 'chat_fallback',
-                provider_id: providerId,
-                model,
                 enabled,
-                max_switches: maxSwitches,
+                chain,
               })
             }
           />
@@ -339,6 +345,49 @@ const VendorChip: React.FC<{ provider: ModelProvider; onClick: () => void }> = (
 
 const CUSTOM_PICK = '__custom_new__'
 
+// Persist a provider's catalog overlay only when the draft's diff against the
+// presets differs from what is already stored, so saving credentials alone
+// never rewrites (or accidentally clears) a catalog the user didn't touch. The
+// backend drops the overlay entirely when both overrides and hidden are empty.
+async function persistCatalogIfChanged(
+  provider: ModelProvider,
+  rows: CatalogDraftRow[],
+): Promise<void> {
+  const seed = provider.seed || []
+  const { models, hidden } = diffAgainstSeed(rows, seed)
+  const savedOverrides = normalizeRows(toDraftRows(provider.catalog || []))
+  const savedHidden = (provider.hidden || []).slice().sort()
+  const unchanged =
+    JSON.stringify(models) === JSON.stringify(savedOverrides) &&
+    JSON.stringify(hidden.slice().sort()) === JSON.stringify(savedHidden)
+  if (unchanged) return
+  await apiClient.modelsAction({
+    action: 'save_catalog',
+    provider_id: provider.id,
+    models,
+    hidden,
+  })
+}
+
+// A custom provider has no presets: its catalog is simply the whole model list,
+// so there is no seed to diff against and nothing is ever tombstoned. Persist
+// the normalized rows, skipping the write when they match the stored list.
+async function persistCustomCatalog(
+  providerId: string,
+  rows: CatalogDraftRow[],
+  saved: ModelCatalogEntry[],
+): Promise<void> {
+  const models = normalizeRows(rows)
+  const savedNorm = normalizeRows(toDraftRows(saved))
+  if (JSON.stringify(models) === JSON.stringify(savedNorm)) return
+  await apiClient.modelsAction({
+    action: 'save_catalog',
+    provider_id: providerId,
+    models,
+    hidden: [],
+  })
+}
+
 const VendorModal: React.FC<{
   provider: ModelProvider | null
   addMode: boolean
@@ -365,6 +414,14 @@ const VendorModal: React.FC<{
   const [keyVisible, setKeyVisible] = useState(false)
   const [apiBase, setApiBase] = useState('')
   const [saving, setSaving] = useState(false)
+  // Catalog draft for the effective provider. Prefilled from its EFFECTIVE list
+  // (presets − removals + overrides) so the user edits the full list; reloaded
+  // whenever the effective provider changes.
+  const [catalogRows, setCatalogRows] = useState<CatalogDraftRow[]>([])
+
+  const loadCatalogRows = (p: ModelProvider | undefined) => {
+    setCatalogRows(toDraftRows(p?.effective || p?.catalog || []))
+  }
 
   // Load fields whenever the effective provider changes.
   useEffect(() => {
@@ -375,6 +432,7 @@ const VendorModal: React.FC<{
     setApiBase(init?.api_base || '')
     setKeyDirty(false)
     setKeyVisible(false)
+    loadCatalogRows(init)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, addMode, open])
 
@@ -401,6 +459,7 @@ const VendorModal: React.FC<{
     setApiKey(p?.api_key_masked || '')
     setApiBase(p?.api_base || '')
     setKeyDirty(false)
+    loadCatalogRows(p)
   }
 
   const hasBase = !!effective?.api_base_field
@@ -416,6 +475,7 @@ const VendorModal: React.FC<{
       if (keyDirty && apiKey && !MASK_RE.test(apiKey)) payload.api_key = apiKey
       if (hasBase) payload.api_base = apiBase
       await apiClient.modelsAction(payload)
+      await persistCatalogIfChanged(effective, catalogRows)
       await onSaved()
       onClose()
     } finally {
@@ -438,6 +498,7 @@ const VendorModal: React.FC<{
   return (
     <Modal
       open={open}
+      size="lg"
       title={addMode ? t('models_add_vendor') : localizedLabel(effective?.label)}
       onClose={onClose}
       footer={
@@ -501,6 +562,15 @@ const VendorModal: React.FC<{
           />
         </Field>
       )}
+      {effective && (
+        <ModelCatalogEditor
+          key={effective.id}
+          provider={effective}
+          rows={catalogRows}
+          onRowsChange={setCatalogRows}
+          isCustom={false}
+        />
+      )}
     </Modal>
   )
 }
@@ -516,6 +586,9 @@ const CustomProviderModal: React.FC<{
   const [apiKey, setApiKey] = useState('')
   const [keyDirty, setKeyDirty] = useState(false)
   const [saving, setSaving] = useState(false)
+  // A custom provider has no presets, so its catalog is simply its whole model
+  // list (effective === catalog). Prefill from it when editing; empty for new.
+  const [catalogRows, setCatalogRows] = useState<CatalogDraftRow[]>([])
 
   useEffect(() => {
     if (!target) return
@@ -523,10 +596,12 @@ const CustomProviderModal: React.FC<{
       setName(editing.custom_name || localizedLabel(editing.label))
       setApiBase(editing.api_base || '')
       setApiKey(editing.api_key_masked || '')
+      setCatalogRows(toDraftRows(editing.effective || editing.catalog || []))
     } else {
       setName('')
       setApiBase('')
       setApiKey('')
+      setCatalogRows([])
     }
     setKeyDirty(false)
   }, [target, editing])
@@ -553,7 +628,12 @@ const CustomProviderModal: React.FC<{
       // edited the field (keyDirty) and it isn't the masked placeholder; send
       // the value even when empty so an explicit clear is honored server-side.
       if (keyDirty && !MASK_RE.test(apiKey)) payload.api_key = apiKey.trim()
-      await apiClient.modelsAction(payload)
+      const res = await apiClient.modelsAction(payload)
+      // The provider id is `custom:<id>`; a create returns the new id, an edit
+      // reuses the existing one. A custom provider has no presets, so the whole
+      // list is its overrides and nothing is ever hidden.
+      const cid = (res.id as string) || editing?.custom_id || ''
+      if (cid) await persistCustomCatalog(`custom:${cid}`, catalogRows, editing?.catalog || [])
       await onSaved()
       onClose()
     } finally {
@@ -576,6 +656,7 @@ const CustomProviderModal: React.FC<{
   return (
     <Modal
       open={!!target}
+      size="lg"
       title={editing ? t('models_edit_custom') : t('models_add_custom')}
       onClose={onClose}
       footer={
@@ -620,6 +701,13 @@ const CustomProviderModal: React.FC<{
           }}
         />
       </Field>
+      <ModelCatalogEditor
+        key={editing?.custom_id || 'new'}
+        provider={editing}
+        rows={catalogRows}
+        onRowsChange={setCatalogRows}
+        isCustom
+      />
     </Modal>
   )
 }

@@ -148,7 +148,9 @@
                   "tools/memory",
                   "tools/env-config",
                   "tools/web-fetch",
-                  "tools/scheduler"
+                  "tools/scheduler",
+                  "tools/delegate",
+                  "tools/subagent"
                 ]
               },
               {
@@ -259,8 +261,8 @@
               {
                 "group": "Multi-Agent System",
                 "pages": [
-                  "multi-agent/subagent",
-                  "multi-agent/delegation"
+                  "multi-agent/team",
+                  "multi-agent/subagent"
                 ]
               }
             ]
@@ -272,6 +274,8 @@
                 "group": "Release Notes",
                 "pages": [
                   "releases/overview",
+                  "releases/v2.1.9",
+                  "releases/v2.1.8",
                   "releases/v2.1.7",
                   "releases/v2.1.6",
                   "releases/v2.1.5",
@@ -519,6 +523,7 @@
                 "group": "发布记录",
                 "pages": [
                   "zh/releases/overview",
+                  "zh/releases/v2.1.9",
                   "zh/releases/v2.1.8",
                   "zh/releases/v2.1.7",
                   "zh/releases/v2.1.6",
@@ -641,7 +646,9 @@
                   "ja/tools/memory",
                   "ja/tools/env-config",
                   "ja/tools/web-fetch",
-                  "ja/tools/scheduler"
+                  "ja/tools/scheduler",
+                  "ja/tools/delegate",
+                  "ja/tools/subagent"
                 ]
               },
               {
@@ -751,8 +758,8 @@
               {
                 "group": "マルチ Agent システム",
                 "pages": [
-                  "ja/multi-agent/subagent",
-                  "ja/multi-agent/delegation"
+                  "ja/multi-agent/team",
+                  "ja/multi-agent/subagent"
                 ]
               }
             ]
@@ -764,6 +771,8 @@
                 "group": "リリースノート",
                 "pages": [
                   "ja/releases/overview",
+                  "ja/releases/v2.1.9",
+                  "ja/releases/v2.1.8",
                   "ja/releases/v2.1.7",
                   "ja/releases/v2.1.6",
                   "ja/releases/v2.1.5",

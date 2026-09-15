@@ -67,6 +67,14 @@ function openCustomProviderModal(providerId) {
         }
     }
     overlay.addEventListener('click', onOverlayClick);
+
+    // Model catalog rows: a custom endpoint has no preset list, so these are
+    // entirely user-authored. Only meaningful when editing an existing card —
+    // a brand new card has no provider id yet, so its rows are saved right
+    // after the provider is created (see saveCustomProviderModal).
+    bindCatalogControls('custom-provider', editing ? 'custom:' + providerId : '');
+    fillCatalogForProvider('custom-provider', editing ? 'custom:' + providerId : '');
+
     nameInput.focus();
 }
 
@@ -120,13 +128,23 @@ function saveCustomProviderModal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
-        btn.disabled = false;
         if (data.status !== 'success') {
+            btn.disabled = false;
             showStatus('custom-provider-modal-status', 'models_save_failed', true);
             return;
         }
-        closeCustomProviderModal();
-        loadModelsView();
+        // The backend assigns the id on create, so the catalog can only be
+        // written once we know which provider it belongs to.
+        const finalId = data.id ? 'custom:' + data.id : ('custom:' + customProviderModalState.editId);
+        return saveCatalogForProvider('custom-provider', finalId).then(ok => {
+            btn.disabled = false;
+            if (!ok) {
+                showStatus('custom-provider-modal-status', 'models_save_failed', true);
+                return;
+            }
+            closeCustomProviderModal();
+            loadModelsView();
+        });
     }).catch(() => {
         btn.disabled = false;
         showStatus('custom-provider-modal-status', 'models_save_failed', true);

@@ -596,10 +596,10 @@ select_model() {
     title="$(t "选择 AI 模型" "Select AI Model")"
     # The 12th option is "skip" -> configure later in the web console.
     select_menu sel "$title" \
-        "DeepSeek (deepseek-v4-flash, deepseek-v4-pro, etc.)" \
+        "DeepSeek (deepseek-flash, deepseek-v4-pro, etc.)" \
         "Claude (claude-opus-5, claude-sonnet-5, etc.)" \
         "OpenAI (gpt-5.6-luna, etc.)" \
-        "Gemini (gemini-3.7-flash, gemini-3.6-flash, etc.)" \
+        "Gemini (gemini-3.8-flash, gemini-3.7-flash, etc.)" \
         "MiniMax (MiniMax-M3, etc.)" \
         "GLM (glm-5.3-flash, glm-5.3, etc.)" \
         "Qwen (qwen3.8-flash, qwen3.8-max, etc.)" \
@@ -628,10 +628,10 @@ read_model_config() {
 # finish configuration in the web console after first start.
 configure_model() {
     case "$model_choice" in
-        1) read_model_config "DeepSeek" "deepseek-v4-flash" "DEEPSEEK_KEY" ;;
+        1) read_model_config "DeepSeek" "deepseek-flash" "DEEPSEEK_KEY" ;;
         2) read_model_config "Claude" "claude-opus-5" "CLAUDE_KEY" ;;
         3) read_model_config "OpenAI" "gpt-5.6-luna" "OPENAI_KEY" ;;
-        4) read_model_config "Gemini" "gemini-3.7-flash" "GEMINI_KEY" ;;
+        4) read_model_config "Gemini" "gemini-3.8-flash" "GEMINI_KEY" ;;
         5) read_model_config "MiniMax" "MiniMax-M3" "MINIMAX_KEY" ;;
         6) read_model_config "GLM" "glm-5.3-flash" "ZHIPU_KEY" ;;
         7) read_model_config "Qwen (DashScope)" "qwen3.8-flash" "DASHSCOPE_KEY" ;;
@@ -641,7 +641,7 @@ configure_model() {
         11)
             # Show where to obtain a LinkAI key (zh users -> console page).
             echo -e "${CYAN}$(t "获取 LinkAI Key" "Get your LinkAI Key"): https://link-ai.tech/console/interface${NC}"
-            read_model_config "LinkAI" "deepseek-v4-flash" "LINKAI_KEY"
+            read_model_config "LinkAI" "deepseek-flash" "LINKAI_KEY"
             USE_LINKAI="true"
             ;;
         12)

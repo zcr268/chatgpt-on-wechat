@@ -5,10 +5,7 @@ import { t } from '../i18n'
 import ComposerChip from './ComposerChip'
 import AgentAvatar from './AgentAvatar'
 import { useAgentStore, enabledDefaultFirst } from '../store/agentStore'
-import { useSessionStore } from '../store/sessionStore'
-import { useChatStore } from '../store/chatStore'
 import { useSessionSettingsStore, selectSharedConversation } from '../store/sessionSettingsStore'
-import { startNewChat } from '../lib/newChat'
 
 interface AgentSelectorProps {
   sessionId: string
@@ -40,34 +37,12 @@ const AgentSelector: React.FC<AgentSelectorProps> = ({ sessionId }) => {
   const team = useSessionSettingsStore((s) => (s.sessionId === sessionId ? s.cfg?.team : undefined))
   const addMember = useSessionSettingsStore((s) => s.addMember)
   const removeMember = useSessionSettingsStore((s) => s.removeMember)
-  const hasMessages = useChatStore((s) => (s.sessions[sessionId]?.messages.length ?? 0) > 0)
 
   const roster = enabledDefaultFirst(agents, defaultAgentId)
   const active = agents.find((a) => a.id === activeAgentId) || roster[0] || null
   const members = (team?.members || []).filter((m) => m.id !== activeAgentId)
   const memberIds = new Set(members.map((m) => m.id))
   const invitable = roster.filter((a) => a.id !== activeAgentId && !memberIds.has(a.id))
-
-  const pick = (agentId: string) => {
-    setOpen(false)
-    if (!agentId || agentId === activeAgentId) return
-    // Only a true draft may change hands. The in-memory message count alone
-    // isn't proof of that (history may still be loading), so also require the
-    // session list to know nothing persisted for it — otherwise the same
-    // session id would end up in two Agents' stores.
-    const listed = useSessionStore.getState().sessions.find((s) => s.session_id === sessionId)
-    const isDraft = !hasMessages && (!listed || !listed.msg_count)
-    if (!isDraft) {
-      // The history belongs to the current owner; start fresh for the new one.
-      useAgentStore.getState().setActive(agentId)
-      startNewChat({ ownerId: agentId, inheritProject: false })
-      return
-    }
-    // Nothing persisted yet: the draft conversation just changes hands.
-    useAgentStore.getState().setActive(agentId)
-    useSessionStore.getState().setOwner(sessionId, agentId)
-    void useSessionSettingsStore.getState().refresh(sessionId)
-  }
 
   const tip = `${t('composer_agent_tip')}${active?.name ? ` · ${active.name}` : ''}${
     members.length ? ` +${members.length}` : ''
@@ -94,42 +69,41 @@ const AgentSelector: React.FC<AgentSelectorProps> = ({ sessionId }) => {
       menuClassName="w-64"
       labelHidden
     >
-      {!shared && (
+      {/* A solo chat only shows who it is talking to right now — the current
+          Agent, and just that one. Switching to a different Agent (which would
+          silently start a fresh conversation) was more confusing than useful,
+          so the roster is gone; the invite section below is how others join. */}
+      {!shared && active && (
         <>
           <div className="px-2 py-1.5 text-[11px] font-medium text-content-tertiary uppercase tracking-wide">
-            {t('composer_agent_heading')}
+            {t('composer_current_agent')}
           </div>
-          {roster.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              onClick={() => pick(a.id)}
-              className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] cursor-pointer transition-colors ${
-                a.id === activeAgentId ? 'bg-accent-soft text-accent font-medium' : 'text-content-secondary hover:bg-surface-2'
-              }`}
-            >
-              <AgentAvatar agent={a} size={20} />
-              <span className="flex-1 min-w-0 text-left truncate">{a.name || a.id}</span>
-              {a.id === defaultAgentId && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-600 flex-shrink-0">
-                  {t('channel_team_default')}
-                </span>
-              )}
-              {a.id === activeAgentId && <Check size={13} className="flex-shrink-0" />}
-            </button>
-          ))}
+          <div className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] bg-accent-soft text-accent font-medium">
+            <AgentAvatar agent={active} size={20} />
+            <span className="flex-1 min-w-0 text-left truncate">{active.name || active.id}</span>
+            <Check size={13} className="flex-shrink-0" />
+          </div>
         </>
       )}
 
-      {/* Members already in the conversation: the owner plus each teammate. A
-          plain row (a ✓ marks "in the chat"), not a standing highlight, which
-          read as everything being selected. Hover a teammate to remove it; the
-          owner can't be removed. */}
-      {shared && members.length > 0 && (
+      {/* Everyone in the conversation, host first. The host is the main Agent
+          (owner): it leads the row list, carries a "main Agent" badge and has
+          no remove control — it can't be dropped from its own conversation. The
+          teammates below it are removable (hover swaps the ✓ for a red ×). */}
+      {shared && (
         <>
           <div className="px-2 py-1.5 text-[11px] font-medium text-content-tertiary uppercase tracking-wide">
             {t('team_members')}
           </div>
+          {active && (
+            <div className="w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[13px] text-content-secondary">
+              <AgentAvatar agent={active} size={20} />
+              <span className="flex-1 min-w-0 text-left truncate">{active.name || active.id}</span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-accent-soft text-accent flex-shrink-0">
+                {t('composer_agent_owner')}
+              </span>
+            </div>
+          )}
           {members.map((m) => (
             <button
               key={m.id}

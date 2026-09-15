@@ -227,6 +227,49 @@ def test_delegate_reads_the_inherited_roster_when_the_session_has_none():
     assert looped.status == "error"
 
 
+def test_guest_speaker_delegates_under_its_own_identity_and_can_reach_the_host(
+    _team_members,
+):
+    """A guest answering the turn delegates as itself and may hand work to the host.
+
+    The user addressed a teammate by name, so the guest (``speaker_agent_id``)
+    speaks while routing has overwritten ``agent_id`` with the conversation
+    host. Delegation must run under the guest's identity — not the host's — and
+    the host must be a reachable teammate, mirroring the prompt roster
+    ``[host, *members]``. Without this the guest hands work to the host and the
+    tool rejects it as "not a teammate" (the reported bug).
+    """
+    bridge = FakeBridge()
+    # research is the guest speaking; primary is the host (owner) it answers for.
+    _team_members["members"] = ["research"]
+    context = _context(agent_id="primary", speaker_agent_id="research")
+    tool = _tool(bridge=bridge, context=context)
+
+    result = tool.execute({"agent_id": "primary", "task": "Please cover the intro"})
+
+    assert result.status == "success"
+    assert result.result["agent_id"] == "primary"
+    # Attribution is the guest, not the host whose conversation this is.
+    assert result.result["delegated_by"] == "research"
+    query, delegated_context, _ = bridge.calls[0]
+    assert "Delegated by Agent 'Research' (research)" in query
+    assert delegated_context.get("delegation_trace") == ["research", "primary"]
+
+
+def test_guest_speaker_cannot_delegate_to_itself(_team_members):
+    """The guest may reach the host and other members, but never itself."""
+    _team_members["members"] = ["research"]
+    context = _context(agent_id="primary", speaker_agent_id="research")
+    tool = _tool(context=context)
+
+    result = tool.execute({"agent_id": "research", "task": "Do it yourself"})
+
+    assert result.status == "error"
+    assert "is not a teammate you can delegate to" in result.result
+    # The host is offered as a real option; the guest itself is not.
+    assert "Primary (primary)" in result.result
+
+
 def test_delegate_rejects_unknown_targets_as_non_teammates():
     tool = _tool()
     result = tool.execute({"agent_id": "missing", "task": "Do work"})

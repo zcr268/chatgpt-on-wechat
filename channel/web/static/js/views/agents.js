@@ -175,7 +175,7 @@ function renderAgentsGrid() {
                 <div class="min-w-0 flex-1">
                     <div class="agent-card-name truncate">${escapeHtml(agent.name)}</div>
                     <div class="agent-card-desc">${desc ? escapeHtml(desc) : `<span class="agent-card-desc-empty">${escapeHtml(t('agents_no_desc'))}</span>`}</div>
-                </div>
+            </div>
             </div>
         </div>`;
     }).join('');
@@ -1169,31 +1169,39 @@ function renderComposerAgentMenu() {
     const members = (_sessCfg && _sessCfg.team && _sessCfg.team.members) || [];
     const sections = [];
 
-    // Once a conversation has teammates it is a group, and the only sensible
-    // actions are adding and removing members - "switch the current Agent" would
-    // silently abandon the group for a fresh solo chat. So the switch list only
-    // appears in an ordinary (not-yet-shared) chat, where it opens a clean
-    // conversation owned by the chosen Agent.
+    // A solo chat only shows who it is talking to right now — the current
+    // Agent, and just that one. Switching to a different Agent (which would
+    // silently start a fresh conversation) was more confusing than useful, so
+    // the roster is gone; adding teammates below is how you bring others in.
     if (!sharedConversation()) {
+        const current = findAgent(activeAgentId)
+            || { id: activeAgentId, name: activeAgentId };
         sections.push(
-            `<div class="composer-menu-title">${escapeHtml(t('agents_pick_tip'))}</div>`
-            + enabledAgents().map(agent => `
-                <button type="button" class="composer-menu-item agent-row${agent.id === activeAgentId ? ' current' : ''}"
-                        onclick="pickComposerAgent('${escapeHtml(agent.id)}')">
-                    ${agentAvatarHTML(agent, 24)}
-                    <span>${escapeHtml(agent.name)}</span>
-                    ${agent.id === activeAgentId ? '<i class="fas fa-check ml-auto text-[11px]"></i>' : ''}
-                </button>`).join('')
+            `<div class="composer-menu-title">${escapeHtml(t('composer_current_agent'))}</div>`
+            + `<div class="composer-menu-item agent-row current">
+                    ${agentAvatarHTML(current, 24)}
+                    <span>${escapeHtml(current.name || current.id)}</span>
+                    <i class="fas fa-check ml-auto text-[11px]"></i>
+                </div>`
         );
     }
 
     const candidates = enabledAgents().filter(a => a.id !== activeAgentId && !taken.has(a.id));
 
-    // A group chat first lists the teammates already in the conversation (the
-    // owner is implicit and not shown), then, in a separate section below, who
-    // can still be pulled in. Splitting the two makes it obvious these rows are
-    // members to remove, not options to pick.
+    // A group chat lists everyone in the conversation, host first. The host is
+    // the main Agent (owner) and is shown with a "main Agent" badge and no
+    // remove control — it cannot be dropped from its own conversation. The
+    // teammates below it are removable. A separate section further down offers
+    // who can still be pulled in.
     if (sharedConversation()) {
+        const owner = findAgent(activeAgentId)
+            || { id: activeAgentId, name: activeAgentId };
+        const ownerRow = `
+            <div class="composer-menu-item agent-row joined is-owner">
+                ${agentAvatarHTML(owner, 24)}
+                <span>${escapeHtml(owner.name || owner.id)}</span>
+                <span class="composer-menu-badge owner-badge ml-auto">${escapeHtml(t('composer_agent_owner'))}</span>
+            </div>`;
         const joined = members.filter(m => m.id !== activeAgentId).map(m => `
             <button type="button" class="composer-menu-item agent-row joined"
                     onclick="removeTeamMember('${escapeHtml(m.id)}')" title="${escapeHtml(t('team_remove'))}">
@@ -1202,11 +1210,9 @@ function renderComposerAgentMenu() {
                 <i class="fas fa-check ml-auto text-[11px] joined-check"></i>
                 <i class="fas fa-xmark ml-auto text-[11px] joined-remove"></i>
             </button>`).join('');
-        if (joined) {
-            sections.push(
-                `<div class="composer-menu-title">${escapeHtml(t('team_members'))}</div>${joined}`
-            );
-        }
+        sections.push(
+            `<div class="composer-menu-title">${escapeHtml(t('team_members'))}</div>${ownerRow}${joined}`
+        );
     }
 
     const invitable = candidates.map(agent => `
@@ -1241,18 +1247,6 @@ function openAgentCreateFromComposer() {
     document.getElementById('composer-agent-menu')?.classList.add('hidden');
     navigateTo('agents');
     if (typeof openAgentCreateForm === 'function') openAgentCreateForm();
-}
-
-function pickComposerAgent(agentId) {
-    document.getElementById('composer-agent-menu')?.classList.add('hidden');
-    if (!agentId || agentId === activeAgentId) return;
-    activeAgentId = agentId;
-    localStorage.setItem('cow_active_agent', activeAgentId);
-    // Switching starts a clean conversation owned by the chosen Agent rather
-    // than rewriting the current one, so it works at any point in a chat.
-    newChat(true);
-    if (typeof resetWorkspaceToAgentRoot === 'function') resetWorkspaceToAgentRoot();
-    renderComposerIdentity();
 }
 
 function inviteTeamMember(agentId) {
@@ -1314,8 +1308,9 @@ function setTeamMembers(ids) {
             _sessCfg = { model: data.model, permission: data.permission, team: data.team };
             renderComposerIdentity();
             // Inviting or removing someone changes whether one model can speak
-            // for this conversation.
+            // for this conversation, and whether @ can address an Agent.
             _renderModelChip();
+            _renderInputPlaceholder();
         }
     });
 }

@@ -219,10 +219,19 @@ class AgentDelegateTool(BaseTool):
         """The teammates the source Agent may delegate to this turn.
 
         Exactly the roster the "team conversation" prompt section lists: the
-        conversation's members, minus the source itself and anyone the ACL
-        forbids. Delegation is bounded to the people the Agent was actually told
-        it is working with, so it can never hand work to an Agent outside the
-        room. Returns ``[{id, name}]`` so an error can name the real options.
+        conversation's host plus its members, minus the source itself and
+        anyone the ACL forbids. Delegation is bounded to the people the Agent
+        was actually told it is working with, so it can never hand work to an
+        Agent outside the room. Returns ``[{id, name}]`` so an error can name
+        the real options.
+
+        The host is included because a guest answering the turn (the user
+        addressed a teammate by name) is not the conversation owner, yet the
+        prompt lists the owner as one of its teammates. Leaving the host out
+        here — while the prompt keeps it in — is exactly what makes the model
+        hand work to the host and the tool reject it. ``agent_id`` on the turn
+        context is the conversation owner (routing overwrites it with the
+        host), so it is the host from the guest's point of view.
 
         On a delegated turn the source runs in its own private session, which
         carries no ``members`` of its own; the original team's roster rides
@@ -230,6 +239,7 @@ class AgentDelegateTool(BaseTool):
         teammate can hand work onward to the same team, not just answer.
         """
         members = context_values.get("delegation_members")
+        host_id = None
         if not members:
             session_id = str(
                 context_values.get("delegation_root_session")
@@ -238,10 +248,15 @@ class AgentDelegateTool(BaseTool):
             )
             if not session_id:
                 return []
+            # The conversation owner (host). On a user-facing turn routing has
+            # overwritten ``agent_id`` with the host, so it names the owner even
+            # when a guest is the one speaking. Members are stored under the
+            # host, so read them with the host id, not the speaking source.
+            host_id = context_values.get("agent_id") or source_agent_id
             try:
                 from agent.workspace import session_prefs
 
-                members = session_prefs.get_prefs(session_id, source_agent_id).get(
+                members = session_prefs.get_prefs(session_id, host_id).get(
                     "members"
                 )
             except Exception as exc:
@@ -250,7 +265,14 @@ class AgentDelegateTool(BaseTool):
 
         policy = self._policy_safe()
         roster = []
-        for member_id in members or []:
+        # The host is a delegable teammate too, listed first to match the prompt
+        # roster ([host, *members]). A delegated (nested) turn skips this: there
+        # is no user-facing host, and ``delegation_members`` already carries the
+        # reachable team down the chain.
+        candidate_ids = list(members or [])
+        if host_id and host_id not in candidate_ids:
+            candidate_ids.insert(0, host_id)
+        for member_id in candidate_ids:
             if not member_id or member_id == source_agent_id:
                 continue
             if policy is not None and not policy.allows(source_agent_id, member_id):
@@ -258,6 +280,8 @@ class AgentDelegateTool(BaseTool):
             try:
                 profile = self.agent_bridge.agent_registry.get(member_id)
             except (KeyError, ValueError):
+                continue
+            if any(item["id"] == profile.id for item in roster):
                 continue
             roster.append({"id": profile.id, "name": profile.name})
         return roster
@@ -287,7 +311,15 @@ class AgentDelegateTool(BaseTool):
         if not policy.enabled:
             return ToolResult.fail("Agent delegation is disabled")
         context_values = dict(self.current_context.kwargs)
-        source_agent_id = context_values.get("agent_id")
+        # The source is whoever is actually answering this turn. When the user
+        # addressed a teammate by name, that guest (``speaker_agent_id``) is
+        # speaking, not the conversation owner — routing overwrote ``agent_id``
+        # with the host, so using it here would delegate under the host's
+        # identity and reject the guest handing work to the host. Fall back to
+        # ``agent_id`` for a delegated (nested) turn, which carries no speaker.
+        source_agent_id = (
+            context_values.get("speaker_agent_id") or context_values.get("agent_id")
+        )
         if not source_agent_id:
             return ToolResult.fail("Source Agent could not be resolved")
         try:

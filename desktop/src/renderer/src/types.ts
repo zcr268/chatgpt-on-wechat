@@ -581,9 +581,20 @@ export interface ModelProvider {
   api_base?: string
   api_base_default?: string
   api_base_placeholder?: string
+  // The model catalog is an OVERLAY on the presets, not a replacement:
+  // - `catalog` is the user's raw overrides (edited/added entries),
+  // - `hidden` is the preset names the user removed (tombstones),
+  // - `seed` is the preset base (typed with real capabilities),
+  // - `effective` is the merged list (presets − hidden + overrides) the editor
+  //   loads and the chat switcher offers.
+  // A custom provider has no presets, so `catalog` is simply its whole list and
+  // `effective` equals it.
   catalog?: ModelCatalogEntry[]
+  hidden?: string[]
   /** Preset models pre-typed with their real capabilities (built-in vendors). */
   seed?: ModelCatalogEntry[]
+  /** The merged list the editor prefills (presets − hidden + overrides). */
+  effective?: ModelCatalogEntry[]
   models: ModelEntry[]
 }
 
@@ -637,17 +648,23 @@ export interface CapabilityState {
   [k: string]: unknown
 }
 
-/** Backup chat model, tried only after the primary one fails a turn. */
+/** One link in the fallback chain: tried after the one before it fails. */
+export interface ChatFallbackLink {
+  provider: string
+  model: string
+}
+
+/** Backup chat models, tried in order after the primary one fails a turn. */
 export interface ChatFallbackCapabilityState {
   editable?: boolean
   /** Opt-in: when false the fallback never engages. */
   enabled?: boolean
+  /** Ordered links; index 0 is tried first. Unbounded by design. */
+  chain?: ChatFallbackLink[]
   current_provider?: string
   current_model?: string
   providers?: string[]
   provider_models?: Record<string, ModelEntry[]>
-  /** How many times a single turn may switch; guards against ping-pong. */
-  max_switches?: number
   /** The primary model, shown so the user sees what is being backed up. */
   primary_provider?: string
   primary_model?: string
@@ -685,10 +702,14 @@ export type ModelsAction =
   | { action: 'set_custom_provider'; name: string; id?: string; api_base: string; api_key?: string; model?: string; make_active?: boolean }
   | { action: 'delete_custom_provider'; id: string }
   | { action: 'set_active_custom_provider'; id: string }
+  // Persist a provider's model catalog overlay. `models` are the overrides
+  // (edited/added entries) and `hidden` the removed preset names; the backend
+  // drops the provider's overlay entirely when both are empty (back to presets).
+  | { action: 'save_catalog'; provider_id: string; models: ModelCatalogEntry[]; hidden: string[] }
   // `chat_fallback` is not a first-class CapabilityKey (it has no top-level
   // card), but it is persisted through the same set_capability action, so it
   // is accepted here alongside its opt-in fields.
-  | { action: 'set_capability'; capability: CapabilityKey | 'chat_fallback'; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string; enabled?: boolean; max_switches?: number }
+  | { action: 'set_capability'; capability: CapabilityKey | 'chat_fallback'; provider_id?: string; model?: string; voice?: string; strategy?: string; provider?: string; enabled?: boolean; chain?: ChatFallbackLink[] }
   | { action: 'set_voice_reply_mode'; mode: 'off' | 'voice_if_voice' | 'always' }
   // Dedicated search-provider credentials (bocha / anysearch / serply / tavily
   // use api_key; searxng uses url). The provider field defaults to bocha

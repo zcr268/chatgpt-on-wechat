@@ -89,11 +89,6 @@ const NewChatMenu: React.FC<NewChatMenuProps> = ({ children, align = 'start', pl
             >
               <AgentAvatar agent={a} size={20} />
               <span className="flex-1 min-w-0 text-left truncate">{a.name || a.id}</span>
-              {a.id === defaultAgentId && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-amber-500/10 text-amber-600 flex-shrink-0">
-                  {t('channel_team_default')}
-                </span>
-              )}
             </button>
           ))}
           <div className="my-1 h-px bg-default" />
@@ -130,7 +125,7 @@ const NewChatMenu: React.FC<NewChatMenuProps> = ({ children, align = 'start', pl
  * conversation (it receives every message and can hand turns to the others);
  * the rest are invited as members before the first message is sent.
  */
-const TeamChatModal: React.FC<{
+export const TeamChatModal: React.FC<{
   open: boolean
   onClose: () => void
   onStarted: (sessionId: string) => void

@@ -147,7 +147,8 @@ def _persist_feishu_credentials(app_id: str, app_secret: str) -> bool:
             "config.json",
         )
         if os.path.exists(config_path):
-            with open(config_path, "r", encoding="utf-8") as f:
+            # utf-8-sig tolerates a UTF-8 BOM (e.g. edited with Windows Notepad).
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 file_cfg = json.load(f)
         else:
             file_cfg = {}

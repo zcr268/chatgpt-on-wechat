@@ -567,13 +567,13 @@ function saveTaskEdit() {
         is_group: false,
         notify_session_id: ''
     };
-
+    
     if (actionType === 'send_message') {
         action.content = content;
     } else {
         action.task_description = content;
     }
-
+    
     if (wasWeb) {
         // Web target isn't switchable: keep the original session receiver/channel.
         action.channel_type = origAction.channel_type || 'web';

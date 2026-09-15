@@ -127,7 +127,13 @@ md.renderer.rules.image = function (tokens, idx, options, env, self) {
   const token = tokens[idx]
   const src = token.attrGet('src') || ''
   const baseDir = (env as { imageBaseDir?: string } | undefined)?.imageBaseDir
-  if (/^~\//.test(src) || src.startsWith('/')) {
+  if (/^\/(?:api\/file|preview)\b/.test(src)) {
+    // The backend already rewrote a workspace-relative ref to a site-absolute
+    // URL (/api/file?path=... or /preview/...). The renderer isn't same-origin
+    // with the backend, so prefix it with the backend base (and carry the auth
+    // token) rather than treating it as a filesystem path to re-wrap.
+    token.attrSet('src', apiClient.getFileUrl(src))
+  } else if (/^~\//.test(src) || src.startsWith('/')) {
     token.attrSet('src', apiClient.getServeFileUrl(src))
   } else if (baseDir && !/^[a-zA-Z][\w+.-]*:/.test(src)) {
     // Doc-relative image (e.g. knowledge markdown `../images/x.png`): resolve

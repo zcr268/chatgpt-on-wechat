@@ -1304,13 +1304,17 @@ class AgentStreamExecutor:
             logger.debug(f"[Agent] fallback reset skipped: {e}")
 
     def _switch_to_fallback(self, fallback_reason: str = "") -> bool:
-        """Try to reroute the rest of this turn onto the configured fallback.
+        """Advance this turn to the next link in the configured fallback chain.
 
         Returns True only when the switch actually happened, so the caller can
         retry the turn on the new model. Every guard lives in
         ``AgentLLMModel.use_fallback``; this wrapper only covers the cases
         where there is no such model to ask (tests pass doubles, and the
         fallback is opt-in so a plain LLMModel simply has no support for it).
+
+        Calling it again after a link has failed advances one more step along
+        the chain, which is what turns a single backup into an ordered list of
+        them; it returns False once the chain is spent.
 
         Context-overflow and message-format errors are deliberately NOT
         candidates: they are caused by the conversation, not the provider, and
@@ -1327,7 +1331,9 @@ class AgentStreamExecutor:
             return False
 
     def _call_llm_stream(self, retry_on_empty=True, retry_count=0, max_retries=3,
-                         _overflow_stage: int = 0) -> Tuple[str, List[Dict], Optional[str]]:
+                         _overflow_stage: int = 0,
+                         _on_fallback: bool = False,
+                         _exhausted: Optional[List[str]] = None) -> Tuple[str, List[Dict], Optional[str]]:
         """
         Call LLM with streaming and automatic retry on errors
 
@@ -1337,6 +1343,15 @@ class AgentStreamExecutor:
             max_retries: Maximum number of retries for API errors
             _overflow_stage: Context-overflow recovery escalation level (internal):
                 0 = first hit, 1 = after aggressive trim, 2 = after hard compaction.
+            _on_fallback: Whether this attempt is already running on a fallback
+                link from the chain. A link gets one attempt, not the primary's
+                full retry budget: walking a long chain with full backoff each
+                would outlast the web channel's SSE idle timeout before the
+                last link is even reached.
+            _exhausted: Errors already collected from models this turn has
+                given up on. Reported together when the whole chain is spent,
+                so the failure reads as "every backup is down" rather than
+                blaming whichever link happened to be last.
 
         Returns:
             (response_text, tool_calls, stop_reason), where stop_reason is the
@@ -1594,6 +1609,8 @@ class AgentStreamExecutor:
                             retry_count=retry_count,
                             max_retries=max_retries,
                             _overflow_stage=1,
+                            _on_fallback=_on_fallback,
+                            _exhausted=_exhausted,
                         )
 
                 # Trimming exhausted, or this is a message format error.
@@ -1623,7 +1640,42 @@ class AgentStreamExecutor:
                 '429', '500', '502', '503', '504', '512'
             ])
             
-            if is_retryable and retry_count < max_retries:
+            # A fallback link gets a single attempt. Giving every link the
+            # primary's full retry budget would multiply the wait by the chain
+            # length — three rate-limited links alone would sleep past the web
+            # channel's SSE idle timeout (see RATE_LIMIT_MAX_WAIT above) and
+            # the user would see a dropped connection instead of a reply.
+            # Links are tried in order precisely because the whole point is to
+            # move on to a different provider, not to wait out this one.
+            link_retries = 0 if _on_fallback else max_retries
+
+            # A rate limit is the one error where waiting is the wrong move
+            # *when a backup exists*: the backup is a different provider with
+            # its own quota, so switching can answer now instead of after a
+            # 30-60s sleep. With no chain configured there is nothing to switch
+            # to, so keep the old behaviour and wait it out rather than
+            # failing the turn outright.
+            switch_now = False
+            if is_rate_limit and not _on_fallback:
+                available = getattr(self.model, "fallback_available", None)
+                if callable(available):
+                    try:
+                        switch_now = bool(available())
+                    except Exception:
+                        switch_now = False
+                if switch_now:
+                    logger.warning(
+                        "⚠️ Rate limited (429) and a fallback is configured: "
+                        "switching now instead of waiting it out"
+                    )
+
+            # Retrying is only worth it when we are going to wait: either a
+            # plain retryable error, or a rate limit with no backup to move to.
+            # (A rate limit WITH a backup skips straight to the chain below.)
+            should_retry = (is_retryable and not switch_now
+                            and retry_count < link_retries)
+
+            if should_retry:
                 # Rate limit needs longer wait time, but capped so the cumulative
                 # backoff stays within the web stream's idle timeout (see the
                 # RATE_LIMIT_MAX_WAIT note above).
@@ -1632,19 +1684,26 @@ class AgentStreamExecutor:
                 else:
                     wait_time = (retry_count + 1) * 2  # 2s, 4s, 6s for other errors
                 
-                logger.warning(f"⚠️ LLM API error (attempt {retry_count + 1}/{max_retries}): {e}")
+                logger.warning(f"⚠️ LLM API error (attempt {retry_count + 1}/{link_retries}): {e}")
                 logger.info(f"Retrying in {wait_time}s...")
                 time.sleep(wait_time)
                 return self._call_llm_stream(
                     retry_on_empty=retry_on_empty, 
                     retry_count=retry_count + 1,
-                    max_retries=max_retries
+                    max_retries=max_retries,
+                    _overflow_stage=_overflow_stage,
+                    _on_fallback=_on_fallback,
+                    _exhausted=_exhausted,
                 )
 
             # Retries are exhausted (or the error was never retryable). Before
-            # surfacing the failure, try the configured fallback model once —
-            # a provider-wide outage is exactly what retrying the same endpoint
-            # can never fix.
+            # surfacing the failure, advance to the next link in the configured
+            # fallback chain — a provider-wide outage is exactly what retrying
+            # the same endpoint can never fix, and a backup that is also down
+            # earns the link after it.
+            model_label = getattr(self.model, "model", "") or "primary"
+            spent = list(_exhausted or [])
+            spent.append(f"{model_label}: {error_str}")
             if self._switch_to_fallback(fallback_reason=error_str):
                 self._emit_event("model_fallback", {
                     "reason": error_str,
@@ -1654,7 +1713,25 @@ class AgentStreamExecutor:
                     retry_on_empty=retry_on_empty,
                     retry_count=0,          # fresh attempt on the new model
                     max_retries=max_retries,
+                    _on_fallback=True,      # one attempt, then the next link
+                    _exhausted=spent,
                 )
+
+            # Every link is spent (or none was configured). Report the whole
+            # chain rather than the last error: naming only the final link
+            # reads as "that one model is broken" when in fact each one was
+            # tried and each one failed.
+            if spent and len(spent) > 1:
+                detail = " | ".join(spent)
+                logger.error(
+                    f"❌ LLM call failed across {len(spent)} models "
+                    f"(primary + fallback chain): {detail}"
+                )
+                raise Exception(_t(
+                    "抱歉，主模型与全部兜底模型均调用失败，请检查模型配置或供应商状态。",
+                    "Sorry, the main model and every fallback model failed. "
+                    "Please check your model configuration or provider status.",
+                ) + f"\n{detail}")
 
             if retry_count >= max_retries:
                 logger.error(f"❌ LLM API error after {max_retries} retries: {e}", exc_info=True)
@@ -1759,7 +1836,10 @@ class AgentStreamExecutor:
             return self._call_llm_stream(
                 retry_on_empty=False, 
                 retry_count=retry_count,
-                max_retries=max_retries
+                max_retries=max_retries,
+                _overflow_stage=_overflow_stage,
+                _on_fallback=_on_fallback,
+                _exhausted=_exhausted,
             )
 
         # Filter full_content one more time (in case tags were split across chunks)

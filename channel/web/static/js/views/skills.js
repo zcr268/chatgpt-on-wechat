@@ -120,6 +120,13 @@ function renderSkillCard(card, sk) {
             <div class="flex items-center gap-2 mb-1">
                 <span class="font-medium text-sm text-slate-700 dark:text-slate-200 truncate flex-1">${escapeHtml(sk.display_name || sk.name)}</span>
                 <button
+                    data-skill-edit
+                    class="flex-shrink-0 p-1 -mx-1 -mt-1.5 -mb-1 rounded text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-300 transition-colors"
+                    title="${t('skill_edit_hint')}"
+                >
+                    <i class="fas fa-pen text-[10px]"></i>
+                </button>
+                <button
                     role="switch"
                     data-skill-switch
                     aria-checked="${enabled}"
@@ -137,6 +144,13 @@ function renderSkillCard(card, sk) {
     // an inline onclick attribute.
     card.title = t('skill_open_hint');
     card.onclick = () => openSkillFile(sk.name);
+    const editBtn = card.querySelector('[data-skill-edit]');
+    if (editBtn) {
+        editBtn.onclick = (e) => {
+            e.stopPropagation();
+            openSkillFile(sk.name, { edit: true });
+        };
+    }
     const sw = card.querySelector('[data-skill-switch]');
     if (sw) {
         sw.onclick = (e) => {
@@ -215,6 +229,60 @@ function skillReadonlyReason(data) {
     return docUneditableReason(data);
 }
 
+/**
+ * Split a skill's SKILL.md into its YAML frontmatter fields and the markdown
+ * body. The `---` header is metadata, not prose: fed to the markdown renderer
+ * as-is it turns into a giant bold heading and a horizontal rule. Pull it out
+ * so the viewer can present name/description as a proper header instead.
+ *
+ * @returns {{fields: Array<[string, string]>, body: string}}
+ */
+function parseSkillFrontmatter(content) {
+    const text = content || '';
+    const match = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
+    if (!match) return { fields: [], body: text };
+
+    const fields = [];
+    for (const raw of match[1].split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#')) continue;
+        const idx = line.indexOf(':');
+        if (idx === -1) continue;
+        const key = line.slice(0, idx).trim();
+        let value = line.slice(idx + 1).trim();
+        // Drop surrounding quotes a YAML scalar may carry.
+        value = value.replace(/^['"]|['"]$/g, '');
+        if (key) fields.push([key, value]);
+    }
+    return { fields, body: text.slice(match[0].length) };
+}
+
+/**
+ * Render a skill's content into the viewer: the frontmatter as a titled header,
+ * the remainder as markdown.
+ */
+function skillRenderBody(content) {
+    const el = document.getElementById('skill-viewer-content');
+    if (!el) return;
+    const { fields, body } = parseSkillFrontmatter(content);
+
+    let headerHtml = '';
+    if (fields.length) {
+        const rows = fields.map(([key, value]) => `
+            <div class="flex gap-3 text-sm">
+                <span class="flex-shrink-0 w-24 font-medium text-slate-400 dark:text-slate-500">${escapeHtml(key)}</span>
+                <span class="flex-1 min-w-0 text-slate-700 dark:text-slate-200 break-words">${escapeHtml(value)}</span>
+            </div>`).join('');
+        headerHtml = `
+            <div class="mb-5 pb-5 border-b border-slate-100 dark:border-white/10 space-y-2">
+                ${rows}
+            </div>`;
+    }
+
+    el.innerHTML = headerHtml + `<div class="msg-content">${renderMarkdown(body || '')}</div>`;
+    applyHighlighting(el);
+}
+
 const skillEditor = createDocEditor({
     body: () => document.getElementById('skill-viewer-content'),
     buttons: () => ({
@@ -224,13 +292,14 @@ const skillEditor = createDocEditor({
     }),
     read: (doc) => skillReadContent(doc.name),
     write: (doc, content, mtime) => skillWriteContent(doc.name, content, mtime),
-    render: (doc) => docRenderBody('skill-viewer-content', doc.content),
+    render: (doc) => skillRenderBody(doc.content),
     canEdit: (doc) => !doc.readonlyKey,
     refusal: skillReadonlyReason,
     onState: (state) => docRenderTitle('skill-viewer-title', skillEditor.current()?.name, state),
 });
 
-function openSkillFile(name) {
+function openSkillFile(name, opts) {
+    const startEditing = !!(opts && opts.edit);
     skillReadContent(name).then(data => {
         const badge = document.getElementById('skill-viewer-readonly');
         const readonlyKey = skillReadonlyReason(data);
@@ -250,6 +319,9 @@ function openSkillFile(name) {
             content: data.content || '',
             readonlyKey: readonlyKey,
         });
+        // The pencil on a card jumps straight into editing, skipping the
+        // read-only view - but only where the skill is actually editable.
+        if (startEditing && !readonlyKey) skillEditor.start();
     }).catch(e => _wsToast(`${t('skill_load_failed')}: ${e.message}`));
 }
 

@@ -63,7 +63,7 @@ SAFETY:
             },
             "run_in_background": {
                 "type": "boolean",
-                "description": "Start the command and return immediately with a bash_id instead of waiting. For a process meant to keep running, such as a server or a watcher. A command that is merely slow should raise timeout instead, so you still get its output. No need to add '&' yourself. Background jobs keep running after the task ends unless you kill them."
+                "description": "Start the command and return immediately with a bash_id instead of waiting. Use this ONLY for a long-lived process that is meant to keep running, such as a server or a watcher. A command that is only slow should use a larger timeout rather than set this parameter, so its output comes back in the same call. No need to add '&' yourself. Background jobs keep running after the task ends unless you kill them."
             },
             "bash_id": {
                 "type": "string",

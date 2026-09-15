@@ -27,6 +27,7 @@ import QrScanPanel from '../components/QrScanPanel'
 import { PaperPlaneIcon } from '../components/icons'
 import ChannelTeamSelect from '../components/ChannelTeamSelect'
 import { useAgentStore } from '../store/agentStore'
+import { askConfirm } from '../store/confirmStore'
 
 // Channels that connect via QR scanning rather than credential fields.
 const QR_PROVIDERS: Record<string, 'weixin' | 'feishu'> = { weixin: 'weixin', feishu: 'feishu' }
@@ -141,9 +142,13 @@ const ChannelsPage: React.FC<ChannelsPageProps> = ({ baseUrl }) => {
     const legacyConnected = channels.filter(
       (c) => c.active && !(multiAgent && isMultiInstanceType(c.name))
     )
-    const connected: ChannelInfo[] = multiAgent
-      ? [...legacyConnected, ...instances]
-      : legacyConnected
+    const connected: ChannelInfo[] = (
+      multiAgent ? [...legacyConnected, ...instances] : legacyConnected
+    )
+      // Show WeChat cards first; keep every other card in its existing relative
+      // order (stable sort: weixin -> 0, everything else -> 1).
+      .slice()
+      .sort((a, b) => (a.name === 'weixin' ? 0 : 1) - (b.name === 'weixin' ? 0 : 1))
     // A multi-instance-ready type stays "available" even once it has instances,
     // so the user can add a second bot of the same type.
     const available = channels.filter(
@@ -521,7 +526,10 @@ const InstanceNameEditor: React.FC<{
 
 const ChannelCard: React.FC<{
   channel: ChannelInfo
-  onChanged: () => void
+  // `silent` keeps the current list on screen instead of flashing the spinner
+  // (and resetting scroll to the top) — used after a disconnect so the removed
+  // card just disappears in place.
+  onChanged: (silent?: boolean) => void
   defaultExpanded?: boolean
   multiAgent?: boolean
   // The add panel sets this so connect always mints a new instance rather than
@@ -587,6 +595,16 @@ const ChannelCard: React.FC<{
   }
 
   const run = async (action: 'save' | 'connect' | 'disconnect') => {
+    // Disconnect throws away a live channel, so confirm first — matching the web
+    // console, which has always asked before disconnecting.
+    if (action === 'disconnect') {
+      const ok = await askConfirm({
+        titleKey: 'channels_disconnect',
+        msgKey: 'channels_disconnect_confirm',
+        okKey: 'channels_disconnect',
+      })
+      if (!ok) return
+    }
     setBusy(true)
     setStatus('')
     try {
@@ -601,12 +619,14 @@ const ChannelCard: React.FC<{
           setStatus(t('feishu_sdk_downloading_hint'))
           setTimeout(() => setStatus(''), 8000)
         }
-        onChanged()
+        // A disconnect removes the card; refresh silently so the list stays put
+        // instead of jumping back to the top behind a spinner.
+        onChanged(action === 'disconnect')
       } else {
-        setStatus((res.message as string) || t(action === 'connect' ? 'channels_connect_error' : 'channels_save_error'))
+        setStatus((res.message as string) || t(action === 'connect' ? 'channels_connect_error' : action === 'disconnect' ? 'channels_disconnect_error' : 'channels_save_error'))
       }
     } catch {
-      setStatus(t(action === 'connect' ? 'channels_connect_error' : 'channels_save_error'))
+      setStatus(t(action === 'connect' ? 'channels_connect_error' : action === 'disconnect' ? 'channels_disconnect_error' : 'channels_save_error'))
     } finally {
       setBusy(false)
     }

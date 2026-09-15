@@ -109,6 +109,10 @@ class AgentLLMModel(LLMModel):
     # failed a turn for good. Declared here (not in __init__) for the same
     # reason as the fields above: `model` is read on every call, including on
     # instances built with __new__.
+    #
+    # The fallback is a chain: `_fallback_depth` is the index of the link the
+    # run currently sits on, so a run that has burned through link 0 and is on
+    # link 1 can still advance to link 2 when that one fails too.
     _fallback_model = None
     _fallback_provider = None
     _fallback_depth = 0
@@ -139,56 +143,105 @@ class AgentLLMModel(LLMModel):
         pass
 
     def fallback_config(self) -> dict:
-        """Return the configured chat fallback, normalized.
+        """Return the configured fallback chain, normalized.
 
-        A non-dict or disabled entry yields empty provider/model so callers can
-        treat "not usable" as a single check.
+        A non-dict or disabled entry yields an empty chain so callers can treat
+        "not usable" as a single check. Links missing a provider or a model are
+        dropped — half a link could route the turn nowhere — as are duplicates
+        of the primary model or of an earlier link, which would only re-probe a
+        model the run has already proven is down.
+
+        The chain is unbounded: however many links the user configured is how
+        many switches a turn gets. There is no separate cap.
         """
         raw = conf().get("chat_fallback")
+        empty = {"chain": []}
         if not isinstance(raw, dict) or not raw.get("enabled"):
-            return {"provider": "", "model": "", "max_switches": 0}
-        try:
-            max_switches = int(raw.get("max_switches") or 0)
-        except (TypeError, ValueError):
-            max_switches = 0
-        return {
-            "provider": (raw.get("provider") or "").strip(),
-            "model": (raw.get("model") or "").strip(),
-            "max_switches": max(0, max_switches),
-        }
+            return empty
+        raw_chain = raw.get("chain")
+        if not isinstance(raw_chain, list):
+            # Pre-chain shape ({provider, model}): config._migrate_chat_fallback
+            # normally upgrades it at load time, so reaching here means a
+            # caller handed us the raw dict. Honor it rather than dropping the
+            # user's backup model.
+            raw_chain = [raw]
+        primary = (self._session_model or self._agent_model
+                   or conf().get("model") or const.DEFAULT_MODEL)
+        primary_provider = (self._session_provider or self._agent_provider or "")
+        chain = []
+        seen = {(primary_provider, (primary or "").strip())}
+        # The global model carries no provider (session/agent overrides do), so
+        # a provider+model comparison alone would miss the most common
+        # misconfiguration: listing the primary model as its own backup. Match
+        # on the model name too when no provider was pinned.
+        primary_model_only = (primary or "").strip() if not primary_provider else None
+        for item in raw_chain:
+            if not isinstance(item, dict):
+                continue
+            provider = (item.get("provider") or "").strip()
+            model = (item.get("model") or "").strip()
+            if not provider or not model:
+                continue
+            key = (provider, model)
+            if key in seen or (primary_model_only and model == primary_model_only):
+                continue
+            seen.add(key)
+            chain.append({"provider": provider, "model": model})
+        return {"chain": chain}
+
+    # How many times one turn may walk the whole chain before the failure is
+    # reported. Two passes rather than one because a pass takes real time: by
+    # the time the walk comes back around to a link that was rate limited, the
+    # window may well have cleared. A third pass would mostly re-probe an
+    # outage that is not going to clear inside a single turn.
+    _FALLBACK_MAX_PASSES = 2
 
     def fallback_available(self) -> bool:
-        """Whether this run can still switch to the fallback model."""
-        if self._fallback_model:
-            return False  # already on it; the fallback is sticky for the run
-        cfg = self.fallback_config()
-        if not cfg["provider"] or not cfg["model"]:
-            return False  # half-configured means "off"
-        return self._fallback_depth < max(1, cfg["max_switches"])
+        """Whether this run can still advance along the fallback chain.
+
+        True while link attempts remain inside the pass budget. Unlike the old
+        single-model fallback, sitting on a link is not the end: a backup that
+        fails for good earns the next one, which is the point of having a
+        chain — and reaching the last link wraps back to the first instead of
+        ending the turn.
+        """
+        chain = self.fallback_config()["chain"]
+        return self._fallback_depth < len(chain) * self._FALLBACK_MAX_PASSES
 
     def use_fallback(self) -> bool:
-        """Switch the rest of this run onto the configured fallback model.
+        """Advance the rest of this run onto the next fallback model.
 
-        Returns True when the switch happened. Called after the primary model
-        has failed a turn for good (retries exhausted), never mid-retry. The
-        switch is sticky: once engaged, every remaining step of the run runs on
-        the backup (``model`` returns ``_fallback_model``), so a sustained
-        outage isn't re-probed on the primary once per step. reset_fallback()
-        clears it at the start of the next run.
+        Returns True when the switch happened. Called after the *current*
+        model has failed a turn for good (retries exhausted), never mid-retry —
+        for the primary that is the end of its own retries, and for a fallback
+        link the single attempt it is granted.
+
+        The switch is sticky in the sense that the run stays on whichever link
+        answered, so a sustained outage isn't re-probed once per step; but a
+        link that fails advances to the next one rather than giving up.
+        reset_fallback() returns the run to the primary at the start of the
+        next one.
         """
         if not self.fallback_available():
             return False
-        cfg = self.fallback_config()
-        self._fallback_provider = cfg["provider"]
-        self._fallback_model = cfg["model"]
+        chain = self.fallback_config()["chain"]
+        # Wrap around: `_fallback_depth` counts attempts, not links, so the
+        # second pass re-tries link 0. A turn that reaches the end of the chain
+        # has not run out of options — the walk took long enough that a rate
+        # limit hit on the first pass may have cleared by now.
+        link = chain[self._fallback_depth % len(chain)]
+        self._fallback_provider = link["provider"]
+        self._fallback_model = link["model"]
         self._fallback_depth += 1
         # Drop the cached primary bot; `bot` rebuilds it for the new routing.
         self._bot = None
         self._bot_model = None
         self._bot_type = None
+        total = len(chain) * self._FALLBACK_MAX_PASSES
         logger.warning(
-            "[AgentLLMModel] primary model failed; falling back to "
-            f"{cfg['provider']}/{cfg['model']} (switch {self._fallback_depth})"
+            "[AgentLLMModel] current model failed; falling back to "
+            f"{link['provider']}/{link['model']} "
+            f"(link {self._fallback_depth}/{total})"
         )
         return True
 
@@ -196,16 +249,17 @@ class AgentLLMModel(LLMModel):
         """Return to the primary model — call once at the start of a run.
 
         A new user message always starts fresh on the primary; within a run the
-        fallback stays engaged (see use_fallback). Clearing the switch counter
-        here — not mid-run — is what lets the *next* run fall back again, while
-        bounding the current run to ``max_switches`` switches total.
+        fallback stays engaged on whichever link answered (see use_fallback).
+        Rewinding the chain index here — not mid-run — is what lets the *next*
+        run walk the chain again from the front.
         """
         if self._fallback_model is None:
             return
         self._fallback_model = None
         self._fallback_provider = None
-        # Back to zero: the next run starts fresh on the primary model, and if
-        # it fails again it is a new failure that earns a new switch.
+        # Back to the front of the chain: the next run starts on the primary
+        # model, and if it fails again it is a new failure that earns a new
+        # walk through the links.
         self._fallback_depth = 0
         self._bot = None
         self._bot_model = None
@@ -336,7 +390,12 @@ class AgentLLMModel(LLMModel):
         cur_model = self.model
         cur_bot_type = self._resolve_bot_type(cur_model)
         if self._bot is None or self._bot_model != cur_model or getattr(self, '_bot_type', None) != cur_bot_type:
-            self._bot = create_bot(cur_bot_type)
+            # Hand the resolved type to create_bot as the credential provider
+            # too. cur_bot_type already encodes the engaged fallback / session
+            # override, and the bot must resolve api_key+api_base from *that*
+            # provider — reading the global bot_type instead would pair this
+            # link's model id with the primary provider's endpoint.
+            self._bot = create_bot(cur_bot_type, credential_bot_type=cur_bot_type)
             self._bot = add_openai_compatible_support(self._bot)
             self._bot_model = cur_model
             self._bot_type = cur_bot_type
@@ -789,6 +848,67 @@ class AgentBridge:
             for message in messages or []
         ]
 
+    def _roster_speaker_labels(self) -> list:
+        """Names and ids a model might copy from a shared transcript."""
+        labels = []
+        try:
+            for profile in self.agent_registry.list(include_disabled=True):
+                if profile.name:
+                    labels.append(profile.name)
+                if profile.id:
+                    labels.append(profile.id)
+        except Exception:
+            return []
+        return labels
+
+    @staticmethod
+    def _strip_speaker_prefix(text: str, labels: list) -> str:
+        """Drop a leading speaker label the model copied from history.
+
+        Covers the forms a shared transcript can show: ``[Name]``,
+        ``Name：`` and ``Name(@id)：`` (with either colon).
+        """
+        if not text or not labels:
+            return text
+        escaped = "|".join(
+            re.escape(label)
+            for label in sorted({label for label in labels if label}, key=len, reverse=True)
+        )
+        if not escaped:
+            return text
+        name = rf"(?:{escaped})"
+        return re.sub(
+            rf"^\s*(?:\[{name}\]|{name}\s*(?:\(@{name}\))?\s*[:：])\s*",
+            "",
+            text,
+            count=1,
+        )
+
+    def _strip_speaker_prefix_from_messages(self, messages: list) -> list:
+        labels = self._roster_speaker_labels()
+        if not labels:
+            return messages
+        cleaned = []
+        for message in messages or []:
+            if message.get("role") != "assistant":
+                cleaned.append(message)
+                continue
+            content = message.get("content")
+            if isinstance(content, list) and content and content[0].get("type") == "text":
+                text = self._strip_speaker_prefix(content[0].get("text", ""), labels)
+                cleaned.append({
+                    **message,
+                    "content": [{**content[0], "text": text}, *content[1:]],
+                })
+            elif isinstance(content, str):
+                cleaned.append({
+                    **message,
+                    "content": self._strip_speaker_prefix(content, labels),
+                })
+            else:
+                cleaned.append(message)
+        return cleaned
+
     def _begin_run(self, session_id: str, agent_id: str, context: Context = None):
         """Open a run for this turn and make its id the ambient one.
 
@@ -944,6 +1064,27 @@ class AgentBridge:
             )
             return agent
 
+    def _sync_shared_transcript(self, agent, session_id: str, host_agent_id: str) -> None:
+        """Reload the host's transcript so every teammate sees the same history.
+
+        Solo conversations keep their live in-memory list (including tool
+        chains). A team conversation is reread from the host store, with
+        colleagues' replies replayed as ``Name：`` user turns so ``assistant``
+        stays this speaker's own voice.
+        """
+        if not session_id or not AgentInitializer._is_shared_conversation(
+            session_id, host_agent_id
+        ):
+            return
+        restore = getattr(self.initializer, "_restore_conversation_history", None)
+        if restore is None:
+            return
+        try:
+            host = self.agent_registry.get(host_agent_id, require_enabled=False)
+        except Exception:
+            return
+        restore(agent, session_id, host.workspace, host_agent_id)
+
     def _apply_session_project(self, agent, session_id: str, agent_id: str) -> None:
         """Retarget the agent's working directory to the session's project dir.
 
@@ -1018,6 +1159,35 @@ class AgentBridge:
             yield agent_id, None, agent
         for (agent_id, session_id), agent in sessions:
             yield agent_id, session_id, agent
+
+    def clear_all_model_fallbacks(self) -> int:
+        """Drop any engaged fallback routing on every live agent's model.
+
+        Fallback state lives on the long-lived ``AgentLLMModel`` and is normally
+        cleared at the top of the next run. Disabling the fallback in the UI only
+        rewrites config, so a model that had already switched would stay on the
+        backup until that next run happens to reset it. Called when the user
+        turns the fallback off so the change takes effect immediately, on the
+        very next message, without waiting for a run boundary or a restart.
+
+        Returns the number of models that were actually on a fallback.
+        """
+        cleared = 0
+        for _agent_id, _session_id, agent in self.iter_agent_instances():
+            model = getattr(agent, "model", None)
+            reset = getattr(model, "reset_fallback", None)
+            if not callable(reset):
+                continue
+            if getattr(model, "_fallback_model", None) is None:
+                continue
+            try:
+                reset()
+                cleared += 1
+            except Exception as e:
+                logger.debug(f"[AgentBridge] clear fallback skipped: {e}")
+        if cleared:
+            logger.info(f"[AgentBridge] cleared engaged fallback on {cleared} model(s)")
+        return cleared
 
     def sync_session_messages_from_store(
         self, session_id: str, agent_id: str = None
@@ -1186,6 +1356,13 @@ class AgentBridge:
             )
             if not agent:
                 return Reply(ReplyType.ERROR, "Failed to initialize super agent")
+
+            # A team conversation is one transcript. Each Agent caches its own
+            # in-memory list and only restores it on first init, so a teammate
+            # that already joined would miss later turns spoken by someone else
+            # (and the host would miss guest replies). Reload the shared
+            # transcript with author labels before this turn is appended.
+            self._sync_shared_transcript(agent, session_id, resolved_agent_id)
             
             # Create event handler for logging and channel communication
             event_handler = AgentEventHandler(context=context, original_callback=on_event)
@@ -1326,6 +1503,7 @@ class AgentBridge:
                 new_messages = self._attribute_to_speaker(
                     new_messages, speaker_agent_id
                 )
+                new_messages = self._strip_speaker_prefix_from_messages(new_messages)
                 if new_messages:
                     self._persist_messages(
                         session_id,
@@ -1360,6 +1538,11 @@ class AgentBridge:
             # background. Off the critical path so user latency is unaffected;
             # changes take effect on the user's next message.
             self._schedule_mcp_hot_reload(agent)
+
+            if isinstance(response, str):
+                response = self._strip_speaker_prefix(
+                    response, self._roster_speaker_labels()
+                )
 
             # Check if there are files to send (from send/read tool)
             if hasattr(agent, 'stream_executor') and hasattr(agent.stream_executor, 'files_to_send'):

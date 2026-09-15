@@ -273,6 +273,251 @@ const CHAT_FALLBACK_DEF = {
     titleKey: 'models_fallback_modal_title', descKey: 'models_capability_chat_fallback_desc',
 };
 
+// ---------- Fallback chain editor -------------------------------------
+//
+// The fallback is an ordered list of provider+model links rather than a single
+// backup model, so the modal renders one row per link with up/down/remove
+// controls instead of a single provider + model pickers. Each row reuses the
+// same initDropdown machinery the capability cards use, keyed off
+// `fb-chain-<i>-*` so nothing collides with the shared capability ids.
+
+// Working copy of the chain while the modal is open. Persisting is a separate
+// act (Save), so a user can reorder freely and cancel without writing.
+let fallbackChainDraft = [];
+
+function _fallbackChainFromCapability() {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    if (Array.isArray(cap.chain) && cap.chain.length) {
+        return cap.chain.map(l => ({ provider: l.provider || '', model: l.model || '' }));
+    }
+    // Older backend (or a pre-chain config): a single backup model.
+    if (cap.current_provider || cap.current_model) {
+        return [{ provider: cap.current_provider || '', model: cap.current_model || '' }];
+    }
+    return [];
+}
+
+function _fallbackProviderOptions() {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const ids = (cap.providers && cap.providers.length)
+        ? cap.providers.slice()
+        : modelsState.providers.map(p => p.id);
+    const byId = {};
+    modelsState.providers.forEach(p => { byId[p.id] = p; });
+    return ids.map(pid => ({
+        value: pid,
+        label: (byId[pid] && localizedLabel(byId[pid].label)) || pid,
+    }));
+}
+
+// Model list for one row, mirroring rebuildCapabilityModelDropdown's
+// provider_models -> provider.models fallback.
+function _fallbackModelOptions(providerId) {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const map = cap.provider_models || {};
+    let raw = map[providerId];
+    if (!raw && providerId.startsWith('custom:') && map['custom']) raw = map['custom'];
+    if (!raw) {
+        const p = modelsState.providers.find(x => x.id === providerId);
+        raw = (p && p.models) ? p.models : [];
+    }
+    return raw.map(e => {
+        const v = (typeof e === 'string') ? e : e.value;
+        return { value: v, label: (typeof e === 'string') ? e : (e.label || v) };
+    });
+}
+
+function _readFallbackChainRow(i) {
+    const provDd = document.getElementById(`fb-chain-${i}-provider`);
+    const modelDd = document.getElementById(`fb-chain-${i}-model`);
+    const customInput = document.getElementById(`fb-chain-${i}-model-custom`);
+    let model = modelDd ? getDropdownValue(modelDd) : '';
+    if (model === '__custom__') model = customInput ? customInput.value.trim() : '';
+    return {
+        provider: provDd ? getDropdownValue(provDd) : '',
+        model: model,
+    };
+}
+
+function _syncFallbackChainDraft() {
+    // Pull every visible row into the draft so a reorder keeps the values the
+    // user has typed but not yet committed to it.
+    fallbackChainDraft = fallbackChainDraft.map((_, i) => {
+        if (!document.getElementById(`fb-chain-${i}-provider`)) return fallbackChainDraft[i];
+        return _readFallbackChainRow(i);
+    });
+}
+
+function addFallbackChainLink() {
+    _syncFallbackChainDraft();
+    // Seed a new row from the first provider with a model, so it is one click
+    // from usable instead of two.
+    const opts = _fallbackProviderOptions();
+    const first = opts[0];
+    const models = first && first.value ? _fallbackModelOptions(first.value) : [];
+    fallbackChainDraft.push({
+        provider: first ? first.value : '',
+        model: models.length ? models[0].value : '',
+    });
+    renderFallbackChainEditor();
+}
+
+function removeFallbackChainLink(i) {
+    _syncFallbackChainDraft();
+    fallbackChainDraft.splice(i, 1);
+    renderFallbackChainEditor();
+}
+
+function moveFallbackChainLink(i, delta) {
+    const j = i + delta;
+    if (j < 0 || j >= fallbackChainDraft.length) return;
+    _syncFallbackChainDraft();
+    const tmp = fallbackChainDraft[i];
+    fallbackChainDraft[i] = fallbackChainDraft[j];
+    fallbackChainDraft[j] = tmp;
+    renderFallbackChainEditor();
+}
+
+function onFallbackChainProviderChange(i, providerId) {
+    // Keep the draft in sync, then rebuild just this row's model picker.
+    const modelDd = document.getElementById(`fb-chain-${i}-model`);
+    const customWrap = document.getElementById(`fb-chain-${i}-model-custom-wrap`);
+    const models = _fallbackModelOptions(providerId);
+    const opts = models.concat([{
+        value: '__custom__',
+        label: currentLang === 'zh' ? '自定义' : 'Custom',
+    }]);
+    if (modelDd) {
+        initDropdown(modelDd, opts, models.length ? models[0].value : '', (value) => {
+            if (!customWrap) return;
+            if (value === '__custom__') customWrap.classList.remove('hidden');
+            else customWrap.classList.add('hidden');
+        });
+    }
+    if (customWrap) customWrap.classList.add('hidden');
+    // The row just became usable (provider + a seeded model), so let the save
+    // button re-evaluate.
+    refreshFallbackChainSaveState();
+}
+
+function renderFallbackChainEditor() {
+    const host = document.getElementById('fb-chain-list');
+    if (!host) return;
+    const rows = fallbackChainDraft;
+    if (!rows.length) {
+        host.innerHTML = `<p class="text-xs text-slate-400 dark:text-slate-500">${escapeHtml(t('models_fallback_chain_empty'))}</p>`;
+        // No rows left means nothing usable to save. Refresh before returning
+        // — the save button's state is derived from the draft, and removing the
+        // last row is exactly when it has to flip back to disabled.
+        refreshFallbackChainSaveState();
+        return;
+    }
+    host.innerHTML = rows.map((link, i) => `
+        <div class="rounded-xl border border-slate-200 dark:border-white/10 p-3 space-y-2.5">
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-medium text-slate-500 dark:text-slate-400">
+                    ${escapeHtml(t('models_fallback_chain_link').replace('{{n}}', String(i + 1)))}
+                </span>
+                <div class="flex items-center gap-1">
+                    <button type="button" title="${escapeHtml(t('models_fallback_chain_move_up'))}"
+                            onclick="moveFallbackChainLink(${i}, -1)"
+                            ${i === 0 ? 'disabled' : ''}
+                            class="px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200
+                                   hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors
+                                   disabled:opacity-30 disabled:cursor-not-allowed">
+                        <i class="fas fa-arrow-up text-[11px]"></i>
+                    </button>
+                    <button type="button" title="${escapeHtml(t('models_fallback_chain_move_down'))}"
+                            onclick="moveFallbackChainLink(${i}, 1)"
+                            ${i === rows.length - 1 ? 'disabled' : ''}
+                            class="px-1.5 py-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200
+                                   hover:bg-slate-100 dark:hover:bg-white/5 cursor-pointer transition-colors
+                                   disabled:opacity-30 disabled:cursor-not-allowed">
+                        <i class="fas fa-arrow-down text-[11px]"></i>
+                    </button>
+                    <button type="button" title="${escapeHtml(t('models_fallback_chain_remove'))}"
+                            onclick="removeFallbackChainLink(${i})"
+                            class="px-1.5 py-1 rounded text-slate-400 hover:text-danger
+                                   hover:bg-danger/10 cursor-pointer transition-colors">
+                        <i class="fas fa-trash-can text-[11px]"></i>
+                    </button>
+                </div>
+            </div>
+            <div id="fb-chain-${i}-provider" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+            <div id="fb-chain-${i}-model" class="cfg-dropdown" tabindex="0">
+                <div class="cfg-dropdown-selected">
+                    <span class="cfg-dropdown-text">--</span>
+                    <i class="fas fa-chevron-down cfg-dropdown-arrow"></i>
+                </div>
+                <div class="cfg-dropdown-menu"></div>
+            </div>
+            <div id="fb-chain-${i}-model-custom-wrap" class="hidden">
+                <input id="fb-chain-${i}-model-custom" type="text"
+                       class="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-600
+                              bg-slate-50 dark:bg-white/5 text-sm text-slate-800 dark:text-slate-100
+                              focus:outline-none focus:border-primary-500 font-mono transition-colors"
+                       placeholder="custom model name">
+            </div>
+        </div>`).join('');
+
+    rows.forEach((link, i) => {
+        const provDd = document.getElementById(`fb-chain-${i}-provider`);
+        if (provDd) {
+            initDropdown(provDd, _fallbackProviderOptions(), link.provider || '',
+                (value) => onFallbackChainProviderChange(i, value));
+        }
+        const models = _fallbackModelOptions(link.provider || '');
+        const inCatalog = models.some(o => o.value === link.model);
+        const modelDd = document.getElementById(`fb-chain-${i}-model`);
+        const customWrap = document.getElementById(`fb-chain-${i}-model-custom-wrap`);
+        const customInput = document.getElementById(`fb-chain-${i}-model-custom`);
+        if (modelDd) {
+            initDropdown(modelDd, models.concat([{
+                value: '__custom__',
+                label: currentLang === 'zh' ? '自定义' : 'Custom',
+            }]), inCatalog ? link.model : (link.model ? '__custom__' : ''), (value) => {
+                if (!customWrap) return;
+                if (value === '__custom__') customWrap.classList.remove('hidden');
+                else customWrap.classList.add('hidden');
+            });
+        }
+        if (!inCatalog && link.model) {
+            if (customWrap) customWrap.classList.remove('hidden');
+            if (customInput) customInput.value = link.model;
+        }
+    });
+
+    // Every add / remove / reorder re-renders the rows, so refresh the save
+    // button here rather than at each call site: a row added after the toggle
+    // was switched on would otherwise leave Save stuck on its previous state.
+    refreshFallbackChainSaveState();
+}
+
+// Whether at least one row is usable — the backend rejects an empty chain
+// when the fallback is being enabled, so block Save here too.
+function fallbackChainIsComplete() {
+    _syncFallbackChainDraft();
+    return fallbackChainDraft.some(l => l.provider && l.model);
+}
+
+function refreshFallbackChainSaveState() {
+    const cap = modelsState.capabilities.chat_fallback || {};
+    const btn = document.getElementById('fb-chain-save');
+    const hint = document.getElementById('fb-chain-incomplete-hint');
+    if (!btn) return;
+    const needsChain = !!cap.enabled;
+    btn.disabled = needsChain && !fallbackChainIsComplete();
+    if (hint) {
+        hint.classList.toggle('hidden', !(needsChain && btn.disabled));
+    }
+}
+
 // Resolve a capability def by id. The chat fallback is intentionally absent
 // from MODELS_CAPABILITY_DEFS (it renders in a modal, not as a card), so the
 // shared save/toggle handlers look it up here too.
@@ -283,6 +528,11 @@ function capabilityDefById(capId) {
 
 function openChatFallbackModal() {
     closeChatFallbackModal(); // never stack two
+
+    // Read the capability *before* building the markup: the template below
+    // renders the toggle and the chain from it, so a `cap` declared after the
+    // innerHTML would still be in its temporal dead zone and throw.
+    const cap = modelsState.capabilities.chat_fallback || {};
 
     const overlay = document.createElement('div');
     overlay.id = 'chat-fallback-modal-overlay';
@@ -302,7 +552,42 @@ function openChatFallbackModal() {
                     <i class="fas fa-xmark"></i>
                 </button>
             </div>
-            <div class="px-6 py-5 space-y-4" data-cap-body="chat_fallback"></div>
+            <div class="px-6 py-5 space-y-4 max-h-[70vh] overflow-y-auto" data-cap-body="chat_fallback">
+                <div id="cap-chat_fallback-toggle-wrap" class="flex items-center justify-between gap-3">
+                    <label class="text-sm font-medium text-slate-600 dark:text-slate-400">${escapeHtml(t('models_fallback_enable'))}</label>
+                    <button type="button" id="cap-chat_fallback-toggle" role="switch"
+                            aria-checked="${cap.enabled ? 'true' : 'false'}"
+                            onclick="toggleChatFallbackEnabled()"
+                            class="relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors cursor-pointer ${cap.enabled ? 'bg-primary-500' : 'bg-slate-200 dark:bg-slate-700'}">
+                        <span class="inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${cap.enabled ? 'translate-x-[18px]' : 'translate-x-[3px]'}"></span>
+                    </button>
+                </div>
+                <div id="fb-chain-wrap" class="space-y-3 ${cap.enabled ? '' : 'hidden'}">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-600 dark:text-slate-400 mb-1.5">${escapeHtml(t('models_fallback_chain_title'))}</label>
+                        <p class="text-xs text-slate-400 dark:text-slate-500 leading-relaxed">${escapeHtml(t('models_fallback_chain_desc'))}</p>
+                    </div>
+                    <div id="fb-chain-list" class="space-y-2.5"></div>
+                    <button type="button" onclick="addFallbackChainLink()"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs
+                                   text-primary-600 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/30
+                                   hover:bg-primary-100 dark:hover:bg-primary-900/50 cursor-pointer transition-colors">
+                        <i class="fas fa-plus text-[11px]"></i>${escapeHtml(t('models_fallback_chain_add'))}
+                    </button>
+                    <p id="fb-chain-incomplete-hint" class="text-xs text-danger hidden">${escapeHtml(t('models_fallback_chain_incomplete'))}</p>
+                </div>
+                <div class="flex items-center justify-between gap-3 pt-1">
+                    <div class="flex-1 min-w-0"></div>
+                    <div class="flex items-center gap-3 flex-shrink-0">
+                        <span id="cap-chat_fallback-status" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
+                        <button id="fb-chain-save" onclick="saveCapability('chat_fallback')"
+                                class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
+                                       cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed">
+                            ${escapeHtml(t('save'))}
+                        </button>
+                    </div>
+                </div>
+            </div>
         </div>`;
 
     // Close on backdrop click (but not when clicking inside the dialog).
@@ -310,9 +595,36 @@ function openChatFallbackModal() {
 
     document.body.appendChild(overlay);
 
+    // Reset the draft each time the modal opens so a cancelled edit never
+    // leaks into the next open.
+    fallbackChainDraft = _fallbackChainFromCapability();
+    renderFallbackChainEditor();
+    refreshFallbackChainSaveState();
+}
+
+// The chain modal owns its own toggle (the shared capability body renders the
+// picker rows instead), so it needs its own flip handler: toggle the local
+// switch, show/hide the chain, and re-check whether Save is allowed.
+function toggleChatFallbackEnabled() {
     const cap = modelsState.capabilities.chat_fallback || {};
-    const body = overlay.querySelector('[data-cap-body="chat_fallback"]');
-    renderCapabilityBody(CHAT_FALLBACK_DEF, cap, body);
+    cap.enabled = !cap.enabled;
+    modelsState.capabilities.chat_fallback = cap;
+
+    const btn = document.getElementById('cap-chat_fallback-toggle');
+    if (btn) {
+        btn.setAttribute('aria-checked', cap.enabled ? 'true' : 'false');
+        btn.classList.toggle('bg-primary-500', cap.enabled);
+        btn.classList.toggle('bg-slate-200', !cap.enabled);
+        btn.classList.toggle('dark:bg-slate-700', !cap.enabled);
+        const knob = btn.querySelector('span');
+        if (knob) {
+            knob.classList.toggle('translate-x-[18px]', cap.enabled);
+            knob.classList.toggle('translate-x-[3px]', !cap.enabled);
+        }
+    }
+    const wrap = document.getElementById('fb-chain-wrap');
+    if (wrap) wrap.classList.toggle('hidden', !cap.enabled);
+    refreshFallbackChainSaveState();
 }
 
 function closeChatFallbackModal() {
@@ -580,7 +892,7 @@ function openSearchKeyModal(providerId, providerMeta) {
     const existing = document.getElementById('search-key-modal');
     if (existing) existing.remove();
 
-    const searchCap = (modelsState && modelsState.capabilities && modelsState.capabilities.search) || {};
+        const searchCap = (modelsState && modelsState.capabilities && modelsState.capabilities.search) || {};
     const prov = (searchCap.providers || []).find(p => p.id === providerId);
     const isSearxng = providerId === 'searxng';
     // SearXNG holds an instance URL (echoed back verbatim in url_masked); the
@@ -714,27 +1026,27 @@ function _saveSearchKey(providerId) {
     if (providerId === 'searxng') {
         // SearXNG uses an instance URL, not an API key. Empty input is a no-op
         // here (use the clear button to remove it).
-        if (!apiKey) {
-            input.focus();
-            return;
-        }
-        fetch('/api/models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+    if (!apiKey) {
+        input.focus();
+        return;
+    }
+    fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 action: 'set_search_credential',
                 provider: providerId,
                 url: apiKey, // reuse the input value as the URL
             }),
-        }).then(r => r.json()).then(data => {
-            if (data.status === 'success') {
+    }).then(r => r.json()).then(data => {
+        if (data.status === 'success') {
                 const modal = document.getElementById('search-key-modal');
-                if (modal) modal.remove();
-                loadModelsView({ preserveScroll: true });
-            }
-        });
+            if (modal) modal.remove();
+            loadModelsView({ preserveScroll: true });
+        }
+    });
         return;
-    }
+}
 
     if (!apiKey) {
         input.focus();
@@ -1477,14 +1789,16 @@ function saveCapability(capId) {
     // Search has its own form (strategy + provider, no model picker).
     if (capId === 'search') { saveSearchCapability(); return; }
     const provDd = document.getElementById(`cap-${capId}-provider`);
-    const provider = provDd ? getDropdownValue(provDd) : '';
+    let provider = provDd ? getDropdownValue(provDd) : '';
     // When the user is in auto mode (provider == ""), the model picker is
     // hidden and any value left in it is stale; persist an empty model so
     // the backend treats this as "fall back to the runtime chain".
     const isAuto = provider === '' && capabilitySupportsAuto(capId);
     // Embedding without a provider similarly means "cleared" — don't leak
     // a stale model value into config.
-    const model = (isAuto || (capId === 'embedding' && !provider)) ? '' : getCapabilityModelValue(def);
+    // Declared with `let` because the chat fallback branch clears both values
+    // below: it posts an ordered chain instead of a single provider/model pair.
+    let model = (isAuto || (capId === 'embedding' && !provider)) ? '' : getCapabilityModelValue(def);
     // TTS carries an extra voice timbre (supports free-text custom ids).
     let voice = '';
     if (capId === 'tts' && !isAuto) {
@@ -1548,7 +1862,21 @@ function saveCapability(capId) {
     // lands so the user drops straight back to the models page (already
     // reloaded by _persistCapability, which refreshes the main-card badge).
     const onAfterSuccess = capId === 'chat_fallback' ? closeChatFallbackModal : undefined;
-    _persistCapability(capId, provider, model, onAfterSuccess, { voice, enabled });
+    // The fallback is an ordered chain rather than one provider/model pair,
+    // so it posts the rows the modal is showing instead of the pickers.
+    //
+    // Sync first: the draft only records a row when it is added, removed or
+    // moved, so a provider/model picked in a dropdown afterwards still lives
+    // in the DOM alone. Saving without this would persist the row's seed
+    // value — silently discarding whatever the user actually chose.
+    let chain = undefined;
+    if (capId === 'chat_fallback') {
+        _syncFallbackChainDraft();
+        chain = fallbackChainDraft.map(l => ({ provider: l.provider, model: l.model }));
+        provider = '';
+        model = '';
+    }
+    _persistCapability(capId, provider, model, onAfterSuccess, { voice, enabled, chain });
 }
 
 function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
@@ -1556,6 +1884,9 @@ function _persistCapability(capId, provider, model, onAfterSuccess, extras) {
     if (extras && extras.voice !== undefined) payload.voice = extras.voice;
     // Opt-in capabilities (the chat fallback) carry their on/off switch.
     if (extras && extras.enabled !== undefined) payload.enabled = extras.enabled;
+    // Only the chat fallback carries an ordered chain; every other capability
+    // keeps sending the single provider/model pair above.
+    if (extras && extras.chain !== undefined) payload.chain = extras.chain;
     fetch('/api/models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1611,6 +1942,17 @@ function openVendorModal(providerId, onSaved) {
         // "custom" entry creates a *new* custom provider via that modal —
         // this is how multiple OpenAI-compatible endpoints are added.
         const builtinProviders = modelsState.providers.filter(p => !isCustomProviderCard(p));
+        const unconfigured = builtinProviders.filter(p => !p.configured);
+
+        // Every built-in is already configured: there is nothing to add here,
+        // so go straight to the custom-provider modal and never show this one.
+        // (Doing it via a "default to custom" pick would leave this overlay
+        // visible behind the custom one — two stacked modals.)
+        if (!unconfigured.length) {
+            openCustomProviderModal('');
+            return;
+        }
+
         const pickerOpts = builtinProviders.map(p => ({
             value: p.id,
             label: localizedLabel(p.label),
@@ -1624,8 +1966,7 @@ function openVendorModal(providerId, onSaved) {
         // "Custom" always behaves as an add-new action (multiple entries
         // allowed), so it shows a + mark instead of the configured ✓.
         pickerOpts.forEach(o => { if (o.value === 'custom') { o._isAddNew = true; o._configured = false; } });
-        const unconfigured = builtinProviders.filter(p => !p.configured);
-        const defaultId = (unconfigured[0] && unconfigured[0].id) || (builtinProviders[0] && builtinProviders[0].id) || 'custom';
+        const defaultId = unconfigured[0].id;
         pickerWrap.classList.remove('hidden');
         const pickerEl = document.getElementById('vendor-modal-picker');
         const onPick = (val) => {
@@ -1651,6 +1992,9 @@ function openVendorModal(providerId, onSaved) {
 
     document.getElementById('vendor-modal-cancel').onclick = closeVendorModal;
     document.getElementById('vendor-modal-save').onclick = saveVendorModal;
+    // Catalog section controls. Assigned (not addEventListener) so a repeated
+    // open cannot stack duplicate handlers.
+    bindCatalogControls('vendor-modal', vendorModalState.providerId);
     clearBtn.onclick = clearVendorModal;
 
     // Once the user edits the masked value, drop the "masked sentinel" dataset
@@ -1723,11 +2067,340 @@ function fillVendorModalForProvider(providerId) {
     const clearBtn = document.getElementById('vendor-modal-clear');
     clearBtn.classList.toggle('hidden', !meta.configured);
 
+    // Model catalog rows belong to the provider, so they load with it.
+    fillCatalogForProvider('vendor-modal', providerId);
+
     vendorModalState.providerId = providerId;
 }
 
 function closeVendorModal() {
     document.getElementById('vendor-modal-overlay').classList.add('hidden');
+}
+
+// ---------- Model catalog editor (advanced, optional) -------------------
+//
+// A provider's catalog REPLACES its preset model list, so the editor is opt-in:
+// rows only exist once the user adds them (or seeds them from the presets with
+// the "restore presets" action). An empty row set is left untouched on save —
+// it must never silently overwrite a working preset list.
+//
+// The same rows are offered by two modals — the built-in vendor modal and the
+// custom (OpenAI-compatible) provider modal — so every helper takes an element
+// id prefix instead of hardcoding one.
+
+// Mirrors models/model_catalog.py VALID_CAPABILITIES. "text" drives the main
+// model dropdown, the rest route a model into the matching tool position.
+const MODEL_CATALOG_CAPABILITIES = ['text', 'vision', 'video', 'image', 'embedding', 'asr', 'tts'];
+
+const MODEL_CATALOG_TAG_KEYS = {
+    text: 'models_tag_chat',
+    vision: 'models_tag_vision',
+    video: 'models_tag_video',
+    image: 'models_tag_image',
+    embedding: 'models_tag_embedding',
+    asr: 'models_tag_asr',
+    tts: 'models_tag_tts',
+};
+
+// Capabilities with no notion of a text budget: an embedding model is scored
+// on dimensions and a TTS/ASR one on audio, so offering "context window" for
+// them would invite values that mean nothing.
+const MODEL_CATALOG_UNBUDGETED = ['embedding', 'image', 'asr', 'tts'];
+
+// Draft rows keyed by modal prefix, so the two editors never share state.
+const catalogDrafts = {};
+
+function _catalogRows(prefix) {
+    if (!catalogDrafts[prefix]) catalogDrafts[prefix] = [];
+    return catalogDrafts[prefix];
+}
+
+function _catalogCapLabel(cap) {
+    const key = MODEL_CATALOG_TAG_KEYS[cap];
+    return key ? t(key) : cap;
+}
+
+/** Render the draft rows for one modal. Each row edits one model entry. */
+function renderCatalogRows(prefix) {
+    const draft = _catalogRows(prefix);
+    const rows = document.getElementById(prefix + '-catalog-rows');
+    if (!rows) return;
+    rows.innerHTML = draft.map((entry, idx) => `
+        <div class="rounded-lg border border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-white/5 p-2.5">
+            <div class="flex items-center gap-2 mb-2">
+                <input type="text" value="${escapeHtml(entry.name || '')}"
+                       placeholder="${escapeHtml(t('models_catalog_name_ph'))}"
+                       oninput="updateCatalogRow('${prefix}', ${idx}, 'name', this.value)"
+                       class="flex-1 min-w-0 px-2 py-1.5 rounded border border-slate-200 dark:border-slate-600
+                              bg-white dark:bg-white/5 text-xs text-slate-800 dark:text-slate-100
+                              focus:outline-none focus:border-primary-500 font-mono transition-colors">
+                <button type="button" onclick="removeCatalogRow('${prefix}', ${idx})"
+                        title="${escapeHtml(t('delete'))}"
+                        class="flex-shrink-0 w-7 h-7 flex items-center justify-center rounded
+                               text-slate-400 dark:text-slate-500 hover:text-red-500 hover:bg-red-50
+                               dark:hover:bg-red-900/20 cursor-pointer transition-colors">
+                    <i class="fas fa-trash-can text-[11px]"></i>
+                </button>
+            </div>
+            <div class="flex flex-wrap gap-1.5 mb-2">
+                ${MODEL_CATALOG_CAPABILITIES.map(cap => {
+                    const on = (entry.capabilities || []).includes(cap);
+                    return `<button type="button" onclick="toggleCatalogCap('${prefix}', ${idx}, '${cap}')"
+                            class="px-1.5 py-0.5 rounded text-[10px] font-medium cursor-pointer transition-colors
+                                   ${on
+                                       ? 'bg-primary-100 dark:bg-primary-900/40 text-primary-600 dark:text-primary-400'
+                                       : 'bg-slate-200/60 dark:bg-white/10 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-white/20'}">
+                            ${escapeHtml(_catalogCapLabel(cap))}</button>`;
+                }).join('')}
+            </div>
+            ${(() => {
+                // A model tagged only for unbudgeted work (embedding, TTS, ...)
+                // has no window/output to configure — showing the inputs would
+                // just invite meaningless numbers.
+                const caps = entry.capabilities || [];
+                const budgeted = caps.length === 0
+                    || caps.some(c => !MODEL_CATALOG_UNBUDGETED.includes(c));
+                if (!budgeted) {
+                    return `<p class="text-[10px] text-slate-400 dark:text-slate-500">
+                            <i class="fas fa-info-circle mr-1"></i>${escapeHtml(t('models_catalog_no_budget'))}</p>`;
+                }
+                return `<div class="grid grid-cols-2 gap-2">
+                    <label class="block">
+                        <span class="block text-[10px] text-slate-400 dark:text-slate-500 mb-0.5">${escapeHtml(t('models_catalog_window'))}</span>
+                        <input type="number" min="1" value="${entry.context_window || ''}" placeholder="—"
+                               oninput="updateCatalogRow('${prefix}', ${idx}, 'context_window', this.value)"
+                               class="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-600
+                                      bg-white dark:bg-white/5 text-xs text-slate-800 dark:text-slate-100
+                                      focus:outline-none focus:border-primary-500 transition-colors">
+                    </label>
+                    <label class="block">
+                        <span class="block text-[10px] text-slate-400 dark:text-slate-500 mb-0.5">${escapeHtml(t('models_catalog_output'))}</span>
+                        <input type="number" min="1" value="${entry.max_output_tokens || ''}" placeholder="—"
+                               oninput="updateCatalogRow('${prefix}', ${idx}, 'max_output_tokens', this.value)"
+                               class="w-full px-2 py-1 rounded border border-slate-200 dark:border-slate-600
+                                      bg-white dark:bg-white/5 text-xs text-slate-800 dark:text-slate-100
+                                      focus:outline-none focus:border-primary-500 transition-colors">
+                    </label>
+                </div>`;
+            })()}
+        </div>`).join('');
+}
+
+function updateCatalogRow(prefix, idx, field, rawValue) {
+    const entry = _catalogRows(prefix)[idx];
+    if (!entry) return;
+    if (field === 'name') {
+        entry.name = rawValue;
+        return;
+    }
+    // Numeric fields: keep "" (meaning "unset") rather than storing NaN/0.
+    const n = parseInt(rawValue, 10);
+    entry[field] = (rawValue === '' || Number.isNaN(n)) ? '' : n;
+}
+
+function toggleCatalogCap(prefix, idx, cap) {
+    const entry = _catalogRows(prefix)[idx];
+    if (!entry) return;
+    const caps = entry.capabilities || [];
+    const at = caps.indexOf(cap);
+    if (at >= 0) caps.splice(at, 1); else caps.push(cap);
+    entry.capabilities = caps;
+    // The budget inputs are hidden for unbudgeted-only rows, but a hidden
+    // field would still be sent — clear it so the stored entry can't carry a
+    // window for a model that has no notion of one.
+    const budgeted = caps.length === 0
+        || caps.some(c => !MODEL_CATALOG_UNBUDGETED.includes(c));
+    if (!budgeted) {
+        entry.context_window = '';
+        entry.max_output_tokens = '';
+    }
+    renderCatalogRows(prefix);
+}
+
+function addCatalogRow(prefix) {
+    _catalogRows(prefix).push({
+        name: '', capabilities: ['text'], context_window: '', max_output_tokens: '',
+    });
+    renderCatalogRows(prefix);
+    const rows = document.getElementById(prefix + '-catalog-rows');
+    const last = rows && rows.lastElementChild && rows.lastElementChild.querySelector('input');
+    if (last) last.focus();
+}
+
+function removeCatalogRow(prefix, idx) {
+    _catalogRows(prefix).splice(idx, 1);
+    renderCatalogRows(prefix);
+}
+
+/** Reset the draft to the vendor's presets: discard every override and
+ *  un-hide every removed preset, so the list is exactly what ships in code.
+ *  Saving afterwards clears the provider's overlay entirely. */
+function seedCatalogFromPresets(prefix, providerId) {
+    const meta = modelsState.providers.find(p => p.id === providerId);
+    const seed = (meta && meta.seed) || [];
+    catalogDrafts[prefix] = seed.map(s => ({
+        name: s.name,
+        capabilities: (s.capabilities || []).slice(),
+        context_window: s.context_window || '',
+        max_output_tokens: s.max_output_tokens || '',
+    }));
+    renderCatalogRows(prefix);
+}
+
+/** Drop every row (back to presets). Applied on save, not immediately. */
+function clearCatalogRows(prefix) {
+    catalogDrafts[prefix] = [];
+    renderCatalogRows(prefix);
+}
+
+/**
+ * Collect the draft into the payload shape `save_catalog` expects.
+ * Rows without a name are skipped — a nameless entry is rejected server-side
+ * and would fail the whole save, so it is dropped before we send anything.
+ */
+function collectCatalogPayload(prefix) {
+    return _catalogRows(prefix)
+        .filter(e => (e.name || '').trim())
+        .map(e => {
+            const out = {
+                name: e.name.trim(),
+                capabilities: (e.capabilities || []).length ? e.capabilities : ['text'],
+            };
+            const cw = parseInt(e.context_window, 10);
+            const mo = parseInt(e.max_output_tokens, 10);
+            // Only send the numbers when set: an absent field means "fall back
+            // to auto-detection", whereas 0 would be an invalid window.
+            if (!Number.isNaN(cw) && cw > 0) out.context_window = cw;
+            if (!Number.isNaN(mo) && mo > 0) out.max_output_tokens = mo;
+            return out;
+        });
+}
+
+// The preset base for one modal, kept so save can diff the draft against it
+// (only rows that differ from a preset, or are new, are persisted; presets the
+// user removed become tombstones). Keyed by modal prefix like the drafts.
+const catalogSeeds = {};
+
+/** Load one provider's effective model list (presets + overrides − removals)
+ *  into a modal. The list is shown in full so editing one model can no longer
+ *  wipe the rest — nothing is persisted until the user saves. */
+function fillCatalogForProvider(prefix, providerId) {
+    const meta = modelsState.providers.find(p => p.id === providerId);
+    const effective = (meta && meta.effective) || (meta && meta.catalog) || [];
+    catalogSeeds[prefix] = ((meta && meta.seed) || []).map(e => ({
+        name: e.name || '',
+        capabilities: (e.capabilities || []).slice(),
+        context_window: e.context_window || '',
+        max_output_tokens: e.max_output_tokens || '',
+    }));
+    catalogDrafts[prefix] = effective.map(e => ({
+        name: e.name || '',
+        capabilities: (e.capabilities || []).slice(),
+        context_window: e.context_window || '',
+        max_output_tokens: e.max_output_tokens || '',
+    }));
+    renderCatalogRows(prefix);
+
+    // Always start collapsed so credentials stay the focus — the catalog is an
+    // advanced, opt-in section the user expands deliberately.
+    setCatalogSectionOpen(prefix, false);
+}
+
+/** Normalize seed rows into the same payload shape collectCatalogPayload emits,
+ *  so the two can be compared for equality. */
+function _normalizeEntries(rows) {
+    return rows
+        .filter(e => (e.name || '').trim())
+        .map(e => {
+            const out = {
+                name: e.name.trim(),
+                capabilities: (e.capabilities || []).length ? e.capabilities : ['text'],
+            };
+            const cw = parseInt(e.context_window, 10);
+            const mo = parseInt(e.max_output_tokens, 10);
+            if (!Number.isNaN(cw) && cw > 0) out.context_window = cw;
+            if (!Number.isNaN(mo) && mo > 0) out.max_output_tokens = mo;
+            return out;
+        });
+}
+
+function setCatalogSectionOpen(prefix, open) {
+    const body = document.getElementById(prefix + '-catalog-body');
+    const caret = document.getElementById(prefix + '-catalog-caret');
+    if (body) body.classList.toggle('hidden', !open);
+    if (caret) caret.style.transform = open ? 'rotate(90deg)' : 'rotate(0deg)';
+}
+
+function toggleCatalogSection(prefix) {
+    const body = document.getElementById(prefix + '-catalog-body');
+    if (!body) return;
+    setCatalogSectionOpen(prefix, body.classList.contains('hidden'));
+}
+
+/** Wire the section to one modal. Assigned (not addEventListener) so a
+ *  repeated open cannot stack duplicate handlers. */
+function bindCatalogControls(prefix, providerIdForSeed) {
+    const toggle = document.getElementById(prefix + '-catalog-toggle');
+    const add = document.getElementById(prefix + '-catalog-add');
+    if (toggle) toggle.onclick = () => toggleCatalogSection(prefix);
+    if (add) add.onclick = () => addCatalogRow(prefix);
+    const seed = document.getElementById(prefix + '-catalog-seed');
+    if (seed) seed.onclick = () => seedCatalogFromPresets(prefix, providerIdForSeed);
+}
+
+/**
+ * Diff the draft against the provider's presets into the overlay the backend
+ * stores: `overrides` (rows the user changed or added) and `hidden` (preset
+ * names the user removed). A row identical to its preset is NOT persisted, so
+ * that model keeps following the code-side metadata and a later constant bump
+ * still reaches it.
+ */
+function diffCatalogAgainstSeed(prefix) {
+    const seed = _normalizeEntries(catalogSeeds[prefix] || []);
+    const draft = collectCatalogPayload(prefix);
+    const seedByName = {};
+    seed.forEach(e => { seedByName[e.name] = e; });
+    const draftNames = new Set(draft.map(e => e.name));
+
+    const overrides = draft.filter(e => {
+        const preset = seedByName[e.name];
+        // New model, or a preset the user edited: persist it. An unchanged
+        // preset (deep-equal) is left out so it stays code-driven.
+        return !preset || JSON.stringify(preset) !== JSON.stringify(e);
+    });
+    // Presets the user removed from the list become tombstones.
+    const hidden = seed
+        .map(e => e.name)
+        .filter(name => !draftNames.has(name));
+    return { overrides, hidden };
+}
+
+/**
+ * Persist a modal's overlay, or do nothing when the draft still equals the
+ * provider's effective list. Only the diff from the presets is written, so a
+ * provider the user never opened is never touched.
+ */
+function saveCatalogForProvider(prefix, providerId) {
+    const meta = modelsState.providers.find(p => p.id === providerId);
+    const savedOverrides = (meta && meta.catalog) || [];
+    const savedHidden = (meta && meta.hidden) || [];
+    const { overrides, hidden } = diffCatalogAgainstSeed(prefix);
+
+    const same = JSON.stringify(overrides) === JSON.stringify(_normalizeEntries(savedOverrides))
+        && JSON.stringify([...hidden].sort()) === JSON.stringify([...savedHidden].sort());
+    if (same) {
+        return Promise.resolve(true);
+    }
+    // Empty overrides + empty hidden means "back to presets" — save_catalog
+    // drops the provider's overlay for that, which is exactly the intent.
+    return fetch('/api/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'save_catalog', provider_id: providerId,
+            models: overrides, hidden: hidden,
+        }),
+    }).then(r => r.json()).then(data => data.status === 'success').catch(() => false);
 }
 
 function saveVendorModal() {
@@ -1760,12 +2433,19 @@ function saveVendorModal() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
     }).then(r => r.json()).then(data => {
-        btn.disabled = false;
         if (data.status !== 'success') {
+            btn.disabled = false;
             showStatus('vendor-modal-status', 'models_save_failed', true);
             return;
         }
-        const finish = () => {
+        // Credentials are stored; now the catalog, which the backend keeps as
+        // a separate document.
+        return saveCatalogForProvider('vendor-modal', providerId).then(ok => {
+            btn.disabled = false;
+            if (!ok) {
+                showStatus('vendor-modal-status', 'models_save_failed', true);
+                return;
+            }
             closeVendorModal();
             const onSaved = vendorModalState.onSaved;
             if (onSaved) {
@@ -1773,8 +2453,7 @@ function saveVendorModal() {
             } else {
                 loadModelsView();
             }
-        };
-        finish();
+        });
     }).catch(() => {
         btn.disabled = false;
         showStatus('vendor-modal-status', 'models_save_failed', true);

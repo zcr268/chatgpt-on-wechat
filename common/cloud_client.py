@@ -960,7 +960,8 @@ class CloudClient(LinkAIClient):
                 logger.warning(f"[CloudClient] config.json not found at {config_path}, skip saving")
                 return
 
-            with open(config_path, "r", encoding="utf-8") as f:
+            # utf-8-sig tolerates a UTF-8 BOM (e.g. edited with Windows Notepad).
+            with open(config_path, "r", encoding="utf-8-sig") as f:
                 file_config = json.load(f)
 
             file_config.update(dict(local_config))

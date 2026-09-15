@@ -891,12 +891,12 @@ function startPolling() {
                     // dedupes by run id. Notifying here too would double-pop, so
                     // only notify for an ordinary missed reply.
                     if (!isSchedulerRequest(rid)) {
-                        showTaskNotification(
-                            sessionTitleOf(sessionId) || 'CowAgent',
-                            firstLineSnippet(data.content),
+                    showTaskNotification(
+                        sessionTitleOf(sessionId) || 'CowAgent',
+                        firstLineSnippet(data.content),
                             sessionId,
                             activeAgentId
-                        );
+                    );
                     }
                 }
             }

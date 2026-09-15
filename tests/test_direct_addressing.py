@@ -402,27 +402,35 @@ class TestKnowingWhoWroteWhat:
     ]
 
     def _attributed(self, tmp_path, reader):
-        _bridge(tmp_path)  # registry has to be resolvable for the name lookup
+        from agent.registry import set_agent_registry
         from bridge.agent_initializer import AgentInitializer
 
+        bridge = _bridge(tmp_path)
+        set_agent_registry(bridge.agent_registry)
         return AgentInitializer._attribute_history(self.HISTORY, reader)
 
-    def test_a_colleagues_reply_is_named(self, tmp_path):
-        text = self._attributed(tmp_path, "default")[1]["content"][0]["text"]
-        assert text.startswith("[")
-        assert "shipped" in text
+    def test_a_colleagues_reply_is_replayed_as_the_user(self, tmp_path):
+        """assistant+[Name] is what the model copies into its own mouth."""
+        message = self._attributed(tmp_path, "default")[1]
+        assert message["role"] == "user"
+        assert message["content"][0]["text"].startswith("运营助手(@ops)：")
+        assert "shipped" in message["content"][0]["text"]
 
-    def test_your_own_reply_is_left_bare(self, tmp_path):
-        """Unmarked has to mean "mine", or the convention says nothing."""
-        assert self._attributed(tmp_path, "default")[3]["content"][0]["text"] == "on it"
+    def test_your_own_reply_stays_assistant(self, tmp_path):
+        message = self._attributed(tmp_path, "default")[3]
+        assert message["role"] == "assistant"
+        assert message["content"][0]["text"] == "on it"
 
     def test_the_same_reply_is_bare_for_the_one_who_wrote_it(self, tmp_path):
-        assert self._attributed(tmp_path, "ops")[1]["content"][0]["text"] == "shipped"
+        message = self._attributed(tmp_path, "ops")[1]
+        assert message["role"] == "assistant"
+        assert message["content"][0]["text"] == "shipped"
 
     def test_the_users_own_turns_are_never_labelled(self, tmp_path):
         attributed = self._attributed(tmp_path, "default")
         assert [m["content"][0]["text"] for m in attributed if m["role"] == "user"] == [
             "ship it",
+            "运营助手(@ops)：shipped",
             "and now?",
         ]
 
@@ -577,3 +585,102 @@ class TestMentionParsing:
         ]
         assert self._resolve("@运营助手 你好", roster) == "b"
         assert self._resolve("@运营 你好", roster) == "a"
+
+
+class TestSharedTranscriptStaysCurrent:
+    """History is restored once on init. Without a reload, a teammate that
+    already joined misses later turns spoken by someone else."""
+
+    def test_a_later_host_turn_is_visible_to_the_guest(self, tmp_path, monkeypatch):
+        from agent.memory import clear_conversation_store_cache, get_conversation_store
+        from agent.registry import set_agent_registry
+        from agent.workspace import session_prefs
+        from config import conf
+
+        bridge = _bridge(tmp_path)
+        set_agent_registry(bridge.agent_registry)
+        monkeypatch.setitem(conf(), "conversation_persistence", True)
+        monkeypatch.setattr(
+            session_prefs,
+            "get_prefs",
+            lambda sid, aid: {"members": ["ops"]} if sid == "chat" else {},
+        )
+        clear_conversation_store_cache()
+
+        store = get_conversation_store(str(tmp_path / "primary"))
+        store.append_messages(
+            "chat",
+            [
+                {"role": "user", "content": [{"type": "text", "text": "team roster"}]},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ops is here"}],
+                    "extras": {"agent_id": "primary"},
+                },
+            ],
+        )
+
+        guest = SimpleNamespace(
+            agent_id="ops",
+            workspace_dir=str(tmp_path / "ops"),
+            messages=[{"role": "assistant", "content": [{"type": "text", "text": "stale"}]}],
+            messages_lock=threading.RLock(),
+        )
+        initializer = AgentInitializer(bridge=None, agent_bridge=bridge)
+        bridge.initializer = initializer
+        initializer._restore_conversation_history(
+            guest, "chat", str(tmp_path / "primary"), "primary"
+        )
+        assert any("ops is here" in str(m.get("content")) for m in guest.messages)
+
+        store.append_messages(
+            "chat",
+            [
+                {
+                    "role": "user",
+                    "content": [{"type": "text", "text": "CowAgent repo is here"}],
+                },
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "located the repo"}],
+                    "extras": {"agent_id": "primary"},
+                },
+            ],
+        )
+        # The cached guest still has only what it restored the first time.
+        assert not any("located the repo" in str(m.get("content")) for m in guest.messages)
+
+        bridge._sync_shared_transcript(guest, "chat", "primary")
+        texts = [m["content"][0]["text"] for m in guest.messages]
+        assert any(
+            t.startswith("Primary(@primary)：") and "located the repo" in t for t in texts
+        )
+
+    def test_solo_conversation_does_not_reload(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        bridge = _bridge(tmp_path)
+        guest = SimpleNamespace(
+            agent_id="ops",
+            messages=[{"keep": True}],
+            messages_lock=threading.RLock(),
+        )
+        bridge._sync_shared_transcript(guest, "chat", "primary")
+        assert guest.messages == [{"keep": True}]
+
+
+class TestStripCopiedSpeakerPrefix:
+    def test_bracket_and_colon_prefixes_are_removed(self, tmp_path):
+        bridge = _bridge(tmp_path)
+        labels = ["团队负责人", "开发", "default", "developer"]
+        assert (
+            bridge._strip_speaker_prefix("[团队负责人] 浓缩一版", labels)
+            == "浓缩一版"
+        )
+        assert bridge._strip_speaker_prefix("开发：仓库在这", labels) == "仓库在这"
+        assert (
+            bridge._strip_speaker_prefix("团队负责人(@default)：浓缩一版", labels)
+            == "浓缩一版"
+        )
+        assert bridge._strip_speaker_prefix("正常回复", labels) == "正常回复"

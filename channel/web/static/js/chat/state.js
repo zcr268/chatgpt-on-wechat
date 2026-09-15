@@ -58,8 +58,8 @@ window.fetch = function(input, init) {
     let url = typeof input === 'string' ? input : input.url;
     if (activeAgentId && typeof url === 'string' && url.startsWith('/')) {
         if (!/[?&]agent_id=/.test(url)) {
-            const joiner = url.includes('?') ? '&' : '?';
-            url = `${url}${joiner}agent_id=${encodeURIComponent(activeAgentId)}`;
+        const joiner = url.includes('?') ? '&' : '?';
+        url = `${url}${joiner}agent_id=${encodeURIComponent(activeAgentId)}`;
         }
         if (typeof input !== 'string') input = new Request(url, input);
         else input = url;

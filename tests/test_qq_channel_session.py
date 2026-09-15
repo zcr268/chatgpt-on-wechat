@@ -66,6 +66,72 @@ class SessionLifecycleTest(unittest.TestCase):
         self.assertEqual(started, [], "a superseded socket must not reconnect itself")
 
 
+class HeartbeatWatchdogTest(unittest.TestCase):
+    """A silently-dead connection (no heartbeat ACKs) must force a reconnect.
+
+    ping_interval alone can miss an application-layer stall where the socket is
+    up but the gateway has gone quiet, so the heartbeat loop watches ACK
+    freshness and closes the socket when it goes stale, routing into _on_close.
+    """
+
+    def test_missing_acks_force_the_socket_closed(self):
+        from channel.qq import qq_channel
+
+        ch = _make_channel()
+        ch._connected = True
+        ch._last_seq = 5
+        ws = MagicMock()
+        ch._ws = ws
+        ch._heartbeat_thread = None
+
+        # Real Event so the loop's is_set() gates behave normally; we stop it
+        # from the fake wait() after the first tick to keep the test bounded.
+        ch._stop_event = threading.Event()
+
+        # ACK clock is far in the past -> the very first check sees a stall.
+        with patch("channel.qq.qq_channel.time.time", return_value=10_000.0):
+            def fake_wait(_):
+                # Pretend a full interval elapsed while the gateway stayed silent.
+                ch._last_heartbeat_ack = 0.0
+                return False
+            ch._stop_event = MagicMock()
+            ch._stop_event.is_set.return_value = False
+            ch._stop_event.wait.side_effect = fake_wait
+
+            ch._start_heartbeat(1000)
+            ch._heartbeat_thread.join(timeout=2)
+
+        ws.close.assert_called_once()
+
+    def test_fresh_acks_keep_the_connection(self):
+        ch = _make_channel()
+        ch._connected = True
+        ch._last_seq = 5
+        ws = MagicMock()
+        ch._ws = ws
+        ch._heartbeat_thread = None
+
+        calls = {"n": 0}
+
+        with patch("channel.qq.qq_channel.time.time", return_value=10_000.0):
+            def fake_wait(_):
+                # ACK stays fresh (== now); loop should not close, and we stop
+                # after two ticks so the test terminates.
+                ch._last_heartbeat_ack = 10_000.0
+                calls["n"] += 1
+                if calls["n"] >= 2:
+                    ch._connected = False
+                return False
+            ch._stop_event = MagicMock()
+            ch._stop_event.is_set.return_value = False
+            ch._stop_event.wait.side_effect = fake_wait
+
+            ch._start_heartbeat(1000)
+            ch._heartbeat_thread.join(timeout=2)
+
+        ws.close.assert_not_called()
+
+
 class ApiErrorReportingTest(unittest.TestCase):
 
     def test_a_refused_token_keeps_its_reason(self):

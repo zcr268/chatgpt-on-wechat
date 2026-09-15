@@ -41,21 +41,21 @@ function switchTasksTab(tab) {
 function refreshTasksView() {
     const btn = document.getElementById('task-refresh-btn');
     const icon = btn.querySelector('i');
-
+    
     // Add spin animation
     icon.classList.add('fa-spin');
     btn.disabled = true;
-
+    
     if (tasksActiveTab === 'records') {
         runsLoaded = false;
         loadRunsView();
     } else {
-        tasksLoaded = false;
-        const listEl = document.getElementById('tasks-list');
-        listEl.innerHTML = '';
-        loadTasksView();
+    tasksLoaded = false;
+    const listEl = document.getElementById('tasks-list');
+    listEl.innerHTML = '';
+    loadTasksView();
     }
-
+    
     // Restore button after animation ends
     setTimeout(() => {
         icon.classList.remove('fa-spin');

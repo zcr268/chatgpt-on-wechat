@@ -55,12 +55,12 @@ _DISCOVERABLE_MODELS = [
     ("ark_api_key", const.DOUBAO, const.DOUBAO_SEED_2_PRO, "Doubao"),
     ("dashscope_api_key", const.QWEN_DASHSCOPE, const.QWEN38_FLASH, "DashScope"),
     ("claude_api_key", const.CLAUDEAPI, const.CLAUDE_SONNET_5, "Claude"),
-    ("gemini_api_key", const.GEMINI, const.GEMINI_37_FLASH, "Gemini"),
+    ("gemini_api_key", const.GEMINI, const.GEMINI_38_FLASH, "Gemini"),
     ("qianfan_api_key", const.QIANFAN, const.ERNIE_45_TURBO_VL, "Qianfan"),
     ("zhipu_ai_api_key", const.ZHIPU_AI, const.GLM_4_7, "ZhipuAI"),
     ("minimax_api_key", const.MiniMax, const.MINIMAX_M2_7, "MiniMax"),
     ("mimo_api_key", const.MIMO, const.MIMO_V2_5_PRO, "MiMo"),
-    ("deepseek_api_key", const.DEEPSEEK, const.DEEPSEEK_V4_FLASH_VISION_EXP, "DeepSeek"),
+    ("deepseek_api_key", const.DEEPSEEK, const.DEEPSEEK_FLASH, "DeepSeek"),
 ]
 
 # Model name prefix → discoverable provider display_name.

@@ -1,8 +1,9 @@
 """A sub agent must not reset the parent run's engaged fallback.
 
-The fallback is sticky for a whole run: once the primary model has failed a turn
-for good, the remaining steps stay on the backup instead of re-probing a
-provider we already know is down. It is cleared once, at the top of a run.
+The fallback is an ordered chain, and it is sticky for a whole run: once the
+primary model has failed a turn for good, the remaining steps stay on whichever
+link answered instead of re-probing a provider we already know is down. It is
+cleared once, at the top of a run.
 
 That breaks when the parent delegates. A sub agent is built with
 ``model=parent.model`` — the *same* ``AgentLLMModel`` object, not a copy — and
@@ -10,7 +11,9 @@ its ``run_stream`` runs that same reset at its top. The child therefore clears
 the fallback the parent is currently relying on: when the child returns, the
 parent goes back to the primary model that just failed and burns the full retry
 budget again on every remaining step. The child loses the backup too, since it
-is running inside the same outage and starts on the dead primary itself.
+is running inside the same outage and starts on the dead primary itself — and
+with a chain it would also rewind the parent to link 1, throwing away the
+progress of every link already proven to be down.
 
 The reset has to be scoped to a *top-level* run: an outer scope that already set
 a run id means this run is nested and must leave the parent's routing alone.
@@ -22,9 +25,10 @@ from bridge.agent_bridge import AgentLLMModel
 
 FALLBACK = {
     "enabled": True,
-    "provider": "openai",
-    "model": "backup-model",
-    "max_switches": 1,
+    "chain": [
+        {"provider": "openai", "model": "backup-model"},
+        {"provider": "qianfan", "model": "backup-model-2"},
+    ],
 }
 
 
@@ -111,8 +115,8 @@ class TestSubAgentDoesNotClearParentFallback:
 
         assert model.model == "primary-model"
 
-    def test_the_reset_still_bounds_switches_per_run(self, monkeypatch, executor_cls):
-        """After a top-level reset the run earns a fresh switch."""
+    def test_the_reset_still_lets_the_next_turn_walk_the_chain(self, monkeypatch, executor_cls):
+        """After a top-level reset the run starts from link 1 again."""
         model = _model(monkeypatch, FALLBACK)
         model.use_fallback()
         _reset_like_a_run(executor_cls, model)
@@ -122,15 +126,36 @@ class TestSubAgentDoesNotClearParentFallback:
         assert model.use_fallback() is True
         assert model.model == "backup-model"
 
-    def test_a_nested_run_leaves_the_switch_budget_alone(
+    def test_a_nested_run_leaves_the_chain_position_alone(
         self, monkeypatch, executor_cls
     ):
-        """A nested run must not hand the parent extra switches either."""
+        """A nested run must not hand the parent extra links, nor rewind it."""
         model = _model(monkeypatch, FALLBACK)
         model.use_fallback()
 
         _reset_like_a_run(executor_cls, model, ambient_run_id="parent-run-123")
 
-        # Still on the backup and out of switches, so it cannot ping-pong.
+        # Still on the backup and still on link 1, so the parent's next failure
+        # advances to link 2 rather than repeating the one that just failed.
         assert model.model == "backup-model"
-        assert model.fallback_available() is False
+        assert model.fallback_available() is True
+
+    def test_a_parent_that_walked_two_links_keeps_its_position(
+        self, monkeypatch, executor_cls
+    ):
+        """The regression a chain adds: the child must not rewind the parent to
+        link 1 after it already proved link 1 was down."""
+        model = _model(monkeypatch, FALLBACK)
+        assert model.use_fallback() is True   # link 1
+        assert model.use_fallback() is True   # link 2
+        assert model.model == "backup-model-2"
+
+        _reset_like_a_run(executor_cls, model, ambient_run_id="parent-run-123")
+
+        assert model.model == "backup-model-2"
+        # The point of the test: the child's run did NOT rewind the parent to
+        # link 1. (Two passes are available now, so more advances remain —
+        # position, not exhaustion, is what this pins down.)
+        assert model.fallback_available() is True
+        assert model.use_fallback() is True
+        assert model.model == "backup-model"  # wrapped around: pass 2, link 1

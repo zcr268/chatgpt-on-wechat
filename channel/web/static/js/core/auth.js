@@ -5,6 +5,30 @@
 // =====================================================================
 // Authentication
 // =====================================================================
+// Auth gate for background pollers. When a web_password is set, the /poll and
+// /api/scheduler/runs loops must NOT run before the user logs in — otherwise
+// they fire every few seconds with no cookie and spam the server log with
+// "401 Unauthorized (credentials offered: none)". Both loops call
+// requestAuthGatedStart(); the actual start is deferred until the login/auth
+// check opens the gate via openAuthGate(). When no password is set the gate is
+// opened immediately at startup so behavior is unchanged.
+// This file loads after the pollers define their loops but before boot.js, the
+// only caller that runs at load time, so the declarations are always in scope.
+let authGateOpen = false;
+const _pendingAuthGatedStarts = [];
+function requestAuthGatedStart(fn) {
+    if (authGateOpen) { fn(); return; }
+    _pendingAuthGatedStarts.push(fn);
+}
+function openAuthGate() {
+    if (authGateOpen) return;
+    authGateOpen = true;
+    while (_pendingAuthGatedStarts.length) {
+        const fn = _pendingAuthGatedStarts.shift();
+        try { fn(); } catch (_) {}
+    }
+}
+
 function toggleLoginPassword() {
     const input = document.getElementById('login-password');
     const icon = document.querySelector('#login-toggle-pwd i');
@@ -60,6 +84,8 @@ function showLoginScreen() {
                 document.getElementById('app').classList.remove('hidden');
                 const logoutBtn = document.getElementById('logout-btn-header');
                 if (logoutBtn) logoutBtn.classList.remove('hidden');
+                // Now that the auth cookie is set, release the parked pollers.
+                openAuthGate();
                 initApp();
             } else {
                 if (currentLang === 'zh-Hant') {
@@ -132,9 +158,15 @@ function initApp() {
 
     fetch('/api/version').then(r => r.json()).then(data => {
         APP_VERSION = `v${data.version}`;
-        document.getElementById('sidebar-version').textContent = `CowAgent ${APP_VERSION}`;
+        UPDATE_META = {
+            version: data.version || '',
+            install_kind: data.install_kind || 'unknown',
+            update_supported: !!data.update_supported,
+            unsupported_reason: data.unsupported_reason || ''
+        };
+        _setSidebarVersionLabel(`CowAgent ${APP_VERSION}`);
     }).catch(() => {
-        document.getElementById('sidebar-version').textContent = 'CowAgent';
+        _setSidebarVersionLabel('CowAgent');
     });
     chatInput.focus();
 }
