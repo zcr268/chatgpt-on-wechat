@@ -627,99 +627,91 @@
 }
 .confirm-btn-ok:hover { background: #dc2626; }
 
-/* Web console one-click updater (sidebar version menu) */
-.update-panel-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    background: rgba(0, 0, 0, 0.35);
+/* Web console updater — compact up-popover on the sidebar version row */
+#sidebar-version { color: inherit; position: relative; }
+.update-version-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
 }
-.update-panel {
-    position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 81;
-    max-height: min(78vh, 640px);
-    overflow: auto;
-    background: #fff;
-    border-radius: 16px 16px 0 0;
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.18);
-    padding: 10px 20px 20px;
-    color: #1f2937;
-}
-.dark .update-panel {
+.update-menu {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: calc(100% - 4px);
+    z-index: 60;
+    padding: 5px;
+    border-radius: 10px;
     background: #171717;
-    color: #e5e7eb;
-    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 8px 30px -6px rgba(0, 0, 0, 0.5), 0 2px 8px -2px rgba(0, 0, 0, 0.4);
+    animation: slashMenuIn 0.15s ease-out;
 }
-.update-panel-handle {
-    width: 36px;
-    height: 4px;
-    border-radius: 999px;
-    background: #d1d5db;
-    margin: 4px auto 12px;
-}
-.dark .update-panel-handle { background: #3f3f46; }
-.update-panel-header {
+.update-menu.hidden { display: none; }
+
+/* Every row is a single fixed-height line: icon slot + label (+ trailing).
+   The icon slot has a fixed size so labels always start at the same x, no
+   matter how the text/state changes. */
+.update-menu-item {
+    width: 100%;
+    height: 34px;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-}
-.update-panel-header h3 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 0;
-}
-.update-panel-close {
-    border: 0;
+    gap: 9px;
+    padding: 0 9px;
+    border: none;
+    border-radius: 7px;
     background: transparent;
-    color: inherit;
-    cursor: pointer;
-    padding: 6px;
-}
-.update-current { font-size: 13px; margin: 0 0 8px; }
-.update-kind-note, .update-status-line, .update-rollback-hint {
-    font-size: 12px;
-    line-height: 1.5;
-    color: #6b7280;
-    margin: 0 0 10px;
-}
-.dark .update-kind-note, .dark .update-status-line, .dark .update-rollback-hint { color: #9ca3af; }
-.update-changelog {
+    color: #d4d4d4;
     font-size: 13px;
-    line-height: 1.55;
-    white-space: pre-wrap;
-    max-height: 240px;
-    overflow: auto;
-    background: #f8fafc;
-    border-radius: 10px;
-    padding: 12px;
-    margin: 0 0 12px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+    text-align: left;
 }
-.dark .update-changelog { background: rgba(255,255,255,0.04); }
-.update-output {
-    font-size: 11px;
-    white-space: pre-wrap;
-    max-height: 140px;
-    overflow: auto;
-    background: #0f172a;
-    color: #e2e8f0;
-    border-radius: 8px;
-    padding: 10px;
-    margin: 0 0 12px;
+.update-menu-item:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+.update-menu-icon {
+    position: relative;
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #8f8f8f;
 }
-.update-panel-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
+.update-menu-item:hover .update-menu-icon { color: #4ABE6E; }
+.update-menu-label {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
-#update-now-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
+.update-menu-item.is-new .update-menu-label { color: #ef4444; }
+.update-menu-item.is-new:hover .update-menu-label { color: #ef4444; }
+.update-menu-item.is-ok .update-menu-label { color: #4ABE6E; }
+.update-menu-ext { flex-shrink: 0; font-size: 10px; color: #6b6b6b; }
+.update-menu-item.is-disabled { cursor: default; }
+.update-menu-item.is-disabled:hover { background: transparent; color: #d4d4d4; }
+.update-menu-item.is-disabled:hover .update-menu-icon { color: #8f8f8f; }
+
+/* Red dot flagging a newer version, pinned to the top-right of the icon slot
+   so it never shifts the label (mirrors the desktop NavRail badge). */
+.update-dot {
+    position: absolute;
+    top: -1px;
+    right: -2px;
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    box-shadow: 0 0 0 1.5px #171717;
+    pointer-events: none;
 }
-#sidebar-version { color: inherit; }
+.update-dot.hidden { display: none; }
+.fa-spin-update { animation: fa-spin 0.9s linear infinite; }
 
 /* Session panel overlay (mobile only, click to close) */
 .session-panel-overlay {
@@ -4040,6 +4032,3 @@ button.composer-menu-item.joined:hover .joined-remove { display: inline; color: 
     .agent-detail.hidden { display: none; }
     .agent-detail.hidden::before { content: none; }
 }
-
-#update-now-btn.confirm-btn-ok { background: #2563eb; }
-#update-now-btn.confirm-btn-ok:hover { background: #1d4ed8; }

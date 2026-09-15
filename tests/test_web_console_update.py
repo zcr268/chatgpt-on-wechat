@@ -185,10 +185,10 @@ def test_start_rejects_unsupported_install(monkeypatch, tmp_path):
 
 
 def test_status_roundtrip(tmp_path):
-    write_update_status({"state": "running", "step": "backup"}, root=str(tmp_path))
+    write_update_status({"state": "running", "step": "git_pull"}, root=str(tmp_path))
     data = read_update_status(str(tmp_path))
     assert data["state"] == "running"
-    assert data["step"] == "backup"
+    assert data["step"] == "git_pull"
     assert (tmp_path / "tmp" / "web-update-status.json").is_file()
 
 
@@ -197,10 +197,12 @@ def test_frontend_contract():
     html = (root / "channel/web/chat.html").read_text(encoding="utf-8")
     js = (root / "channel/web/static/js/console.js").read_text(encoding="utf-8")
     py = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
-    assert 'id="update-panel"' in html
+    assert 'id="update-menu"' in html
     assert 'id="sidebar-version"' in html
-    assert "function openUpdatePanel" in js
+    assert 'id="update-dot"' in html
+    assert "function toggleUpdateMenu" in js
     assert "function checkForConsoleUpdate" in js
+    assert "function startConsoleUpdate" in js
     assert "/api/update/check" in js
     assert "/api/update/start" in js
     # Page load may read /api/version, but must not hit the GitHub check endpoint.

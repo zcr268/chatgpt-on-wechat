@@ -72,6 +72,3 @@ desktop/resources/bin/
 
 # Obsidian editor workspace (accidental commit vector; never part of the app)
 .obsidian/
-
-# Pre-update user-data archives created by the console updater
-backups/

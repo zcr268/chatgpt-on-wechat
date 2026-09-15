@@ -9,6 +9,7 @@ from version/status reads or page load.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import subprocess
 import sys
@@ -20,10 +21,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 from cli.utils import get_project_root
 
+logger = logging.getLogger(__name__)
+
 GITHUB_REPO = "zhayujie/CowAgent"
 GITHUB_RELEASES_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
 STATUS_RELATIVE = Path("tmp") / "web-update-status.json"
-BACKUP_DIRNAME = "backups"
 
 ProgressCb = Callable[[str, str], None]
 
@@ -254,38 +256,8 @@ def install_editable(root: str, python: str, quiet: bool = False) -> subprocess.
     return _run([python, "-m", "pip", "install", "-e", ".", *extra], cwd=root)
 
 
-def install_python_dependencies(root: str, python: str, quiet: bool = False) -> subprocess.CompletedProcess:
-    req = install_requirements(root, python, quiet=quiet)
-    if req.returncode != 0:
-        return req
-    return install_editable(root, python, quiet=quiet)
-
-
 def self_check_app(root: str, python: str) -> subprocess.CompletedProcess:
     return _run([python, "-c", "import app"], cwd=root)
-
-
-def create_pre_update_backup(root: Optional[str] = None) -> Dict[str, Any]:
-    from cli.commands.backup import (
-        _data_root,
-        _read_config,
-        _workspace_from_config,
-        create_backup_archive,
-    )
-
-    root_path = Path(root or get_project_root()).resolve()
-    data_root = _data_root()
-    workspace = _workspace_from_config(_read_config(data_root))
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    backup_dir = root_path / BACKUP_DIRNAME
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    output = backup_dir / f"cow-pre-update-{stamp}.zip"
-    return create_backup_archive(
-        output,
-        data_root,
-        workspace,
-        excluded_paths=[backup_dir],
-    )
 
 
 def status_path(root: Optional[str] = None) -> Path:
@@ -409,17 +381,47 @@ def _restart_unix_service(root: str, python: str, old_pid: int, log_file: str, p
     return proc.pid
 
 
+def _configure_worker_logging(log_file: str) -> None:
+    """Send the detached worker's logs to the service log file (and stderr), so
+    the whole update — every step and any failure — is visible next to the
+    normal service logs instead of being swallowed by the detached process."""
+    handlers: List[logging.Handler] = [logging.StreamHandler(sys.stderr)]
+    try:
+        Path(log_file).parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+    except OSError:
+        pass
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(levelname)s][%(asctime)s][update_service.py:%(lineno)d] - %(message)s",
+        handlers=handlers,
+        force=True,
+    )
+
+
 def run_web_update_worker() -> None:
-    """Detached entry point: backup, update, self-check, then restart."""
+    """Detached entry point: git pull + pip, self-check, then restart.
+
+    No backup step: like `cow update` / `cow restart`, this only touches the
+    git checkout. User data lives outside the repo (agent_workspace, default
+    ~/cow) and config.json is git-ignored, so `git pull` never overwrites them.
+    """
     root = get_project_root()
     status = read_update_status(root)
     python = status.get("python") or sys.executable
     old_pid = int(status.get("old_pid") or 0)
     log_file = status.get("log_file") or os.path.join(root, "nohup.out")
     pid_file = status.get("pid_file") or os.path.join(root, ".cow.pid")
+
+    _configure_worker_logging(log_file)
     previous_sha = git_rev_parse(root)
+    logger.info("[WebUpdate] ===== Update started (pid=%s) =====", os.getpid())
+    logger.info("[WebUpdate] project root: %s", root)
+    logger.info("[WebUpdate] current commit: %s", previous_sha or "(unknown)")
 
     def progress(step: str, message: str) -> None:
+        # One clear line per step so the service log reads like a checklist.
+        logger.info("[WebUpdate] step '%s': %s", step, message)
         write_update_status(
             {
                 "state": "running",
@@ -431,21 +433,6 @@ def run_web_update_worker() -> None:
         )
 
     try:
-        write_update_status(
-            {
-                "state": "running",
-                "step": "backup",
-                "message": "Creating a user-data backup",
-                "previous_sha": previous_sha,
-                "error": None,
-                "output": "",
-            },
-            root,
-        )
-        backup = create_pre_update_backup(root)
-        archive = backup.get("archive") or ""
-        write_update_status({"backup_path": archive}, root)
-
         apply_source_update(
             root,
             python=python,
@@ -454,6 +441,7 @@ def run_web_update_worker() -> None:
             restore_sha=previous_sha,
         )
 
+        logger.info("[WebUpdate] step 'restart': restarting the service")
         write_update_status(
             {
                 "state": "restarting",
@@ -463,6 +451,7 @@ def run_web_update_worker() -> None:
             root,
         )
         new_pid = _restart_unix_service(root, python, old_pid, log_file, pid_file)
+        logger.info("[WebUpdate] ===== Update complete: service restarted (new pid=%s) =====", new_pid)
         write_update_status(
             {
                 "state": "success",
@@ -473,6 +462,16 @@ def run_web_update_worker() -> None:
             root,
         )
     except UpdateError as exc:
+        # A known step failed. apply_source_update already reset the checkout to
+        # the previous commit (if git pull had succeeded), so log that too.
+        logger.error("[WebUpdate] FAILED at step '%s': %s", exc.step, exc.message)
+        if exc.output:
+            logger.error("[WebUpdate] command output:\n%s", exc.output.rstrip())
+        logger.error(
+            "[WebUpdate] the running service was left untouched; "
+            "checkout reset to %s. Fix the cause and try again.",
+            previous_sha or "(unknown)",
+        )
         write_update_status(
             {
                 "state": "failed",
@@ -485,6 +484,7 @@ def run_web_update_worker() -> None:
             root,
         )
     except Exception as exc:
+        logger.exception("[WebUpdate] FAILED with an unexpected error: %s", exc)
         write_update_status(
             {
                 "state": "failed",
@@ -518,6 +518,7 @@ def schedule_web_update(root: Optional[str] = None) -> Dict[str, Any]:
 
     from cli.commands.process import _get_log_file, _get_pid_file, _read_pid
 
+    log_file = _get_log_file()
     old_pid = _read_pid() or os.getpid()
     payload = write_update_status(
         {
@@ -526,24 +527,34 @@ def schedule_web_update(root: Optional[str] = None) -> Dict[str, Any]:
             "message": "Starting update",
             "python": sys.executable,
             "old_pid": old_pid,
-            "log_file": _get_log_file(),
+            "log_file": log_file,
             "pid_file": _get_pid_file(),
             "error": None,
             "output": "",
-            "backup_path": "",
             "started_at": datetime.now(timezone.utc).isoformat(),
         },
         root,
     )
+    logger.info(
+        "[WebUpdate] update requested from the console; spawning detached "
+        "worker. Progress will be logged here and in %s",
+        log_file,
+    )
     env = os.environ.copy()
     env["PYTHONPATH"] = root + os.pathsep + env.get("PYTHONPATH", "")
+    # Send the worker's own stderr to the service log too, so even a crash
+    # before logging is configured is not silently lost.
+    try:
+        worker_err = open(log_file, "a", encoding="utf-8")
+    except OSError:
+        worker_err = subprocess.DEVNULL
     subprocess.Popen(
         [sys.executable, "-m", "cli.update_service"],
         cwd=root,
         env=env,
         start_new_session=True,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=worker_err,
     )
     return payload
 

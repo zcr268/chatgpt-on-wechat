@@ -209,43 +209,33 @@
             </nav>
 
             <!-- Sidebar Footer -->
-            <div class="px-4 py-3 border-t border-white/10 flex-shrink-0">
+            <div class="px-4 py-3 border-t border-white/10 flex-shrink-0 relative">
                 <div class="flex items-center gap-2 text-xs text-neutral-600">
                     <i class="fas fa-circle text-[6px] text-primary-400"></i>
-                    <button type="button" id="sidebar-version" onclick="openUpdatePanel()"
-                       class="hover:text-primary-400 transition-colors duration-150 cursor-pointer bg-transparent border-0 p-0 text-left"
-                       aria-haspopup="dialog" aria-controls="update-panel"></button>
+                    <button type="button" id="sidebar-version" onclick="toggleUpdateMenu(event)"
+                       class="update-version-btn hover:text-primary-400 transition-colors duration-150 cursor-pointer bg-transparent border-0 p-0 text-left"
+                       aria-haspopup="menu" aria-controls="update-menu" aria-expanded="false"></button>
+                </div>
+
+                <!-- Up-popover menu anchored to the version row -->
+                <div id="update-menu" class="update-menu hidden" role="menu" aria-labelledby="sidebar-version">
+                    <!-- Single update entry: "检查更新" turns into "立即更新" once a
+                         newer version is found (mirrors the desktop NavRail). -->
+                    <button type="button" id="update-action-item" class="update-menu-item" role="menuitem" onclick="onUpdateActionClick()">
+                        <span class="update-menu-icon">
+                            <i id="update-action-icon" class="fas fa-arrows-rotate"></i>
+                            <span id="update-dot" class="update-dot hidden" aria-hidden="true"></span>
+                        </span>
+                        <span id="update-action-label" class="update-menu-label" data-i18n="update_check">检查更新</span>
+                    </button>
+                    <button type="button" class="update-menu-item" role="menuitem" onclick="openReleaseNotes()">
+                        <span class="update-menu-icon"><i class="fas fa-file-lines"></i></span>
+                        <span class="update-menu-label" data-i18n="update_changelog">版本说明</span>
+                        <i class="fas fa-arrow-up-right-from-square update-menu-ext"></i>
+                    </button>
                 </div>
             </div>
         </aside>
-
-
-        <div id="update-panel-overlay" class="update-panel-overlay hidden" onclick="closeUpdatePanel()"></div>
-        <div id="update-panel" class="update-panel hidden" role="dialog" aria-modal="true" aria-labelledby="update-panel-title">
-            <div class="update-panel-handle"></div>
-            <div class="update-panel-header">
-                <h3 id="update-panel-title" data-i18n="update_title">Update</h3>
-                <button type="button" class="update-panel-close" onclick="closeUpdatePanel()" data-i18n-aria-label="update_close" aria-label="Close">
-                    <i class="fas fa-times"></i>
-                </button>
-            </div>
-            <div class="update-panel-body">
-                <p class="update-current"><span data-i18n="update_current">Current version</span>: <strong id="update-current-version"></strong></p>
-                <p id="update-kind-note" class="update-kind-note"></p>
-                <div id="update-status-line" class="update-status-line"></div>
-                <div id="update-changelog" class="update-changelog hidden"></div>
-                <pre id="update-output" class="update-output hidden"></pre>
-                <p id="update-rollback-hint" class="update-rollback-hint hidden" data-i18n="update_rollback_hint"></p>
-            </div>
-            <div class="update-panel-actions">
-                <button type="button" id="update-check-btn" class="confirm-btn confirm-btn-cancel" onclick="checkForConsoleUpdate()">
-                    <span data-i18n="update_check">Check for update</span>
-                </button>
-                <button type="button" id="update-now-btn" class="confirm-btn confirm-btn-ok" onclick="startConsoleUpdate()" disabled>
-                    <span data-i18n="update_now">Update now</span>
-                </button>
-            </div>
-        </div>
 
         <!-- Mobile Overlay -->
         <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-40 hidden lg:hidden cursor-pointer" onclick="toggleSidebar()"></div>

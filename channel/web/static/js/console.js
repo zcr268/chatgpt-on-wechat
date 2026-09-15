@@ -520,21 +520,19 @@ const I18N = {
         edit_save: '保存并发送',
         edit_cancel: '取消',
         logout: '退出',
-        update_title: '更新',
-        update_current: '当前版本',
         update_check: '检查更新',
         update_checking: '正在检查…',
         update_up_to_date: '已是最新版本',
-        update_available: '发现新版本 {{version}}',
         update_now: '立即更新',
-        update_failed: '更新失败',
-        update_unsupported: '此安装方式不支持控制台一键更新',
-        update_changelog: '更新说明',
-        update_close: '关闭',
-        update_reconnect: '服务正在重启，正在重新连接…',
+        update_changelog: '版本说明',
         update_error: '检查更新失败',
+        update_unsupported: '此安装方式不支持一键更新',
+        update_confirm: '将拉取最新代码并重启服务。确认继续？',
         update_starting: '正在开始更新…',
-        update_step_backup: '备份用户数据',
+        update_in_progress: '正在更新…',
+        update_reconnect: '服务重启中，正在重新连接…',
+        update_done: '更新完成',
+        update_failed: '更新失败',
         update_step_git_pull: '拉取最新代码',
         update_step_install_deps: '安装依赖',
         update_step_install_cli: '重装 CLI',
@@ -542,10 +540,6 @@ const I18N = {
         update_step_restart: '重启服务',
         update_step_starting: '准备更新',
         update_step_done: '完成',
-        update_in_progress: '正在更新',
-        update_done: '更新完成',
-        update_confirm: '更新会先备份用户数据，再拉取代码并重启服务。确认继续？',
-        update_rollback_hint: '若新代码无法加载，更新器会回退到上一个 git 提交，并保留 backups/cow-pre-update-*.zip 供 cow restore 使用。',
     },
     'zh-Hant': {
 
@@ -1053,21 +1047,19 @@ const I18N = {
         edit_save: '儲存併傳送',
         edit_cancel: '取消',
         logout: '登出',
-        update_title: '更新',
-        update_current: '目前版本',
         update_check: '檢查更新',
         update_checking: '正在檢查…',
         update_up_to_date: '已是最新版本',
-        update_available: '發現新版本 {{version}}',
         update_now: '立即更新',
-        update_failed: '更新失敗',
-        update_unsupported: '此安裝方式不支援控制台一鍵更新',
-        update_changelog: '更新說明',
-        update_close: '關閉',
-        update_reconnect: '服務正在重啟，正在重新連線…',
+        update_changelog: '版本說明',
         update_error: '檢查更新失敗',
+        update_unsupported: '此安裝方式不支援一鍵更新',
+        update_confirm: '將拉取最新程式碼並重啟服務。確認繼續？',
         update_starting: '正在開始更新…',
-        update_step_backup: '備份使用者資料',
+        update_in_progress: '正在更新…',
+        update_reconnect: '服務重啟中，正在重新連線…',
+        update_done: '更新完成',
+        update_failed: '更新失敗',
         update_step_git_pull: '拉取最新程式碼',
         update_step_install_deps: '安裝依賴',
         update_step_install_cli: '重裝 CLI',
@@ -1075,10 +1067,6 @@ const I18N = {
         update_step_restart: '重啟服務',
         update_step_starting: '準備更新',
         update_step_done: '完成',
-        update_in_progress: '正在更新',
-        update_done: '更新完成',
-        update_confirm: '更新會先備份使用者資料，再拉取程式碼並重啟服務。確認繼續？',
-        update_rollback_hint: '若新程式碼無法載入，更新器會回退到上一個 git 提交，並保留 backups/cow-pre-update-*.zip 供 cow restore 使用。',
         },
     en: {
         console: 'Console',
@@ -1589,21 +1577,19 @@ const I18N = {
         edit_save: 'Save and send',
         edit_cancel: 'Cancel',
         logout: 'Logout',
-        update_title: 'Update',
-        update_current: 'Current version',
         update_check: 'Check for update',
         update_checking: 'Checking…',
         update_up_to_date: 'You are up to date',
-        update_available: 'New version {{version}} is available',
         update_now: 'Update now',
-        update_failed: 'Update failed',
-        update_unsupported: 'This install cannot be updated from the console',
         update_changelog: 'Release notes',
-        update_close: 'Close',
-        update_reconnect: 'The service is restarting. Reconnecting…',
         update_error: 'Could not check for updates',
+        update_unsupported: 'This install cannot self-update',
+        update_confirm: 'This will pull the latest code and restart the service. Continue?',
         update_starting: 'Starting update…',
-        update_step_backup: 'Backing up user data',
+        update_in_progress: 'Updating…',
+        update_reconnect: 'Service is restarting. Reconnecting…',
+        update_done: 'Update complete',
+        update_failed: 'Update failed',
         update_step_git_pull: 'Pulling latest code',
         update_step_install_deps: 'Installing dependencies',
         update_step_install_cli: 'Reinstalling the CLI',
@@ -1611,10 +1597,6 @@ const I18N = {
         update_step_restart: 'Restarting the service',
         update_step_starting: 'Preparing the update',
         update_step_done: 'Done',
-        update_in_progress: 'Updating',
-        update_done: 'Update complete',
-        update_confirm: 'This will back up user data, pull the latest code, and restart the service. Continue?',
-        update_rollback_hint: 'If the new code fails to load, the updater restores the previous git commit and keeps backups/cow-pre-update-*.zip for cow restore.',
     }
 };
 
@@ -16354,125 +16336,159 @@ window.fetch = function(...args) {
 };
 
 
+const GITHUB_RELEASES_URL = 'https://github.com/zhayujie/CowAgent/releases';
 let UPDATE_META = { version: '', install_kind: 'unknown', update_supported: false, unsupported_reason: '' };
 let UPDATE_CHECK = null;
+let _updateChecking = false;
+let _updateRunning = false;
 let _updatePollTimer = null;
 let _updateReconnectTimer = null;
 
-function openUpdatePanel() {
-    const overlay = document.getElementById('update-panel-overlay');
-    const panel = document.getElementById('update-panel');
-    if (!overlay || !panel) return;
-    overlay.classList.remove('hidden');
-    panel.classList.remove('hidden');
-    _renderUpdatePanel();
-}
-
-function closeUpdatePanel() {
-    const overlay = document.getElementById('update-panel-overlay');
-    const panel = document.getElementById('update-panel');
-    if (overlay) overlay.classList.add('hidden');
-    if (panel) panel.classList.add('hidden');
-}
-
-function _setUpdateStatus(text) {
-    const el = document.getElementById('update-status-line');
-    if (el) el.textContent = text || '';
-}
-
-function _escapeUpdateText(value) {
-    return String(value || '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-}
-
-function _renderChangelog(releases) {
-    const box = document.getElementById('update-changelog');
-    if (!box) return;
-    if (!releases || !releases.length) {
-        box.classList.add('hidden');
-        box.innerHTML = '';
-        return;
-    }
-    box.classList.remove('hidden');
-    box.innerHTML = releases.map(item => {
-        const title = _escapeUpdateText(item.tag || item.name || '');
-        const body = _escapeUpdateText(item.body || '');
-        return `<section><h4>${title}</h4><div>${body}</div></section>`;
-    }).join('');
-}
-
-function _renderUpdatePanel() {
-    const versionEl = document.getElementById('update-current-version');
-    if (versionEl) versionEl.textContent = UPDATE_META.version ? `v${UPDATE_META.version}` : (APP_VERSION || '');
-    const note = document.getElementById('update-kind-note');
-    const nowBtn = document.getElementById('update-now-btn');
-    const hint = document.getElementById('update-rollback-hint');
-    if (note) {
-        note.textContent = UPDATE_META.update_supported
-            ? ''
-            : (UPDATE_META.unsupported_reason || t('update_unsupported'));
-    }
-    if (hint) hint.classList.toggle('hidden', !UPDATE_META.update_supported);
-    if (nowBtn) nowBtn.disabled = !(UPDATE_META.update_supported && UPDATE_CHECK && UPDATE_CHECK.up_to_date === false);
-    if (UPDATE_CHECK && UPDATE_CHECK.up_to_date) {
-        _setUpdateStatus(t('update_up_to_date'));
-        const history = [];
-        if (UPDATE_CHECK.current_release) history.push(UPDATE_CHECK.current_release);
-        _renderChangelog(history);
-    } else if (UPDATE_CHECK && UPDATE_CHECK.newer_releases && UPDATE_CHECK.newer_releases.length) {
-        const latest = UPDATE_CHECK.latest && UPDATE_CHECK.latest.tag;
-        _setUpdateStatus(t('update_available').replace('{{version}}', latest || ''));
-        _renderChangelog(UPDATE_CHECK.newer_releases);
+function toggleUpdateMenu(event) {
+    if (event) event.stopPropagation();
+    const menu = document.getElementById('update-menu');
+    const btn = document.getElementById('sidebar-version');
+    if (!menu) return;
+    const willOpen = menu.classList.contains('hidden');
+    if (willOpen) {
+        menu.classList.remove('hidden');
+        if (btn) btn.setAttribute('aria-expanded', 'true');
+        setTimeout(() => document.addEventListener('click', _closeUpdateMenuOnOutside), 0);
+    } else {
+        closeUpdateMenu();
     }
 }
 
+function closeUpdateMenu() {
+    const menu = document.getElementById('update-menu');
+    const btn = document.getElementById('sidebar-version');
+    if (menu) menu.classList.add('hidden');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+    document.removeEventListener('click', _closeUpdateMenuOnOutside);
+}
+
+function _closeUpdateMenuOnOutside(event) {
+    const menu = document.getElementById('update-menu');
+    const btn = document.getElementById('sidebar-version');
+    if (!menu) return;
+    if (menu.contains(event.target) || (btn && btn.contains(event.target))) return;
+    closeUpdateMenu();
+}
+
+// Set the sidebar version text. The red dot lives outside this button (as a
+// footer child), so plain textContent is safe.
+function _setSidebarVersionLabel(text) {
+    const btn = document.getElementById('sidebar-version');
+    if (btn) btn.textContent = text || '';
+}
+
+// "版本说明": open the GitHub releases page (keeps the old click-through behaviour).
+function openReleaseNotes() {
+    window.open(GITHUB_RELEASES_URL, '_blank', 'noopener,noreferrer');
+    closeUpdateMenu();
+}
+
+// Single update entry, mirroring the desktop NavRail: one row whose icon +
+// label + red dot are driven by the current update state. Keeping it a single
+// fixed-height line means the icon and label never fall out of alignment.
+//   idle        -> "检查更新"           (click = check)
+//   checking    -> "正在检查…" (spinner)
+//   up_to_date  -> "已是最新版本"
+//   available   -> "立即更新" + red dot (click = update)
+//   updating    -> current step label   (spinner, not clickable)
+//   failed      -> "更新失败" + retry
+let _updateUiState = 'idle';
+
+function _renderUpdateAction(state, label, opts) {
+    opts = opts || {};
+    _updateUiState = state;
+    const item = document.getElementById('update-action-item');
+    const icon = document.getElementById('update-action-icon');
+    const text = document.getElementById('update-action-label');
+    const dot = document.getElementById('update-dot');
+    if (!item || !icon || !text) return;
+
+    text.textContent = label;
+    item.classList.toggle('is-new', state === 'available');
+    item.classList.toggle('is-ok', state === 'up_to_date');
+    item.classList.toggle('is-disabled', !!opts.disabled);
+    item.disabled = !!opts.disabled;
+    if (dot) dot.classList.toggle('hidden', state !== 'available');
+
+    // Swap the leading icon per state.
+    const iconClass = {
+        idle: 'fas fa-arrows-rotate',
+        checking: 'fas fa-arrows-rotate fa-spin-update',
+        up_to_date: 'fas fa-circle-check',
+        available: 'fas fa-download',
+        updating: 'fas fa-arrows-rotate fa-spin-update',
+        failed: 'fas fa-triangle-exclamation'
+    }[state] || 'fas fa-arrows-rotate';
+    icon.className = iconClass;
+}
+
+// The single row's click behaviour depends on the current state.
+function onUpdateActionClick() {
+    if (_updateChecking || _updateRunning) return;
+    if (_updateUiState === 'available') {
+        startConsoleUpdate();
+    } else {
+        checkForConsoleUpdate();
+    }
+}
+
+// "检查更新": the only action that contacts GitHub. Turns the row into
+// "立即更新" (+ red dot) when a newer version exists.
 function checkForConsoleUpdate() {
-    const btn = document.getElementById('update-check-btn');
-    if (btn) btn.disabled = true;
-    _setUpdateStatus(t('update_checking'));
+    if (_updateChecking || _updateRunning) return;
+    _updateChecking = true;
+    _renderUpdateAction('checking', t('update_checking'), { disabled: true });
     fetch('/api/update/check', { method: 'POST' })
         .then(r => r.json())
         .then(data => {
             if (data.status === 'error') {
-                _setUpdateStatus(data.message || t('update_error'));
+                _renderUpdateAction('failed', data.message || t('update_error'));
                 return;
             }
             UPDATE_CHECK = data;
-            if (data.install_kind) UPDATE_META.install_kind = data.install_kind;
             if (typeof data.update_supported === 'boolean') UPDATE_META.update_supported = data.update_supported;
-            if (data.unsupported_reason !== undefined) UPDATE_META.unsupported_reason = data.unsupported_reason || '';
-            _renderUpdatePanel();
+            if (data.install_kind) UPDATE_META.install_kind = data.install_kind;
+            if (data.up_to_date) {
+                _renderUpdateAction('up_to_date', t('update_up_to_date'));
+            } else if (UPDATE_META.update_supported) {
+                _renderUpdateAction('available', t('update_now'));
+            } else {
+                // Docker / packaged / Windows: a newer version exists but this
+                // install can't self-update, so keep the dot but disable the row.
+                const reason = UPDATE_META.unsupported_reason || t('update_unsupported');
+                _renderUpdateAction('available', reason, { disabled: true });
+            }
         })
-        .catch(() => _setUpdateStatus(t('update_error')))
-        .finally(() => { if (btn) btn.disabled = false; });
+        .catch(() => _renderUpdateAction('failed', t('update_error')))
+        .finally(() => { _updateChecking = false; });
 }
 
+// "立即更新": reuse the cow-update path (git pull + pip + restart) via the
+// detached worker, then poll progress and auto-reconnect when it comes back.
 function startConsoleUpdate() {
-    if (!UPDATE_META.update_supported) return;
-    showConfirmModal(t('update_title'), t('update_confirm'), () => {
-        const nowBtn = document.getElementById('update-now-btn');
-        if (nowBtn) nowBtn.disabled = true;
-        _setUpdateStatus(t('update_starting'));
+    if (_updateRunning) return;
+    if (!UPDATE_META.update_supported || !(UPDATE_CHECK && UPDATE_CHECK.up_to_date === false)) return;
+    showConfirmModal(t('update_now'), t('update_confirm'), () => {
+        _updateRunning = true;
+        _renderUpdateAction('updating', t('update_starting'), { disabled: true });
         fetch('/api/update/start', { method: 'POST' })
             .then(r => r.json())
             .then(data => {
                 if (data.status === 'error') {
-                    _setUpdateStatus(data.message || t('update_failed'));
-                    const out = document.getElementById('update-output');
-                    if (out && data.output) {
-                        out.textContent = data.output;
-                        out.classList.remove('hidden');
-                    }
-                    if (nowBtn) nowBtn.disabled = false;
+                    _renderUpdateAction('failed', `${t('update_failed')}: ${data.message || ''}`);
+                    _updateRunning = false;
                     return;
                 }
                 _pollUpdateStatus();
             })
             .catch(() => {
-                _setUpdateStatus(t('update_failed'));
-                if (nowBtn) nowBtn.disabled = false;
+                _renderUpdateAction('failed', t('update_failed'));
+                _updateRunning = false;
             });
     });
 }
@@ -16487,33 +16503,32 @@ function _pollUpdateStatus() {
             })
             .then(data => {
                 const stepKey = data.step ? `update_step_${data.step}` : '';
-                const stepLabel = (stepKey && I18N[currentLang] && I18N[currentLang][stepKey]) ? t(stepKey) : (data.message || t('update_in_progress'));
+                const stepLabel = (stepKey && I18N[currentLang] && I18N[currentLang][stepKey])
+                    ? t(stepKey)
+                    : (data.message || t('update_in_progress'));
                 if (data.state === 'failed') {
                     clearInterval(_updatePollTimer);
-                    _setUpdateStatus(`${t('update_failed')}: ${data.error || data.message || ''}`);
-                    const out = document.getElementById('update-output');
-                    if (out && data.output) {
-                        out.textContent = data.output;
-                        out.classList.remove('hidden');
-                    }
-                    const nowBtn = document.getElementById('update-now-btn');
-                    if (nowBtn) nowBtn.disabled = !UPDATE_META.update_supported;
+                    _updatePollTimer = null;
+                    _renderUpdateAction('failed', `${t('update_failed')}: ${data.error || data.message || ''}`);
+                    _updateRunning = false;
                     return;
                 }
                 if (data.state === 'success') {
                     clearInterval(_updatePollTimer);
-                    _setUpdateStatus(t('update_done'));
-                    _waitForBackend(data);
+                    _updatePollTimer = null;
+                    _renderUpdateAction('updating', t('update_reconnect'), { disabled: true });
+                    _waitForBackend();
                     return;
                 }
                 if (data.state === 'restarting') {
-                    _setUpdateStatus(t('update_reconnect'));
+                    _renderUpdateAction('updating', t('update_reconnect'), { disabled: true });
                     return;
                 }
-                _setUpdateStatus(stepLabel);
+                _renderUpdateAction('updating', stepLabel, { disabled: true });
             })
             .catch(() => {
-                _setUpdateStatus(t('update_reconnect'));
+                // The old process was replaced mid-poll; switch to reconnecting.
+                _renderUpdateAction('updating', t('update_reconnect'), { disabled: true });
                 _waitForBackend();
             });
     }, 1500);
@@ -16539,11 +16554,10 @@ function _waitForBackend() {
                     unsupported_reason: data.unsupported_reason || ''
                 };
                 APP_VERSION = `v${data.version}`;
-                const label = document.getElementById('sidebar-version');
-                if (label) label.textContent = `CowAgent ${APP_VERSION}`;
-                UPDATE_CHECK = { up_to_date: true, newer_releases: [], current_release: null };
-                _renderUpdatePanel();
-                _setUpdateStatus(t('update_done'));
+                _setSidebarVersionLabel(`CowAgent ${APP_VERSION}`);
+                UPDATE_CHECK = { up_to_date: true, newer_releases: [], latest: null, current_release: null };
+                _updateRunning = false;
+                _renderUpdateAction('up_to_date', t('update_done'));
             })
             .catch(() => {});
     }, 1500);
@@ -16572,9 +16586,9 @@ function initApp() {
             update_supported: !!data.update_supported,
             unsupported_reason: data.unsupported_reason || ''
         };
-        document.getElementById('sidebar-version').textContent = `CowAgent ${APP_VERSION}`;
+        _setSidebarVersionLabel(`CowAgent ${APP_VERSION}`);
     }).catch(() => {
-        document.getElementById('sidebar-version').textContent = 'CowAgent';
+        _setSidebarVersionLabel('CowAgent');
     });
     chatInput.focus();
 }
