@@ -824,11 +824,29 @@ class CloudClient(LinkAIClient):
 
         logger.info(f"[CloudClient] on_workspace: action={action}, path={payload.get('path', '')}")
 
-        svc = self.workspace_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._workspace_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "WorkspaceService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _workspace_service_for(self, agent_id):
+        """A WorkspaceService rooted at the requested agent's workspace. Falls
+        back to the process-wide default-agent service when no agent is
+        requested, so single-agent installs are unaffected."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.workspace_service
+        try:
+            from agent.workspace.service import WorkspaceService
+            return WorkspaceService(str(workspace))
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build WorkspaceService for agent: {e}")
+            return self.workspace_service
 
     # ------------------------------------------------------------------
     # chat callback
