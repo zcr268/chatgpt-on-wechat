@@ -741,6 +741,7 @@ function switchKnowledgeTab(tab) {
             loadKnowledgeGraph();
         }
     }
+    routeNoteTab('knowledge', tab);
 }
 
 let _d3LoadPromise = null;

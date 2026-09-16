@@ -115,6 +115,46 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 `npm install` 过就有），所以没有放进 Python 测试套件。`--stack-size` 是必要的：
 默认栈不够遍历这个体量的 AST。
 
+## 地址栏路由
+
+视图和标签页反映在 `location.hash` 上：`#config`、`#config/models`。
+刷新后回到原处，链接可以分享，浏览器的前进后退在视图之间移动。
+
+**用 hash 而不是路径**，是因为页面里所有资源引用都是相对路径（`assets/js/...`）。
+`/chat/config` 这样的路径路由会让它们相对 `/chat/` 解析，整页资源 404。
+用 hash 则后端一行都不用改，反向代理和桌面版也不需要额外配置。
+
+路由只记到视图和标签页两层。再深的状态（当前会话、编辑器打开的文件）
+刻意不进 URL——它们已经由 localStorage 恢复，写进 URL 会让地址栏在
+每次点击会话列表时都变化。
+
+三条规则决定历史记录长什么样：
+
+- **切换视图**压入一条记录，所以后退回到上一个视图。
+- **切换标签页**替换当前记录而不是新增，后退因此直接离开该视图，
+  而不用把用户在里面点过的每个标签页倒着走一遍。
+- **重复进入当前视图**（再点一次已选中的侧边栏项）同样是替换，
+  否则连点几次之后按后退会像是没有反应。
+
+写地址栏一律走 `pushState`/`replaceState`，它们不触发 `hashchange`，
+因此写入不会再绕回来被当成一次导航。反过来，前进后退触发的 `hashchange`
+是唯一的入口，`_routeApplying` 标记在应用路由期间关掉写入，避免重复记录。
+
+未保存的编辑仍然拦得住：后退时地址栏已经先变了，`navigateTo` 返回 `false`
+表示守卫拦下了这次跳转，路由随即用 `replaceState` 把地址栏放回原处，
+等用户确认丢弃之后再真正跳转。
+
+这套行为由 `channel/web/tools/check-router.mjs` 验证——它用桩替掉
+`location`/`history`/DOM，把路由器单独跑一遍上述场景，检查历史记录的条数和内容。
+不需要任何依赖和浏览器，改动路由后跑一下：
+
+```
+node channel/web/tools/check-router.mjs
+```
+
+Python 测试只能钉住路由被正确接上（标签页词汇和 DOM 一致、每个标签页切换都
+向路由器报备、初始路由在鉴权之后才应用），见 `tests/test_web_console_routing.py`。
+
 ### core/ — 跨视图基础设施
 
 | 文件 | 行数 | 职责 |
@@ -126,8 +166,9 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 | `core/markdown.js` | 287 | markdown-it 初始化、图片/视频/代码块渲染 |
 | `core/confirm.js` | 29 | 脚本化确认对话框，各视图共用 |
 | `core/notify.js` | 322 | 任务完成通知与通知权限 |
-| `core/nav.js` | 131 | `navigateTo` 路由与各视图的懒加载钩子 |
-| `core/auth.js` | 169 | 登录页、登出、`fetch` 的 401 拦截、后台轮询的鉴权闸门。**排在最后，见下** |
+| `core/nav.js` | 147 | `navigateTo` 视图切换与各视图的懒加载钩子 |
+| `core/router.js` | 110 | 地址栏路由：`#view/tab` 的解析、写入与前进后退，见下 |
+| `core/auth.js` | 177 | 登录页、登出、`fetch` 的 401 拦截、后台轮询的鉴权闸门。**排在最后，见下** |
 
 ### chat/ — 对话视图
 
