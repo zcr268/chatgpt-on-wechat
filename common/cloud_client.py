@@ -870,10 +870,21 @@ class CloudClient(LinkAIClient):
         # single-agent installs keep working unchanged.
         agent_id = payload.get("agent_id") or payload.get("agentId")
         agent_id = self._resolve_chat_agent_id(agent_id)
+        # Shared conversation: the roster on it and the teammate addressed for
+        # this turn. Both optional; absent keeps the single-agent behaviour.
+        speaker_agent_id = self._resolve_optional_agent_id(
+            payload.get("speaker_agent_id") or payload.get("speakerAgentId")
+        )
+        members = payload.get("members")
+        if isinstance(members, list):
+            members = [m for m in (self._resolve_optional_agent_id(x) for x in members) if m]
+        else:
+            members = None
         if not session_id.startswith("session_"):
             session_id = f"session_{session_id}"
         logger.info(f"[CloudClient] on_chat: session={session_id}, channel={channel_type}, "
-                    f"user_id={user_id}, agent_id={agent_id}, query={query[:80]}")
+                    f"user_id={user_id}, agent_id={agent_id}, speaker={speaker_agent_id}, "
+                    f"members={members}, query={query[:80]}")
 
         # Cancel / steer fast-path. These are NOT new agent turns — they act on
         # the run already in flight for this session. The web channel intercepts
@@ -914,7 +925,43 @@ class CloudClient(LinkAIClient):
                 raise RuntimeError("ChatService not available")
 
             svc.run(query=query, session_id=session_id, channel_type=channel_type,
-                    send_chunk_fn=send_chunk_fn, agent_id=agent_id)
+                    send_chunk_fn=self._aliasing_sender(send_chunk_fn), agent_id=agent_id,
+                    speaker_agent_id=speaker_agent_id, members=members)
+
+    def _aliasing_sender(self, send_chunk_fn):
+        """Report the default agent to remote callers by its reserved alias,
+        matching how they address it (see AgentRegistry.get_addressed)."""
+        def send(chunk):
+            if isinstance(chunk, dict) and chunk.get("chunk_type") == "speaker":
+                chunk = {**chunk, "agent_id": self._alias_agent_id(chunk.get("agent_id"))}
+            send_chunk_fn(chunk)
+        return send
+
+    @staticmethod
+    def _alias_agent_id(agent_id):
+        """The default agent's id as seen from outside: the reserved alias."""
+        try:
+            from agent.registry import DEFAULT_AGENT_ALIAS, get_agent_registry
+            if agent_id and agent_id == get_agent_registry().default_agent_id:
+                return DEFAULT_AGENT_ALIAS
+        except Exception:
+            pass
+        return agent_id
+
+    def _resolve_optional_agent_id(self, agent_id):
+        """Map an addressed id (including the reserved ``"default"`` alias) to
+        the configured agent id, or None when absent or unknown. Unknown
+        teammates are dropped rather than failing the turn: the owner still
+        answers, which is what ``_resolve_speaker`` does for them anyway."""
+        agent_id = str(agent_id).strip() if agent_id is not None else ""
+        if not agent_id:
+            return None
+        try:
+            from agent.registry import get_agent_registry
+            return get_agent_registry().get_addressed(agent_id, require_enabled=False).id
+        except Exception:
+            logger.warning(f"[CloudClient] unknown agent id ignored: {agent_id}")
+            return None
 
     def _resolve_chat_agent_id(self, agent_id):
         """Validate a requested agent id, or fall back to the default agent
@@ -1091,6 +1138,10 @@ class CloudClient(LinkAIClient):
                 page=page,
                 page_size=page_size,
             )
+            for turn in result.get("messages") or []:
+                extras = turn.get("extras") if isinstance(turn, dict) else None
+                if isinstance(extras, dict) and extras.get("agent_id"):
+                    turn["agent_id"] = self._alias_agent_id(extras["agent_id"])
             return {
                 "action": "query",
                 "payload": {"status": "success", **result},
