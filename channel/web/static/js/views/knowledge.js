@@ -751,7 +751,7 @@ function ensureD3Loaded() {
     if (_d3LoadPromise) return _d3LoadPromise;
     _d3LoadPromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'assets/vendor/d3/d3.min.js';
+        script.src = '/assets/vendor/d3/d3.min.js';
         script.async = true;
         script.onload = () => resolve(window.d3);
         script.onerror = () => reject(new Error('Failed to load d3'));

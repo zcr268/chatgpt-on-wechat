@@ -117,12 +117,23 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 
 ## 地址栏路由
 
-视图和标签页反映在 `location.hash` 上：`#config`、`#config/models`。
-刷新后回到原处，链接可以分享，浏览器的前进后退在视图之间移动。
+控制台就是 `/` 这个应用本身，视图和标签页是它下面的路径：
+`/agents`、`/settings`、`/settings/models`。刷新后回到原处，链接可以分享，
+浏览器的前进后退在视图之间移动。`/chat` 是旧地址，保留为到 `/` 的重定向。
 
-**用 hash 而不是路径**，是因为页面里所有资源引用都是相对路径（`assets/js/...`）。
-`/chat/config` 这样的路径路由会让它们相对 `/chat/` 解析，整页资源 404。
-用 hash 则后端一行都不用改，反向代理和桌面版也不需要额外配置。
+**路由名不总是等于视图的内部 id。** 设置页的内部 id 是 `config`，但 URL 是
+`/settings`——`/config` 已经是后端的配置接口，网页控制台和桌面客户端都在调它。
+`web_channel.py` 的 URL 表把这些路径指向同一个外壳，前端路由再打开对应视图；
+两张表必须保持一致，`tests/test_web_console_routing.py` 会对比它们。
+
+视图路径排在 URL 表的**最后**：web.py 取第一个匹配，所以任何视图名都不可能
+盖住前面的接口路由。反过来，新增接口时也不用担心撞上视图名。
+
+**页面里的资源引用必须是绝对路径**（`/assets/js/...`）。这是路径路由的前提：
+相对引用在 `/settings/models` 下会被解析成 `/settings/assets/...` 而整页 404。
+这不构成对反向代理子路径挂载（例如 `https://host/cow/`）的妥协：控制台本来就
+挂不上去，它的每一处接口调用写的都是 `/api/...` 这样的绝对路径。要支持子路径，
+需要的是给全部接口和资源引用加统一前缀，而不是把资源引用改回相对路径。
 
 路由只记到视图和标签页两层。再深的状态（当前会话、编辑器打开的文件）
 刻意不进 URL——它们已经由 localStorage 恢复，写进 URL 会让地址栏在
@@ -136,8 +147,8 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 - **重复进入当前视图**（再点一次已选中的侧边栏项）同样是替换，
   否则连点几次之后按后退会像是没有反应。
 
-写地址栏一律走 `pushState`/`replaceState`，它们不触发 `hashchange`，
-因此写入不会再绕回来被当成一次导航。反过来，前进后退触发的 `hashchange`
+写地址栏一律走 `pushState`/`replaceState`，它们不触发 `popstate`，
+因此写入不会再绕回来被当成一次导航。反过来，前进后退触发的 `popstate`
 是唯一的入口，`_routeApplying` 标记在应用路由期间关掉写入，避免重复记录。
 
 未保存的编辑仍然拦得住：后退时地址栏已经先变了，`navigateTo` 返回 `false`
