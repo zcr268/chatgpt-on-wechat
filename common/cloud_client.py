@@ -325,6 +325,41 @@ class CloudClient(LinkAIClient):
         logger.info(f"[CloudClient] Agent action: {action}, id={agent_id}")
         if action == "agent_create":
             self._handle_agent_create(agent_id, data)
+        elif action == "agent_update":
+            self._handle_agent_update(agent_id, data)
+        elif action == "agent_delete":
+            self._handle_agent_delete(agent_id)
+
+    def _handle_agent_update(self, agent_id: str, data: dict):
+        """Apply a rename / model change to a live agent."""
+        fields = {}
+        if data.get("name"):
+            fields["name"] = str(data.get("name")).strip()
+        if data.get("model"):
+            fields["model"] = data.get("model")
+        if not fields:
+            return
+        try:
+            from agent.admin import get_agent_admin_service
+            service = get_agent_admin_service()
+            service.update_agent(agent_id, **fields)
+            self._reload_agents(service)
+            logger.info(f"[CloudClient] Agent '{agent_id}' updated: {list(fields)}")
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to update agent '{agent_id}': {e}", exc_info=True)
+
+    def _handle_agent_delete(self, agent_id: str):
+        """Remove an agent, its workspace and roster entry, then re-point the
+        live runtime. The default agent is the instance itself and is refused
+        by the admin service."""
+        try:
+            from agent.admin import get_agent_admin_service
+            service = get_agent_admin_service()
+            service.delete_agent(agent_id)
+            self._reload_agents(service)
+            logger.info(f"[CloudClient] Agent '{agent_id}' deleted")
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to delete agent '{agent_id}': {e}", exc_info=True)
 
     def _handle_agent_create(self, agent_id: str, data: dict):
         """Add a new agent and re-point the live runtime, so it can answer
