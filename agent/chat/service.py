@@ -76,9 +76,10 @@ class ChatService:
             self.agent_bridge._seed_team_members(session_id, resolved_agent_id, context)
             speaker_id = self.agent_bridge._resolve_speaker(resolved_agent_id, context)
             is_team = speaker_id != resolved_agent_id or self._has_team(session_id, resolved_agent_id)
-            if speaker_id != resolved_agent_id:
-                # What the model is asked once the address has been acted on;
-                # the transcript keeps the verbatim query.
+            if speaker_agent_id:
+                # What the model is asked once the address has been acted on
+                # (also when the owner itself was named); the transcript keeps
+                # the verbatim query.
                 model_query = self.agent_bridge._strip_address(query, speaker_id)
             agent = self.agent_bridge.get_agent(
                 session_id=session_id,
