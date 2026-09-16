@@ -137,8 +137,11 @@ datas = [
     (rp('cli'), 'cli'),
     # Web console served on the backend port: ship chat.html plus its static
     # assets (~1.9MB) so the browser-based console works as a debug/fallback
-    # entry alongside the Electron UI.
+    # entry alongside the Electron UI. chat.html is only a shell: channel/web/
+    # template.py assembles it from templates/ on every request, so that
+    # directory has to travel too or the console answers with a 500.
     (rp('channel', 'web', 'chat.html'), 'channel/web'),
+    (rp('channel', 'web', 'templates'), 'channel/web/templates'),
     (rp('channel', 'web', 'static'), 'channel/web/static'),
 ]
 

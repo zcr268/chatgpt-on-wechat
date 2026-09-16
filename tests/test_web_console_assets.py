@@ -164,6 +164,36 @@ def test_asking_for_the_old_console_without_a_snapshot_says_how_to_get_one():
     assert "<!doctype html>" in page.lower()
 
 
+def test_the_desktop_bundle_ships_everything_the_page_is_assembled_from():
+    """The desktop client freezes the backend with PyInstaller, which ships
+    only what the spec lists. chat.html is now a shell that template.py
+    assembles from templates/ on every request, so a directory missing from
+    the spec is not a missing file at build time -- it is a 500 from the
+    console inside the shipped app, where nobody runs the test suite."""
+    spec_path = os.path.join(WEB, "..", "..", "desktop", "build",
+                             "cowagent-backend.spec")
+    with open(spec_path, encoding="utf-8") as f:
+        spec = f.read()
+
+    # datas entries are written as rp('channel', 'web', <name>); whole
+    # directories travel with everything under them.
+    bundled = set(re.findall(r"rp\('channel', 'web', '([^']+)'\)", spec))
+
+    page_source = os.path.join(WEB, "chat.html")
+    with open(page_source, encoding="utf-8") as f:
+        shell = f.read()
+
+    needed = {ref.split("/")[0]
+              for ref in re.findall(r"<!--#include\s+([^\s>]+?)\s*-->", shell)}
+    needed.update(ref.split("/")[0]
+                  for ref in re.findall(r'assets/((?:js|css)/[^"?]+)', shell))
+    needed.add("chat.html")
+    # assets/ is served out of static/, which is where the files actually live.
+    needed = {"static" if n in ("js", "css") else n for n in needed}
+
+    assert not needed - bundled, sorted(needed - bundled)
+
+
 def test_the_split_scripts_do_not_declare_the_same_global_twice():
     """Every top-level declaration lands on `window`, which is what the inline
     onclick handlers in generated markup reach. Two scripts declaring the same
