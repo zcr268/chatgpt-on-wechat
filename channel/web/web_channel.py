@@ -1145,6 +1145,17 @@ class WebChannel(ChatChannel):
                 if delta:
                     publish({"type": "delta", "content": delta})
 
+            elif event_type == "tool_retrieval":
+                payload = {"type": "tool_retrieval"}
+                for key in (
+                    "mode", "total_mcp_tools", "selected_mcp_tools",
+                    "builtin_tools", "top_k", "candidate_count",
+                    "selected_tools", "ranked_tools", "fallback_reason",
+                ):
+                    if key in data:
+                        payload[key] = data[key]
+                publish(payload)
+
             elif event_type == "tool_execution_start":
                 tool_name = data.get("tool_name", "tool")
                 arguments = data.get("arguments", {})

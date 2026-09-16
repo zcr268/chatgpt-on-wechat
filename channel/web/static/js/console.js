@@ -515,6 +515,10 @@ const I18N = {
         confirm_cancel: '取消',
         error_send: '发送失败，请稍后再试。', error_timeout: '请求超时，请再试一次。',
         thinking_in_progress: '思考中...', thinking_done: '已深度思考', thinking_duration: '耗时',
+        retrieval_selected: '已选择 {selected}/{total} 个 MCP 工具',
+        retrieval_fallback: '使用全部 {total} 个 MCP 工具',
+        retrieval_selected_tools: '选中的工具', retrieval_ranking: '相关性排名',
+        retrieval_fallback_reason: '降级原因',
         edit_message: '编辑消息',
         regenerate_response: '重新生成',
         edit_save: '保存并发送',
@@ -1042,6 +1046,10 @@ const I18N = {
         confirm_cancel: '取消',
         error_send: '傳送失敗，請稍後再試。', error_timeout: '請求超時，請再試一次。',
         thinking_in_progress: '思考中...', thinking_done: '已深度思考', thinking_duration: '耗時',
+        retrieval_selected: '已選擇 {selected}/{total} 個 MCP 工具',
+        retrieval_fallback: '使用全部 {total} 個 MCP 工具',
+        retrieval_selected_tools: '已選工具', retrieval_ranking: '相關性排名',
+        retrieval_fallback_reason: '降級原因',
         edit_message: '編輯訊息',
         regenerate_response: '重新生成',
         edit_save: '儲存併傳送',
@@ -1572,6 +1580,10 @@ const I18N = {
         confirm_cancel: 'Cancel',
         error_send: 'Failed to send. Please try again.', error_timeout: 'Request timeout. Please try again.',
         thinking_in_progress: 'Thinking...', thinking_done: 'Thought', thinking_duration: 'Duration',
+        retrieval_selected: 'Selected {selected}/{total} MCP tools',
+        retrieval_fallback: 'Using all {total} MCP tools',
+        retrieval_selected_tools: 'Selected tools', retrieval_ranking: 'Relevance ranking',
+        retrieval_fallback_reason: 'Fallback reason',
         edit_message: 'Edit message',
         regenerate_response: 'Regenerate',
         edit_save: 'Save and send',
@@ -6894,6 +6906,53 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     contentEl.innerHTML = '';
                     scrollChatToBottom();
                 }
+
+            } else if (item.type === 'tool_retrieval') {
+                ensureBotEl();
+                const fallback = item.mode === 'fallback';
+                const selected = Array.isArray(item.selected_tools) ? item.selected_tools : [];
+                const ranked = Array.isArray(item.ranked_tools) ? item.ranked_tools : [];
+                const summary = (fallback ? t('retrieval_fallback') : t('retrieval_selected'))
+                    .replace('{selected}', String(item.selected_mcp_tools || 0))
+                    .replace('{total}', String(item.total_mcp_tools || 0));
+                const details = [];
+                if (!fallback && selected.length) {
+                    details.push(`
+                        <div class="tool-detail-section">
+                            <div class="tool-detail-label">${t('retrieval_selected_tools')}</div>
+                            <pre class="tool-detail-content">${escapeHtml(selected.join(', '))}</pre>
+                        </div>`);
+                }
+                if (!fallback && ranked.length) {
+                    const ranking = ranked.map(tool => {
+                        const score = Number(tool.score);
+                        return `${tool.name} (${Number.isFinite(score) ? score.toFixed(3) : '0.000'})`;
+                    }).join(', ');
+                    details.push(`
+                        <div class="tool-detail-section">
+                            <div class="tool-detail-label">${t('retrieval_ranking')}</div>
+                            <pre class="tool-detail-content">${escapeHtml(ranking)}</pre>
+                        </div>`);
+                }
+                if (item.fallback_reason) {
+                    details.push(`
+                        <div class="tool-detail-section">
+                            <div class="tool-detail-label">${t('retrieval_fallback_reason')}</div>
+                            <pre class="tool-detail-content">${escapeHtml(String(item.fallback_reason))}</pre>
+                        </div>`);
+                }
+
+                const retrievalEl = document.createElement('div');
+                retrievalEl.className = 'agent-step agent-tool-step agent-retrieval-step';
+                retrievalEl.innerHTML = `
+                    <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <i class="fas ${fallback ? 'fa-layer-group text-amber-400' : 'fa-filter text-primary-400'} flex-shrink-0 tool-icon"></i>
+                        <span class="tool-name">${escapeHtml(summary)}</span>
+                        <i class="fas fa-chevron-right tool-chevron"></i>
+                    </div>
+                    <div class="tool-detail">${details.join('')}</div>`;
+                stepsEl.appendChild(retrievalEl);
+                scrollChatToBottom();
 
             } else if (item.type === 'tool_start') {
                 ensureBotEl();
