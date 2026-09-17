@@ -276,6 +276,8 @@ class FeiShuChanel(ChatChannel):
     # Backstop for the offline backlog: a replay this old is discarded even if it
     # somehow arrives with a create_time after startup.
     STALE_MSG_MAX_AGE_S = 600
+    # How long to wait before retrying the bot open_id lookup after a failure.
+    BOT_OPEN_ID_RETRY_INTERVAL_S = 60
 
     def __init__(self):
         super().__init__()
@@ -287,6 +289,7 @@ class FeiShuChanel(ChatChannel):
         self._ws_client = None
         self._ws_thread = None
         self._bot_open_id = None  # cached bot open_id for @-mention matching
+        self._bot_open_id_fetched_at = 0.0  # last lookup attempt, for retry backoff
         # When this channel started serving. Set in startup(); 0 means "unknown",
         # which lets every message through rather than dropping it silently.
         self._startup_ts = 0.0
@@ -336,11 +339,12 @@ class FeiShuChanel(ChatChannel):
 
     def _fetch_bot_open_id(self):
         """Fetch the bot's own open_id via API so we can match @-mentions without feishu_bot_name."""
+        self._bot_open_id_fetched_at = time.time()
         try:
             access_token = self.fetch_access_token()
             if not access_token:
                 logger.warning("[FeiShu] Cannot fetch bot info: no access_token")
-                return
+                return False
             headers = {"Authorization": "Bearer " + access_token}
             resp = requests.get("https://open.feishu.cn/open-apis/bot/v3/info/", headers=headers, timeout=5)
             if resp.status_code == 200:
@@ -350,8 +354,11 @@ class FeiShuChanel(ChatChannel):
                     logger.info(f"[FeiShu] Bot open_id fetched: {self._bot_open_id}")
                 else:
                     logger.warning(f"[FeiShu] Fetch bot info failed: code={data.get('code')}, msg={data.get('msg')}")
+            else:
+                logger.warning(f"[FeiShu] Fetch bot info failed: status={resp.status_code}")
         except Exception as e:
             logger.warning(f"[FeiShu] Fetch bot open_id error: {e}")
+        return bool(self._bot_open_id)
 
     def stop(self):
         import ctypes
@@ -545,9 +552,19 @@ class FeiShuChanel(ChatChannel):
         Priority:
         1. Match by open_id (obtained from /bot/v3/info at startup, no config needed)
         2. Fallback to feishu_bot_name config for backward compatibility
-        3. If neither is available, assume the first mention is the bot (Feishu only
-           delivers group messages that @-mention the bot, so this is usually correct)
+
+        An identity to match against is mandatory. Apps holding the broad im:message
+        scope receive every group message, so a message mentioning only other people
+        also arrives with a non-empty mentions list: without knowing who we are, the
+        only safe answer is "not me".
         """
+        if not self._bot_open_id and not self.cfg("feishu_bot_name"):
+            # The startup lookup can fail (no access_token yet, network hiccup) and
+            # used to leave the bot blind for the rest of the process life. Retry it
+            # here, rate-limited, so a single transient failure is not permanent.
+            if time.time() - self._bot_open_id_fetched_at > self.BOT_OPEN_ID_RETRY_INTERVAL_S:
+                self._fetch_bot_open_id()
+
         if self._bot_open_id:
             return any(
                 m.get("id", {}).get("open_id") == self._bot_open_id
@@ -556,9 +573,12 @@ class FeiShuChanel(ChatChannel):
         bot_name = self.cfg("feishu_bot_name")
         if bot_name:
             return any(m.get("name") == bot_name for m in mentions)
-        # Feishu event subscription only delivers messages that @-mention the bot,
-        # so reaching here means the bot was indeed mentioned.
-        return True
+        logger.warning(
+            "[FeiShu] Cannot determine the bot identity (open_id lookup failed and "
+            "feishu_bot_name is not set), ignoring group @ message. Set feishu_bot_name "
+            "in config.json to restore group replies."
+        )
+        return False
 
     def _get_scheduler_task_store(self):
         """Reuse the live scheduler store, with a path-compatible fallback."""
@@ -722,6 +742,10 @@ class FeiShuChanel(ChatChannel):
                 return
             if msg.get("mentions") and msg.get("message_type") == "text":
                 if not self._is_mention_bot(msg.get("mentions")):
+                    # 只@了群里的其他人，与机器人无关
+                    logger.debug(
+                        f"[FeiShu] group msg mentions others, ignored, msg_id={msg_id}"
+                    )
                     return
             # 群聊
             is_group = True
