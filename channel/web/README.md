@@ -132,12 +132,15 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 别名只影响 URL，元素 id、`switchMemoryTab('dreams')` 和 `ROUTE_TABS` 都不变。
 手写 `/memory/dreams` 仍然能打开，并会被规范化成 `/memory/evolution`。
 
-**视图的默认标签页不出现在路径里**，见 `ROUTE_DEFAULT_TABS`：`/tasks` 就是任务页，
-不是 `/tasks/tasks`；只有非默认的才带段，`/tasks/records`、`/settings/models`、
-`/knowledge/graph`。相应地，没有标签页段**等于**默认标签页，而不是"别动标签页"——
-从 `/tasks/records` 后退到 `/tasks` 必须把任务标签重新切回来，否则页面还停在
-执行记录上，而 `routeApply` 末尾的收尾写入会把地址栏又推回 `/tasks/records`，
-看起来就是后退失效。
+定时任务页的内部 id 是 `tasks`，URL 是 `/scheduler`——后端本来就把这套东西叫
+scheduler（`/api/scheduler/...`），而"任务"这个概念另有他用，`/tasks` 留给它。
+
+**视图的默认标签页不出现在路径里**，见 `ROUTE_DEFAULT_TABS`：`/scheduler` 就是
+任务页，不是 `/scheduler/tasks`；只有非默认的才带段，`/scheduler/records`、
+`/settings/models`、`/knowledge/graph`。相应地，没有标签页段**等于**默认标签页，
+而不是"别动标签页"——从 `/scheduler/records` 后退到 `/scheduler` 必须把任务标签
+重新切回来，否则页面还停在执行记录上，而 `routeApply` 末尾的收尾写入会把地址栏
+又推回 `/scheduler/records`，看起来就是后退失效。
 
 视图路径排在 URL 表的**最后**：web.py 取第一个匹配，所以任何视图名都不可能
 盖住前面的接口路由。反过来，新增接口时也不用担心撞上视图名。

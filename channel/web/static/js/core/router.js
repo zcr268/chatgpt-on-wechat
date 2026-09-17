@@ -14,10 +14,12 @@
 // putting it in the URL would rewrite the address bar on every click in the
 // session list.
 //
-// The view a route names is not always the view's internal id: /settings is
+// The view a route names is not always the view's internal id. /settings is
 // the config view, because /config is the backend's config API, which this
-// console and the desktop client both call. web_channel.py serves these paths
-// from the same shell; the table there has to stay in step with this one.
+// console and the desktop client both call. /scheduler is the tasks view: it
+// is what the backend calls this feature already (/api/scheduler/...), and it
+// leaves /tasks free for the separate notion of a task. web_channel.py serves
+// these paths from the same shell; the table there has to stay in step.
 const ROUTE_PATHS = {
     chat:      '',
     agents:    'agents',
@@ -26,7 +28,7 @@ const ROUTE_PATHS = {
     memory:    'memory',
     knowledge: 'knowledge',
     channels:  'channels',
-    tasks:     'tasks',
+    tasks:     'scheduler',
     logs:      'logs',
 };
 

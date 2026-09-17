@@ -2340,7 +2340,7 @@ class WebChannel(ChatChannel):
             # can ever shadow an API route above -- which is also why the
             # settings view is /settings and not /config, a path the config
             # API already owns.
-            '/(?:agents|settings|skills|memory|knowledge|channels|tasks|logs)'
+            '/(?:agents|settings|skills|memory|knowledge|channels|scheduler|logs)'
             '(?:/[a-z]+)?/?', 'ChatHandler',
         )
         app = web.application(urls, globals(), autoreload=False)

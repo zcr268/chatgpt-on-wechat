@@ -128,10 +128,10 @@ check('bare view: address bar left bare', app.path(), '/settings');
 // the default tab never earns a segment, however it is reached
 app = makeApp('/');
 app.navigateTo('tasks');
-check('default tab: no /tasks/tasks', app.path(), '/tasks');
-app = makeApp('/tasks/tasks');
+check('default tab: no /scheduler/tasks', app.path(), '/scheduler');
+app = makeApp('/scheduler/tasks');
 app.routeApply();
-check('default tab: spelt out, it is normalised away', app.path(), '/tasks');
+check('default tab: spelt out, it is normalised away', app.path(), '/scheduler');
 
 // a tab whose element id is an internal name is routed under its UI name
 app = makeApp('/memory/evolution');
@@ -189,16 +189,16 @@ check('back: lands there', app.currentView, 'chat');
 // Back out of a non-default tab stays in the view and restores the default
 // one. The bare path has to mean "the default tab" for this: read as "no tab
 // named, leave it alone", the page would keep showing records and the settle
-// at the end of routeApply would put /tasks/records straight back.
+// at the end of routeApply would put /scheduler/records straight back.
 app = makeApp('/');
 app.navigateTo('tasks', 'records');
 app.log.tabs.length = 0;
 app.log.writes.length = 0;
-app.back('/tasks');
+app.back('/scheduler');
 check('back out of a tab: stays in the view', app.currentView, 'tasks');
 check('back out of a tab: default tab restored', app.log.tabs, ['tasks/tasks']);
 check('back out of a tab: address bar left where Back put it',
-      app.path(), '/tasks');
+      app.path(), '/scheduler');
 check('back out of a tab: Back is not undone', app.log.writes, []);
 
 // --- Back with unsaved edits puts the address bar back --------------------
@@ -212,7 +212,7 @@ check('guarded back: address bar restored, without a new entry',
       app.log.writes, ['replace /settings']);
 
 // --- applying a route must not re-enter through the address bar -----------
-app = makeApp('/tasks/records');
+app = makeApp('/scheduler/records');
 app.routeApply();
 check('apply: does not loop back in', app.log.nav, ['tasks/records']);
 check('apply: tracks the tab for a later restore', app.routeTab, 'records');
