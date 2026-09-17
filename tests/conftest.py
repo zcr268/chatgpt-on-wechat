@@ -44,6 +44,47 @@ def console_js():
     return "\n".join(parts)
 
 
+@pytest.fixture(autouse=True)
+def web_stub_carries_a_request_context():
+    """Give the fake ``web`` module a ``ctx``, as the real one has.
+
+    Nine test modules install a stub under ``sys.modules["web"]`` when web.py
+    has not been imported yet, and which of them gets there first depends on
+    the order the run collected. Handlers driven straight from a test read
+    ``web.ctx`` for the query string and the request headers -- absent from the
+    stubs, so whether a test sees an empty context or an AttributeError came
+    down to that order. An empty context is the case the handlers are written
+    for; this makes it the case they get.
+    """
+    web = sys.modules.get("web")
+    if web is not None and not hasattr(web, "ctx"):
+        web.ctx = {}
+        try:
+            yield
+        finally:
+            del web.ctx
+    else:
+        yield
+
+
+@pytest.fixture(autouse=True)
+def console_template_cache_not_poisoned():
+    """Keep one test's mocked ``open`` out of the console's fragment cache.
+
+    ``template`` caches each fragment under its mtime, which nothing in a test
+    run disturbs, so a read that happened while ``builtins.open`` was patched
+    is held for the rest of the session -- and every later ``render()`` returns
+    that test's stand-in markup instead of the page. The cache is an
+    optimisation, so dropping it around each test costs a few file reads and
+    makes the suite independent of the order it ran in.
+    """
+    from channel.web import template
+
+    template._cache.clear()
+    yield
+    template._cache.clear()
+
+
 @pytest.fixture(autouse=True, scope="session")
 def workspace_out_of_the_way():
     import config as config_module
