@@ -111,18 +111,37 @@ app.routeApply();
 check('unknown tab: dropped, view still opens', app.log.nav, ['knowledge']);
 check('unknown tab: never switched to', app.log.tabs, ['knowledge/docs']);
 check('unknown tab: address bar corrected to the tab that did open',
-      app.path(), '/knowledge/docs');
+      app.path(), '/knowledge');
 
 app = makeApp('/nope');
 app.routeApply();
 check('unknown path: falls back to chat, no navigation', app.log.nav, []);
 check('unknown path: address bar corrected to chat', app.path(), '/');
 
-// a view named without one of its tabs lands on its default, and says so
+// a view named without one of its tabs lands on its default, and the path
+// stays bare: the default tab is what /settings already means
 app = makeApp('/settings');
 app.routeApply();
 check('bare view: opens the default tab', app.log.tabs, ['config/basic']);
-check('bare view: address bar completed to it', app.path(), '/settings/basic');
+check('bare view: address bar left bare', app.path(), '/settings');
+
+// the default tab never earns a segment, however it is reached
+app = makeApp('/');
+app.navigateTo('tasks');
+check('default tab: no /tasks/tasks', app.path(), '/tasks');
+app = makeApp('/tasks/tasks');
+app.routeApply();
+check('default tab: spelt out, it is normalised away', app.path(), '/tasks');
+
+// a tab whose element id is an internal name is routed under its UI name
+app = makeApp('/memory/evolution');
+app.routeApply();
+check('aliased tab: opens the dreams tab', app.log.tabs, ['memory/dreams']);
+check('aliased tab: path kept', app.path(), '/memory/evolution');
+app = makeApp('/memory/dreams');
+app.routeApply();
+check('aliased tab: the element id still opens it', app.log.tabs, ['memory/dreams']);
+check('aliased tab: and is rewritten to the UI name', app.path(), '/memory/evolution');
 
 // a trailing slash is the same route
 app = makeApp('/settings/models/');
@@ -133,8 +152,8 @@ check('trailing slash: normalised away', app.path(), '/settings/models');
 // --- clicking through the sidebar leaves one entry per view ---------------
 app = makeApp('/');
 app.navigateTo('config');
-check('sidebar: one entry for the view, refined to its tab',
-      app.log.writes, ['push /settings', 'replace /settings/basic']);
+check('sidebar: one entry for the view, and its default tab adds none',
+      app.log.writes, ['push /settings']);
 app.log.writes.length = 0;
 app.navigateTo('skills');
 check('sidebar: a tabless view is one plain entry',
@@ -149,7 +168,7 @@ app.navigateTo('config');
 app.log.writes.length = 0;
 app.navigateTo('config', 'models');
 check('re-entry: refines the entry, never pushes a second one',
-      app.log.writes, ['replace /settings', 'replace /settings/models']);
+      app.log.writes, ['replace /settings/models']);
 
 // clicking the sidebar item you are already on, repeatedly
 app = makeApp('/');
@@ -167,6 +186,21 @@ app.back('/');
 check('back: navigates to the previous view', app.log.nav, ['chat']);
 check('back: lands there', app.currentView, 'chat');
 
+// Back out of a non-default tab stays in the view and restores the default
+// one. The bare path has to mean "the default tab" for this: read as "no tab
+// named, leave it alone", the page would keep showing records and the settle
+// at the end of routeApply would put /tasks/records straight back.
+app = makeApp('/');
+app.navigateTo('tasks', 'records');
+app.log.tabs.length = 0;
+app.log.writes.length = 0;
+app.back('/tasks');
+check('back out of a tab: stays in the view', app.currentView, 'tasks');
+check('back out of a tab: default tab restored', app.log.tabs, ['tasks/tasks']);
+check('back out of a tab: address bar left where Back put it',
+      app.path(), '/tasks');
+check('back out of a tab: Back is not undone', app.log.writes, []);
+
 // --- Back with unsaved edits puts the address bar back --------------------
 app = makeApp('/');
 app.navigateTo('config');
@@ -175,7 +209,7 @@ app.log.writes.length = 0;
 app.back('/');
 check('guarded back: stays on the view', app.currentView, 'config');
 check('guarded back: address bar restored, without a new entry',
-      app.log.writes, ['replace /settings/basic']);
+      app.log.writes, ['replace /settings']);
 
 // --- applying a route must not re-enter through the address bar -----------
 app = makeApp('/tasks/records');

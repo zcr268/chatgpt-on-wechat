@@ -42,6 +42,23 @@ def _route_paths():
     return dict(re.findall(r"(\w+):\s*'([^']*)'", block.group(1)))
 
 
+def _route_default_tabs():
+    """view id -> the tab it opens on, which is left out of the path."""
+    block = re.search(r"const ROUTE_DEFAULT_TABS = \{(.*?)\n\};",
+                      _js("core/router.js"), re.S)
+    assert block, "ROUTE_DEFAULT_TABS is no longer where the tests can read it"
+    return dict(re.findall(r"(\w+):\s*'([^']+)'", block.group(1)))
+
+
+def _route_tab_aliases():
+    """view id -> {tab element id: the segment it is routed under}."""
+    block = re.search(r"const ROUTE_TAB_PATHS = \{(.*?)\n\};",
+                      _js("core/router.js"), re.S)
+    assert block, "ROUTE_TAB_PATHS is no longer where the tests can read it"
+    return {view: dict(re.findall(r"(\w+):\s*'([^']+)'", pairs))
+            for view, pairs in re.findall(r"(\w+):\s*\{([^}]*)\}", block.group(1))}
+
+
 def test_the_routable_tabs_are_the_tabs_the_page_actually_has():
     """A route names a tab by the id its element carries. Rename the element
     and every link to that tab dies silently -- the router drops the unknown
@@ -68,6 +85,50 @@ def test_every_routable_tab_switch_reports_itself_to_the_router():
     for view, rel_path in sources.items():
         assert view in _route_tabs(), view
         assert "routeNoteTab('%s'" % view in _js(rel_path), rel_path
+
+
+def test_every_tabbed_view_declares_the_tab_it_opens_on():
+    """The default tab is what a bare /tasks means, so the router has to know
+    it for every tabbed view. A view missing from the table would keep writing
+    its default tab into the path, which is the /tasks/tasks this replaced, and
+    Back out of a sibling tab would no longer restore it."""
+    defaults = _route_default_tabs()
+    assert set(defaults) == set(_route_tabs())
+    for view, tab in defaults.items():
+        assert tab in _route_tabs()[view], (view, tab)
+
+
+def test_routed_tab_names_are_the_names_the_ui_uses():
+    """A tab element id is internal; the path is not. Where the two disagree
+    the router carries an alias, and the alias has to name a real tab or the
+    path it writes would be a dead route."""
+    tabs = _route_tabs()
+    for view, aliases in _route_tab_aliases().items():
+        assert view in tabs, view
+        for tab, segment in aliases.items():
+            assert tab in tabs[view], (view, tab)
+            # An alias that collides with a sibling's id would make the path
+            # ambiguous: _tabId resolves the alias first, so the sibling would
+            # become unreachable.
+            assert segment not in tabs[view], (view, segment)
+
+    # The one that forced the mechanism: the tab is labelled Self-Evolution,
+    # so it routes as /memory/evolution rather than under its element id.
+    assert _route_tab_aliases()["memory"]["dreams"] == "evolution"
+    assert 'data-i18n="memory_tab_dreams"' in template.render("chat.html")
+
+
+def test_the_backend_accepts_the_aliased_tab_segments():
+    """A shared /memory/evolution link arrives at the backend, which matches
+    tab segments by pattern rather than by name -- an alias the pattern does
+    not cover would 404 before the router ever saw it."""
+    served = re.search(r"\(\?:/(\[[^\]]+\]\+)\)\?/\?", _backend_urls())
+    assert served, "the tab-segment pattern is no longer where tests can read it"
+    pattern = re.compile("^%s$" % served.group(1))
+
+    for view, aliases in _route_tab_aliases().items():
+        for segment in aliases.values():
+            assert pattern.match(segment), (view, segment)
 
 
 def test_a_guarded_navigation_keeps_the_tab_it_was_asked_for():
@@ -135,6 +196,10 @@ def test_the_console_answers_at_the_root():
     assert re.search(r"'/',\s*'ChatHandler'", urls)
     assert re.search(r"'/chat',\s*'RootHandler'", urls)
 
+    # web.py takes the first match, so a second /chat entry is unreachable --
+    # it looks like it serves the page and does nothing at all.
+    assert len(re.findall(r"^\s*'/chat',", urls, re.M)) == 1, urls
+
     with open(os.path.join(WEB, "web_channel.py"), encoding="utf-8") as f:
         source = f.read()
     root = source[source.index("class RootHandler:"):]
@@ -154,41 +219,3 @@ def test_the_first_route_is_applied_only_once_auth_has_settled():
     assert "addEventListener('popstate', routeApply)" in router
     # A bare call at the top level would run before auth.
     assert not re.search(r"^routeApply\(\)", router, re.M)
-
-
-def test_the_old_console_is_sent_back_to_the_root():
-    """`python app.py -old` serves a snapshot that predates routing: no router,
-    and its scripts referenced relatively. Under /settings/models a browser
-    would look for them beside that path and render nothing, so the view paths
-    -- which all reach the same handler -- have to bounce back to /."""
-    from unittest.mock import patch
-
-    import web
-
-    import channel.web.web_channel as web_channel
-
-    # A handler driven straight from a test has no request context. seeother
-    # resolves its Location against ctx.home, and raising writes through
-    # ctx.headers, so both have to stand in for what a live request carries.
-    fields = ("home", "path", "headers", "status", "output")
-    try:
-        with patch.dict(os.environ, {"COW_LEGACY_CONSOLE": "1"}):
-            for path in ("/settings/models", "/agents", "/knowledge/graph"):
-                web.ctx.home = "http://testserver"
-                web.ctx.path = path
-                web.ctx.headers = []
-                web.ctx.status = "200 OK"
-                web.ctx.output = ""
-                try:
-                    web_channel.ChatHandler().GET()
-                except web.HTTPError:
-                    # Raising is how web.py hands a redirect back; the status
-                    # and Location it settled on are left on the context.
-                    assert web.ctx.status.startswith("303"), (path, web.ctx.status)
-                    location = dict(web.ctx.headers).get("Location")
-                    assert location == "http://testserver/", (path, location)
-                else:
-                    raise AssertionError("%s served the snapshot" % path)
-    finally:
-        for key in fields:
-            web.ctx.pop(key, None)

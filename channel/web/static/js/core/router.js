@@ -7,10 +7,12 @@
 // Routing
 // =====================================================================
 // A route names a view and, for the views that have tabs, one of its tabs:
-// /settings, /settings/models. Deeper state -- which session is open, which
-// file the editor holds -- deliberately stays out. It is already restored from
-// localStorage, and putting it in the URL would rewrite the address bar on
-// every click in the session list.
+// /settings, /settings/models. Only a tab that is not the view's default gets
+// a segment, so the path carries what distinguishes it and nothing else.
+// Deeper state -- which session is open, which file the editor holds --
+// deliberately stays out. It is already restored from localStorage, and
+// putting it in the URL would rewrite the address bar on every click in the
+// session list.
 //
 // The view a route names is not always the view's internal id: /settings is
 // the config view, because /config is the backend's config API, which this
@@ -38,6 +40,37 @@ const ROUTE_TABS = {
     knowledge: ['docs', 'graph'],
 };
 
+// The tab a view opens on when the route does not name one. It is left out of
+// the path: /tasks, not /tasks/tasks. A path segment is there to say which of
+// several tabs is showing, so the one you get by default has nothing to say.
+const ROUTE_DEFAULT_TABS = {
+    config:    'basic',
+    memory:    'files',
+    tasks:     'tasks',
+    knowledge: 'docs',
+};
+
+// URL segment for a tab whose element id reads as an internal name. The path
+// should say what the UI says, and the "dreams" tab is labelled Self-Evolution
+// everywhere the user can see it. Only the segment differs -- the element id,
+// the switcher argument and ROUTE_TABS above all stay as they are.
+const ROUTE_TAB_PATHS = {
+    memory: { dreams: 'evolution' },
+};
+
+function _tabPath(view, tab) {
+    return (ROUTE_TAB_PATHS[view] || {})[tab] || tab;
+}
+
+function _tabId(view, segment) {
+    const aliases = ROUTE_TAB_PATHS[view] || {};
+    for (const tab in aliases) if (aliases[tab] === segment) return tab;
+    // Unaliased segments are the tab id itself. An alias's own id also lands
+    // here, so a hand-written /memory/dreams still opens the tab and is
+    // rewritten to /memory/evolution by the settle at the end of routeApply.
+    return segment;
+}
+
 // The tab showing in the current view, '' for a view that has none. Tracked so
 // a navigation the unsaved-edit guard refuses can put the address bar back
 // exactly where it was.
@@ -50,7 +83,8 @@ let _routeApplying = false;
 
 function _routePath(view, tab) {
     const path = ROUTE_PATHS[view] || '';
-    return '/' + path + (path && tab ? '/' + tab : '');
+    if (!path || !tab || tab === ROUTE_DEFAULT_TABS[view]) return '/' + path;
+    return '/' + path + '/' + _tabPath(view, tab);
 }
 
 function _routeParse(pathname) {
@@ -60,9 +94,10 @@ function _routeParse(pathname) {
     // chat rather than leaving the console on whatever happens to be on screen.
     if (!view || !VIEW_META[view]) return { view: 'chat', tab: '' };
     const allowed = ROUTE_TABS[view] || [];
+    const tab = _tabId(view, parts[1]);
     // An unknown tab is dropped, not passed on: the tab switchers index into
     // the DOM by name and would throw on one that does not exist.
-    return { view: view, tab: allowed.indexOf(parts[1]) === -1 ? '' : parts[1] };
+    return { view: view, tab: allowed.indexOf(tab) === -1 ? '' : tab };
 }
 
 function _routeWrite(view, tab, replace) {
@@ -110,9 +145,14 @@ function routeApply() {
     const parsed = _routeParse(location.pathname);
 
     if (parsed.view === currentView) {
-        if (parsed.tab && parsed.tab !== routeTab) {
+        // No tab segment names the view's default tab, rather than meaning
+        // "leave the tab alone". Back out of /tasks/records lands on /tasks,
+        // which has to put the tasks tab up again -- otherwise the page would
+        // keep showing records and the settle below would undo the Back.
+        const wanted = parsed.tab || ROUTE_DEFAULT_TABS[parsed.view] || '';
+        if (wanted && wanted !== routeTab) {
             _routeApplying = true;
-            try { _routeApplyTab(parsed.view, parsed.tab); }
+            try { _routeApplyTab(parsed.view, wanted); }
             finally { _routeApplying = false; }
         }
     } else {
@@ -123,11 +163,11 @@ function routeApply() {
 
     // Settle the address bar on whatever ended up on screen. Usually it
     // already says that and this writes nothing. It earns its keep in the two
-    // cases where the path and the page disagree: a path that named a tab the
-    // view does not have (/settings/bogus, /settings on its own) lands on the
-    // view's default tab and the path is completed to match; and a navigation
-    // the unsaved-edit guard refused leaves the page where it was, so the
-    // address bar -- which Back has already moved -- has to go back with it.
+    // cases where the path and the page disagree: a path the router does not
+    // write itself (/settings/bogus lands on the default tab, /memory/dreams
+    // normalises to /memory/evolution) is rewritten to its canonical form; and
+    // a navigation the unsaved-edit guard refused leaves the page where it
+    // was, so the address bar -- which Back has already moved -- goes back too.
     _routeWrite(currentView, routeTab, true);
 }
 
