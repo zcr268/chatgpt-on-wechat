@@ -5,7 +5,7 @@
 # 使用说明
 
  - 在 `config.json` 配置文件中的 `channel_type` 字段填入 `web`
- - 程序运行后将监听9899端口，浏览器访问 http://localhost:9899/chat 即可使用
+ - 程序运行后将监听9899端口，浏览器访问 http://localhost:9899 即可使用
  - 监听端口可以在配置文件 `web_port` 中自定义
  - 对于Docker运行方式，如果需要外部访问，需要在 `docker-compose.yml` 中通过 ports配置将端口监听映射到宿主机
 
@@ -30,7 +30,7 @@
 文件没变浏览器就不再发请求，变了则 URL 跟着变、立刻生效，不存在卡在旧版本的情况。
 
 `assets/vendor/**` 是固定版本，不打标记；它和 logos、字体一样走 `ETag` 协商缓存，
-浏览器照常询问但命中时返回 304，不传文件内容。`-old` 快照同理。
+浏览器照常询问但命中时返回 304，不传文件内容。
 
 include 的两条规则：
 
@@ -119,12 +119,25 @@ node --stack-size=40000 channel/web/tools/check-load-order.mjs
 
 控制台就是 `/` 这个应用本身，视图和标签页是它下面的路径：
 `/agents`、`/settings`、`/settings/models`。刷新后回到原处，链接可以分享，
-浏览器的前进后退在视图之间移动。`/chat` 是旧地址，保留为到 `/` 的重定向。
+浏览器的前进后退在视图之间移动。`/chat` 是旧地址，保留为到 `/` 的重定向
+（URL 表里只应有这一条 `/chat`；web.py 取第一个匹配，第二条会是死代码）。
 
 **路由名不总是等于视图的内部 id。** 设置页的内部 id 是 `config`，但 URL 是
 `/settings`——`/config` 已经是后端的配置接口，网页控制台和桌面客户端都在调它。
 `web_channel.py` 的 URL 表把这些路径指向同一个外壳，前端路由再打开对应视图；
 两张表必须保持一致，`tests/test_web_console_routing.py` 会对比它们。
+
+标签页同理，见 `ROUTE_TAB_PATHS`：记忆页"自主进化"那个标签的元素 id 是 `dreams`，
+但 URL 段是 `evolution`——路径应该说用户看到的概念，而不是内部代号。
+别名只影响 URL，元素 id、`switchMemoryTab('dreams')` 和 `ROUTE_TABS` 都不变。
+手写 `/memory/dreams` 仍然能打开，并会被规范化成 `/memory/evolution`。
+
+**视图的默认标签页不出现在路径里**，见 `ROUTE_DEFAULT_TABS`：`/tasks` 就是任务页，
+不是 `/tasks/tasks`；只有非默认的才带段，`/tasks/records`、`/settings/models`、
+`/knowledge/graph`。相应地，没有标签页段**等于**默认标签页，而不是"别动标签页"——
+从 `/tasks/records` 后退到 `/tasks` 必须把任务标签重新切回来，否则页面还停在
+执行记录上，而 `routeApply` 末尾的收尾写入会把地址栏又推回 `/tasks/records`，
+看起来就是后退失效。
 
 视图路径排在 URL 表的**最后**：web.py 取第一个匹配，所以任何视图名都不可能
 盖住前面的接口路由。反过来，新增接口时也不用担心撞上视图名。
@@ -217,29 +230,6 @@ Python 测试只能钉住路由被正确接上（标签页词汇和 DOM 一致�
 | `views/knowledge.js` | 955 | 知识库树、导入、关系图 |
 | `views/logs.js` | 84 | 实时日志流 |
 | `boot.js` | 43 | 启动：应用主题与语言、鉴权闸门、首次拉取配置与历史 |
-
-### 和拆分前的版本做对比
-
-拆分前的前端（`chat.html` + `console.js` + `console.css` 三个文件）没有提交副本，
-git 历史里就是唯一的一份。需要对比时先取出快照：
-
-```
-python channel/web/tools/snapshot_legacy.py          # 默认取 master
-python channel/web/tools/snapshot_legacy.py <ref>    # 或任意 ref
-```
-
-产物在 `static/legacy/`（已 gitignore，对比完直接删掉即可）。然后：
-
-```
-python app.py -old
-```
-
-`/chat` 就会返回老版页面，后端、会话和历史都和当前版本共用，所以能直接比行为。
-不带 `-old` 启动则完全不受影响。
-
-想两个版本**同时**跑着看，理论上可以用 `git worktree` 加 `COW_WEB_PORT` 起第二个实例，
-但那会起第二套完整后端——调度器和 IM 渠道都会重复连接，配了飞书之类的会双份收消息。
-除非你只跑 web 渠道，否则别这么做。
 
 ### 三处不能动的加载顺序
 
