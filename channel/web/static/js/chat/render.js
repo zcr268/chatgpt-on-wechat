@@ -281,6 +281,13 @@ function localizeCancelMarker(text) {
         .replace(/_\(Cancelled\)_/g, '_(已中止)_');
 }
 
+// Normalize an evolution bubble's text into a stable dedupe key. The live push
+// and the persisted history copy carry the same cleaned summary, so comparing
+// on whitespace-collapsed content reliably matches them.
+function evolutionContentKey(text) {
+    return (text || '').replace(/\s+/g, ' ').trim();
+}
+
 function createBotMessageEl(content, timestamp, requestId, msg) {
     const el = document.createElement('div');
     el.className = 'flex gap-3 px-4 sm:px-6 py-3 bot-message-group';
@@ -312,6 +319,11 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
     // carries msg.kind; live pushes are identified by the evolution_ request id.
     const isEvolution = (msg && msg.kind === 'evolution')
         || (typeof requestId === 'string' && requestId.startsWith('evolution_'));
+    // Tag evolution bubbles with a content key so a later history reload can
+    // detect that the persisted copy of this exact bubble is already on screen
+    // (the live push uses a random `evolution_` request_id, so a request-id
+    // dedupe alone can't match it against the history-loaded copy).
+    if (isEvolution) el.dataset.evolutionKey = evolutionContentKey(displayContent);
     const evolutionBadge = isEvolution
         ? `<div class="flex items-center gap-1 mb-1.5 text-xs text-slate-400 dark:text-slate-500">
                 <i class="fas fa-seedling text-[11px]"></i>
@@ -624,6 +636,21 @@ function loadHistory(page) {
                     divider.className = 'context-divider';
                     divider.innerHTML = `<span>${t('context_cleared')}</span>`;
                     fragment.appendChild(divider);
+                }
+
+                // Skip a persisted self-evolution bubble whose live push copy is
+                // already on screen. The push uses a random `evolution_` request
+                // id that history can't carry, so dedupe on the content key set
+                // by createBotMessageEl. Without this the same learning shows as
+                // two identical bubbles after a reload.
+                if (msg.role === 'assistant' && msg.kind === 'evolution') {
+                    const key = evolutionContentKey(msg.content || '');
+                    if (key && (
+                        messagesDiv.querySelector(`[data-evolution-key="${CSS.escape(key)}"]`)
+                        || fragment.querySelector(`[data-evolution-key="${CSS.escape(key)}"]`)
+                    )) {
+                        return;
+                    }
                 }
 
                 const ts = new Date(msg.created_at * 1000);
