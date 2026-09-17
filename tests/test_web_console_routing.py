@@ -153,7 +153,7 @@ def test_the_router_loads_after_the_navigation_it_drives():
 def _backend_urls():
     with open(os.path.join(WEB, "web_channel.py"), encoding="utf-8") as f:
         source = f.read()
-    table = re.search(r"\n        urls = \((.*?)\n        \)", source, re.S)
+    table = re.search(r"\nURLS = \((.*?)\n\)", source, re.S)
     assert table, "the URL table is no longer where the tests can read it"
     return table.group(1)
 
