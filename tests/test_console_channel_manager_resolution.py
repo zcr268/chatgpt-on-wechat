@@ -24,7 +24,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from common import channel_registry
-from channel.web import web_channel
+from channel.web.api import channels as channels_api
+from channel.web.core._common import _live_channel_manager
 
 
 class FakeManager:
@@ -61,10 +62,10 @@ class ConsoleChannelManagerResolutionTest(unittest.TestCase):
         mgr = FakeManager()
         channel_registry.set_channel_manager(mgr)
 
-        self.assertIs(web_channel._live_channel_manager(), mgr)
+        self.assertIs(_live_channel_manager(), mgr)
 
     def test_helper_returns_none_before_the_app_is_up(self):
-        self.assertIsNone(web_channel._live_channel_manager())
+        self.assertIsNone(_live_channel_manager())
 
     def test_handler_resolves_manager_through_registry(self):
         """The regression: __main__ has no _channel_mgr, the registry does."""
@@ -72,7 +73,7 @@ class ConsoleChannelManagerResolutionTest(unittest.TestCase):
         channel_registry.set_channel_manager(mgr)
 
         self.assertFalse(hasattr(sys.modules["__main__"], "_channel_mgr"))
-        self.assertIs(web_channel.ChannelsHandler._channel_mgr(), mgr)
+        self.assertIs(channels_api.ChannelsHandler._channel_mgr(), mgr)
 
     def test_weixin_login_status_reads_the_live_manager(self):
         class Channel:
@@ -82,7 +83,7 @@ class ConsoleChannelManagerResolutionTest(unittest.TestCase):
         mgr.channels["weixin"] = Channel()
         channel_registry.set_channel_manager(mgr)
 
-        status = web_channel.ChannelsHandler._get_weixin_login_status()
+        status = channels_api.ChannelsHandler._get_weixin_login_status()
         self.assertIn("confirmed", status)
 
     def test_source_does_not_read_channel_mgr_off_app_module(self):

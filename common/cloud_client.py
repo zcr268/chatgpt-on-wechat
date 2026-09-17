@@ -398,7 +398,7 @@ class CloudClient(LinkAIClient):
     def _reload_agents(service):
         """Re-point the running runtime at the updated roster."""
         try:
-            from channel.web.web_channel import _reload_agent_runtime
+            from channel.web.api.agents import _reload_agent_runtime
             _reload_agent_runtime(service)
         except Exception as e:
             logger.warning(f"[CloudClient] agent runtime reload skipped: {e}")
