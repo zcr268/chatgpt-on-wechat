@@ -31,7 +31,7 @@ def console_js():
     from the page's own script tags rather than a copy here, so it cannot fall
     behind a file being added or reordered.
     """
-    from channel.web import template
+    from channel.web.core import template
 
     page = template.render("chat.html")
     parts = []
@@ -41,6 +41,29 @@ def console_js():
     for src in re.findall(r'<script defer src="/assets/(js/[^"?]+)(?:\?[^"]*)?"', page):
         with open(os.path.join(_WEB_DIR, "static", src), encoding="utf-8") as f:
             parts.append(f.read())
+    return "\n".join(parts)
+
+
+def web_backend_py():
+    """Every Python file behind the web console, concatenated.
+
+    The counterpart of ``console_js()`` for the backend: a test that wants to
+    assert on "the console's server code" should not have to know which file a
+    handler or helper currently sits in, or the split of web_channel.py would
+    break tests that have nothing to do with it. The list is read off the
+    directory, so it cannot fall behind a file being added.
+
+    Use this for "is this still wired up" assertions. A test that parses a
+    specific structure -- the URL table, a class body -- should keep reading
+    the one file it means, so that it fails loudly when that structure moves.
+    """
+    parts = []
+    for dirpath, dirnames, filenames in os.walk(_WEB_DIR):
+        dirnames[:] = [d for d in dirnames if d not in ("static", "templates", "tools", "__pycache__")]
+        for name in sorted(filenames):
+            if name.endswith(".py"):
+                with open(os.path.join(dirpath, name), encoding="utf-8") as f:
+                    parts.append(f.read())
     return "\n".join(parts)
 
 
@@ -78,7 +101,7 @@ def console_template_cache_not_poisoned():
     optimisation, so dropping it around each test costs a few file reads and
     makes the suite independent of the order it ran in.
     """
-    from channel.web import template
+    from channel.web.core import template
 
     template._cache.clear()
     yield

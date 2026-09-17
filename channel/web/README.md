@@ -12,6 +12,61 @@ scheduled tasks, logs).
 - Under Docker, map the port to the host in `docker-compose.yml` if it has to
   be reachable from outside.
 
+# Backend layout
+
+`web_channel.py` is the URL table and nothing else: 77 routes, `build_app()`,
+and the imports that put every handler in scope. web.py resolves the handler
+names in the table against a namespace dict, so every handler has to be
+importable there -- that is why the file imports names it never calls.
+
+The code sits in two packages, mirroring the frontend's `core/` and `views/`:
+
+### `core/` -- shared by the channel and the handlers
+
+| File | Responsibility |
+|---|---|
+| `channel.py` | `WebChannel`: the server, the message queues, SSE stream state. The only part that is a channel rather than an HTTP endpoint |
+| `_common.py` | Auth checks, the workspace root, upload dirs, preview tokens, the path allow-list, `WebMessage` |
+| `template.py` | Page assembly and asset stamping (see [Page assembly](#page-assembly)) |
+| `providers.py` | The vendor catalogue, and the helpers that read a provider's configured values |
+
+### `api/` -- one module per view
+
+| File | Routes |
+|---|---|
+| `pages.py` | `/`, `/chat`, the in-app view paths, `/assets/*`, `/health` |
+| `auth.py` | `/api/auth/*`, the MCP OAuth callback |
+| `chat.py` | `/api/message`, `/api/poll`, `/api/cancel`, the SSE stream |
+| `files.py` | Uploads, `/api/file`, `/uploads/*`, `/preview/*`, ASR and TTS |
+| `sessions.py` | `/api/sessions/*`, `/api/history`, per-session settings and context |
+| `agents.py` | `/api/agents/*`, core files, avatars |
+| `config.py` | `/api/config` |
+| `models.py` | `/api/models` |
+| `channels.py` | `/api/channels`, the WeChat QR and Feishu registration flows |
+| `scheduler.py` | `/api/scheduler/*` |
+| `skills.py`, `memory.py`, `knowledge.py`, `logs.py` | The remaining management views |
+| `update.py` | `/VERSION`, `/api/update/*` |
+| `openai_compat.py` | `/v1/chat/completions` |
+
+Two things to know before moving code between these modules:
+
+- **A handler reads its collaborators out of its own module's globals.** A test
+  that patches `conf` or `_require_auth` has to name the module the handler
+  lives in; patching `channel.web.web_channel.conf` reaches nothing. Where a
+  test helper takes the handler class, read the module off
+  `handler_cls.__module__` rather than naming one.
+- **Paths derived from `__file__` are relative to the module, not the web
+  root.** `core/template.py`, `core/channel.py` and `api/pages.py` all sit one
+  level below `channel/web/`, so each walks up a directory to find `static/`
+  and `templates/`. A module moved between `api/` and the web root has to have
+  this checked.
+
+A test that asserts "this is still wired up" should read `web_backend_py()`
+from `tests/conftest.py`, which concatenates every Python file under
+`channel/web/`, rather than one file. A test that parses a specific structure
+-- the URL table, a class body -- should keep reading the file it means, so it
+fails loudly when that structure moves.
+
 # Frontend layout
 
 The console used to be three very large files (`console.js` at 16k lines,
@@ -22,13 +77,13 @@ is no bundler: every script is a classic script, executed in document order via
 ## Page assembly
 
 `chat.html` is the page shell. It pulls fragments in with
-`<!--#include templates/xxx.html-->` markers, which `template.py` expands on
+`<!--#include templates/xxx.html-->` markers, which `core/template.py` expands on
 the server before the page is sent. Assembly happens server-side rather than by
 fetching at runtime because the page relies on the Tailwind CDN JIT compiler,
 whose behaviour is only predictable when the whole DOM is present at parse
 time.
 
-`template.py` also stamps every `assets/js/**` and `assets/css/**` reference
+`core/template.py` also stamps every `assets/js/**` and `assets/css/**` reference
 with a `?v=` version so an upgraded console never runs against cached old
 scripts. **Adding a script or stylesheet needs no Python change**; the pattern
 match picks it up.
@@ -47,7 +102,7 @@ body.
 
 Two rules for includes:
 
-- A marker must sit alone on its line, **flush left**. `template.py` replaces
+- A marker must sit alone on its line, **flush left**. `core/template.py` replaces
   the marker text in place, so any indentation before the marker would be
   prepended to the fragment's first line. Fragments carry their own
   indentation.

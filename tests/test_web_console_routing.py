@@ -16,7 +16,7 @@ once it runs -- which entries land on the history stack -- is checked by
 import os
 import re
 
-from channel.web import template
+from channel.web.core import template
 
 WEB = os.path.join(os.path.dirname(__file__), "..", "channel", "web")
 STATIC = os.path.join(WEB, "static")
@@ -153,7 +153,7 @@ def test_the_router_loads_after_the_navigation_it_drives():
 def _backend_urls():
     with open(os.path.join(WEB, "web_channel.py"), encoding="utf-8") as f:
         source = f.read()
-    table = re.search(r"\n        urls = \((.*?)\n        \)", source, re.S)
+    table = re.search(r"\nURLS = \((.*?)\n\)", source, re.S)
     assert table, "the URL table is no longer where the tests can read it"
     return table.group(1)
 
@@ -200,7 +200,7 @@ def test_the_console_answers_at_the_root():
     # it looks like it serves the page and does nothing at all.
     assert len(re.findall(r"^\s*'/chat',", urls, re.M)) == 1, urls
 
-    with open(os.path.join(WEB, "web_channel.py"), encoding="utf-8") as f:
+    with open(os.path.join(WEB, "api", "pages.py"), encoding="utf-8") as f:
         source = f.read()
     root = source[source.index("class RootHandler:"):]
     assert "seeother('/')" in root[:root.index("\n\n\nclass ")]

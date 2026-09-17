@@ -225,30 +225,41 @@ def test_write_content_refreshes_what_the_skill_list_shows(tmp_path):
 # ----------------------------------------------------------------------
 # HTTP handlers
 # ----------------------------------------------------------------------
-def _get(handler_cls, params):
-    from channel.web import web_channel
+def _handler_module(handler_cls):
+    """The module a handler reads _require_auth and web out of.
 
-    with patch.object(web_channel, "_require_auth"), \
-         patch.object(web_channel.web, "header"), \
-         patch.object(web_channel.web, "input", return_value=web_channel.web.storage(**params)):
+    Taken off the class rather than named, so moving a handler between the
+    api/ modules does not send these tests patching an empty namespace.
+    """
+    import sys
+
+    return sys.modules[handler_cls.__module__]
+
+
+def _get(handler_cls, params):
+    module = _handler_module(handler_cls)
+
+    with patch.object(module, "_require_auth"), \
+         patch.object(module.web, "header"), \
+         patch.object(module.web, "input", return_value=module.web.storage(**params)):
         return json.loads(handler_cls().GET())
 
 
 def _post(handler_cls, body):
-    from channel.web import web_channel
+    module = _handler_module(handler_cls)
 
-    with patch.object(web_channel, "_require_auth"), \
-         patch.object(web_channel.web, "header"), \
-         patch.object(web_channel.web, "data", return_value=json.dumps(body).encode()):
+    with patch.object(module, "_require_auth"), \
+         patch.object(module.web, "header"), \
+         patch.object(module.web, "data", return_value=json.dumps(body).encode()):
         return json.loads(handler_cls().POST())
 
 
 def test_skill_content_handler_serves_and_saves(tmp_path):
-    from channel.web.web_channel import SkillContentHandler
+    from channel.web.api.skills import SkillContentHandler
 
     target = _skill_dir(tmp_path / "skills", "console-editable")
 
-    with patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.web.api.skills._get_workspace_root", return_value=str(tmp_path)):
         loaded = _get(SkillContentHandler, {"name": "console-editable"})
         assert loaded["status"] == "success"
         assert loaded["editable"] is True
@@ -264,12 +275,12 @@ def test_skill_content_handler_serves_and_saves(tmp_path):
 
 
 def test_skill_content_handler_reports_a_conflict_code(tmp_path):
-    from channel.web.web_channel import SkillContentHandler
+    from channel.web.api.skills import SkillContentHandler
 
     target = _skill_dir(tmp_path / "skills", "console-editable")
     original = target.read_text(encoding="utf-8")
 
-    with patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.web.api.skills._get_workspace_root", return_value=str(tmp_path)):
         response = _post(SkillContentHandler, {
             "name": "console-editable",
             "content": "mine\n",
@@ -281,19 +292,19 @@ def test_skill_content_handler_reports_a_conflict_code(tmp_path):
 
 
 def test_skill_content_handler_requires_a_name_and_string_content(tmp_path):
-    from channel.web.web_channel import SkillContentHandler
+    from channel.web.api.skills import SkillContentHandler
 
-    with patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.web.api.skills._get_workspace_root", return_value=str(tmp_path)):
         assert _get(SkillContentHandler, {"name": ""})["status"] == "error"
         assert _post(SkillContentHandler, {"name": "x", "content": None})["status"] == "error"
 
 
 def test_memory_content_handler_includes_the_editable_path(tmp_path):
-    from channel.web.web_channel import MemoryContentHandler
+    from channel.web.api.memory import MemoryContentHandler
 
     _write(tmp_path / "MEMORY.md", "# global\n")
 
-    with patch("channel.web.web_channel._get_workspace_root", return_value=str(tmp_path)):
+    with patch("channel.web.api.memory._get_workspace_root", return_value=str(tmp_path)):
         response = _get(MemoryContentHandler, {"filename": "MEMORY.md", "category": "memory"})
 
     assert response["status"] == "success"
@@ -323,7 +334,7 @@ def test_document_editor_is_loaded_before_its_users():
     # stamp is the asset's own mtime, and render() leaves an asset it cannot
     # stat unstamped -- so this also fails on a reference to a file that is no
     # longer there.
-    from channel.web import template
+    from channel.web.core import template
     rendered = template.render("chat.html")
     unstamped = [ref for ref in re.findall(r'assets/(?:js|css)/[^"\']+', rendered)
                  if not re.search(r"\?v=[0-9a-f]+$", ref)]
@@ -354,7 +365,7 @@ def test_document_editor_contract():
 
 def test_memory_and_skill_editor_wiring():
     # The page is assembled from templates/, so assert against what is served.
-    from channel.web import template
+    from channel.web.core import template
     html = template.render("chat.html")
     from conftest import console_js
     console = console_js()

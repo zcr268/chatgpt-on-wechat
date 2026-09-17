@@ -548,7 +548,7 @@ class TestMentionParsing:
 
     @staticmethod
     def _resolve(text, roster=None):
-        from channel.web.web_channel import _addressed_agent_id
+        from channel.web.core._common import _addressed_agent_id
 
         if roster is None:
             roster = TestMentionParsing.ROSTER

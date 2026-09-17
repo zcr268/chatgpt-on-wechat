@@ -49,6 +49,17 @@ hiddenimports = [
     'channel.discord.discord_channel',
 ]
 
+# The web console's backend: web_channel.py is the URL table, and the handlers
+# live in channel/web/api/ with the shared plumbing in channel/web/core/. Those
+# are namespace packages (no __init__.py anywhere in this repo), which
+# collect_submodules does not reliably walk, so the list is read off the
+# directory instead -- it cannot fall behind a module being added.
+for _sub in ('api', 'core'):
+    _dir = rp('channel', 'web', _sub)
+    for _name in sorted(os.listdir(_dir)):
+        if _name.endswith('.py'):
+            hiddenimports.append(f'channel.web.{_sub}.{_name[:-3]}')
+
 # Agent tools and model providers are imported lazily in places; collect their
 # submodules so nothing is missed at runtime.
 hiddenimports += collect_submodules('agent.tools')
