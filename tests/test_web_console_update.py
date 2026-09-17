@@ -197,11 +197,11 @@ def test_frontend_contract():
     # The page is assembled from templates/ and the scripts were split into a
     # core/ and views/ tree, so assert against what is actually served.
     from channel.web import template
-    from conftest import console_js
+    from conftest import console_js, web_backend_py
 
     html = template.render("chat.html")
     js = console_js()
-    py = (root / "channel/web/web_channel.py").read_text(encoding="utf-8")
+    py = web_backend_py()
     assert 'id="update-menu"' in html
     assert 'id="sidebar-version"' in html
     assert 'id="update-dot"' in html

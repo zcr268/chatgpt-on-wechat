@@ -1,15 +1,6 @@
-from pathlib import Path
-
-
-ROOT = Path(__file__).resolve().parents[1]
-
-
-def _read(relative):
-    return (ROOT / relative).read_text(encoding="utf-8")
-
-
 def test_web_backend_exposes_agent_and_core_file_routes():
-    source = _read("channel/web/web_channel.py")
+    from conftest import web_backend_py
+    source = web_backend_py()
     assert "'/api/agents', 'AgentsHandler'" in source
     assert "'/api/agents/([^/]+)/files/([^/]+)', 'AgentCoreFileHandler'" in source
     assert "'/api/agents/([^/]+)/avatar', 'AgentAvatarHandler'" in source
@@ -55,7 +46,8 @@ def test_console_carries_agent_id_through_existing_feature_requests():
 
 
 def test_workspace_scoped_web_services_resolve_selected_agent():
-    source = _read("channel/web/web_channel.py")
+    from conftest import web_backend_py
+    source = web_backend_py()
     assert "def _get_workspace_root(session_id: str = None, agent_id: str = None)" in source
     assert "project_store.get_project_dir(session_id, agent_id)" in source
     assert "get_agent_registry().get(agent_id).workspace" in source

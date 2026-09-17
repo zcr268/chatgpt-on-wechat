@@ -379,7 +379,8 @@ class TestQianfanSurfaces(unittest.TestCase):
         self.assertIn(const.ERNIE_5_1, provider["models"])
 
     def test_web_console_allows_qianfan_config_edits(self):
-        source = self._read("channel/web/web_channel.py")
+        from conftest import web_backend_py
+        source = web_backend_py()
 
         self.assertIn('"qianfan_api_base"', source)
         self.assertIn('"qianfan_api_key"', source)
