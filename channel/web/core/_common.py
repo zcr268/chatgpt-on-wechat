@@ -591,6 +591,29 @@ def _request_agent_id(source) -> str:
     return value or None
 
 
+def _scoped_agent_id(source) -> str:
+    """The Agent a request is scoped to: its payload, or the URL's query string.
+
+    Clients put ``agent_id`` in the query string and deliberately keep it out of
+    a multipart body — web.py merges the two, and a field present in both
+    arrives as a list that breaks handlers expecting a string (see the console's
+    fetch wrapper and the desktop client's ``postFormData``). So a body read on
+    its own — ``rawinput("post")``, or a JSON payload the client did not inject
+    the field into — misses the Agent unless the query string is read too, and
+    the request quietly answers as the default Agent instead of the selected one.
+    """
+    agent_id = _request_agent_id(source)
+    if agent_id:
+        return agent_id
+    try:
+        from urllib.parse import parse_qs
+
+        query = parse_qs(web.ctx.env.get("QUERY_STRING") or "")
+    except Exception:
+        return None
+    return _request_agent_id(query)
+
+
 def _agent_badge(profile) -> dict:
     return {"id": profile.id, "name": profile.name, "avatar": profile.avatar or ""}
 
