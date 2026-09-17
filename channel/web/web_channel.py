@@ -14,7 +14,6 @@ import web
 from bridge.context import *
 from common import i18n
 from common.log import logger
-from config import get_data_root
 # Handlers that have moved to api/. Not used here, but build_app() resolves
 # the URL table against this module's globals, so every handler name has to
 # be in scope here -- see build_app at the bottom of the file.
@@ -27,6 +26,20 @@ from channel.web.api.channels import (  # noqa: F401
 from channel.web.api.config import ConfigHandler  # noqa: F401
 from channel.web.api.models import ModelsHandler  # noqa: F401
 from channel.web.api.openai_compat import OpenAIChatCompletionsHandler
+from channel.web.api.knowledge import (  # noqa: F401
+    KnowledgeActionHandler, KnowledgeGraphHandler, KnowledgeImportHandler,
+    KnowledgeListHandler, KnowledgeReadHandler,
+)
+from channel.web.api.logs import LogsDownloadHandler, LogsHandler  # noqa: F401
+from channel.web.api.memory import (  # noqa: F401
+    MemoryContentHandler, MemoryHandler,
+)
+from channel.web.api.skills import (  # noqa: F401
+    SkillContentHandler, SkillsHandler, ToolsHandler,
+)
+from channel.web.api.update import (  # noqa: F401
+    UpdateCheckHandler, UpdateStartHandler, UpdateStatusHandler, VersionHandler,
+)
 from channel.web.api.workspace import (  # noqa: F401
     ProjectBrowseHandler, ProjectCreateHandler, ProjectManageHandler,
     ProjectOrderHandler, ProjectSelectHandler, ProjectsHandler,
@@ -51,8 +64,8 @@ from channel.web.api.scheduler import (  # noqa: F401
 # from, and it keeps the names patchable where the tests already patch them.
 from channel.web.core._common import (
     _check_auth, _is_path_allowed,
-    _ensure_list, _get_preview_secret, _get_upload_dir, _get_web_password,
-    _get_workspace_root, _is_password_enabled, _raw_web_input,
+    _get_preview_secret, _get_upload_dir, _get_web_password,
+    _is_password_enabled, _raw_web_input,
     _request_agent_id,
     _require_auth,
     _session_expire_seconds,
@@ -101,29 +114,6 @@ def _decode_dir_token(token: str) -> str:
     if not hmac.compare_digest(sig, expected):
         raise ValueError("Bad preview token signature")
     return real
-
-
-def _read_uploaded_file_bytes_limited(file_obj, max_bytes: int) -> bytes:
-    """Read uploaded content and fail once it exceeds max_bytes."""
-    if isinstance(file_obj, bytes):
-        content = file_obj
-    elif isinstance(file_obj, str):
-        content = file_obj.encode("utf-8")
-    elif hasattr(file_obj, "file") and hasattr(file_obj.file, "read"):
-        content = file_obj.file.read(max_bytes + 1)
-    elif hasattr(file_obj, "read"):
-        content = file_obj.read(max_bytes + 1)
-    elif hasattr(file_obj, "value"):
-        content = file_obj.value
-    else:
-        raise ValueError("Unable to read uploaded file content")
-    if isinstance(content, str):
-        content = content.encode("utf-8")
-    if not isinstance(content, bytes):
-        raise TypeError(f"Unsupported uploaded content type: {type(content).__name__}")
-    if len(content) > max_bytes:
-        raise ValueError("file too large")
-    return content
 
 
 class RootHandler:
@@ -558,285 +548,6 @@ class ChatHandler:
         return html
 
 
-class ToolsHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.tools.tool_manager import ToolManager
-            from common import i18n
-            tm = ToolManager()
-            if not tm.tool_classes:
-                tm.load_tools()
-            tools = []
-            lang = i18n.get_language()
-            for name, cls in tm.tool_classes.items():
-                try:
-                    instance = cls()
-                    desc = instance.description
-                    if lang == i18n.ZH_HANT and desc:
-                        desc = i18n.to_traditional(desc)
-                    elif lang == "en" and name == "scheduler":
-                        desc = (
-                            "Create, query and manage scheduled tasks (reminders, periodic tasks, etc.).\n\n"
-                            "⚠️ IMPORTANT: Only use this tool when delayed or periodic execution is needed."
-                        )
-                    tools.append({
-                        "name": name,
-                        "description": desc,
-                    })
-                except Exception:
-                    tools.append({"name": name, "description": ""})
-            return json.dumps({"status": "success", "tools": tools}, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Tools API error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-def _skill_service(agent_id: str = ''):
-    """
-    A SkillService over the skills the console manages.
-
-    Skills stay anchored to the agent's state root even while a session has a
-    project open, so this deliberately resolves the workspace without a session.
-    ``agent_id`` selects which agent's skills to manage, so a multi-agent setup
-    keeps each agent's library isolated.
-    """
-    from agent.skills.manager import SkillManager
-    from agent.skills.service import SkillService
-    from common import state_dir
-    workspace_root = _get_workspace_root(agent_id=agent_id or None)
-    custom_dir = str(state_dir.skills_dir(base=workspace_root))
-    return SkillService(SkillManager(custom_dir=custom_dir))
-
-
-class SkillsHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from common import i18n
-            params = web.input(agent_id='')
-            # The library page lists everything installed, unnarrowed by the
-            # Agent's selection: a skill it has not selected still has to be
-            # visible here for the selection to be editable at all.
-            service = _skill_service(_request_agent_id(params))
-            skills = service.query()
-            if i18n.get_language() == i18n.ZH_HANT:
-                for skill in skills:
-                    if isinstance(skill, dict):
-                        for k, v in list(skill.items()):
-                            if k in ("name", "description", "display_name") and isinstance(v, str):
-                                skill[k] = i18n.to_traditional(v)
-            return json.dumps({"status": "success", "skills": skills}, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Skills API error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            body = json.loads(web.data())
-            action = body.get("action")
-            name = body.get("name")
-            if not action or not name:
-                return json.dumps({"status": "error", "message": "action and name are required"})
-            service = _skill_service(_request_agent_id(body))
-            if action == "open":
-                service.open({"name": name})
-            elif action == "close":
-                service.close({"name": name})
-            else:
-                return json.dumps({"status": "error", "message": f"unknown action: {action}"})
-            return json.dumps({"status": "success"}, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Skills POST error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class SkillContentHandler:
-    """
-    A skill's definition file, for the console's viewer and editor.
-
-    Addressed by skill name rather than by path, because the loader is what
-    resolves a name to a file: a workspace skill shadows a builtin of the same
-    name, and a builtin sits outside the workspace that the file APIs are
-    confined to.
-
-    Unlike the skill list, the text is served exactly as stored - no
-    simplified-to-traditional conversion. What comes back here is what a save
-    would write, and rewriting someone's file into another script because of
-    the console's display language is not a conversion they asked for.
-    """
-
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            params = web.input(name='', agent_id='')
-            name = (params.name or '').strip()
-            if not name:
-                return json.dumps({"status": "error", "message": "name is required"})
-            result = _skill_service(_request_agent_id(params)).read_content(name)
-            return json.dumps({"status": "success", **result}, ensure_ascii=False)
-        except (ValueError, FileNotFoundError) as e:
-            return json.dumps({"status": "error", "message": str(e)})
-        except Exception as e:
-            logger.error(f"[WebChannel] Skill content error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.workspace.service import WorkspaceConflictError
-
-            body = json.loads(web.data() or b'{}')
-            name = (body.get("name") or "").strip()
-            if not name:
-                return json.dumps({"status": "error", "message": "name is required"})
-            content = body.get("content")
-            if not isinstance(content, str):
-                return json.dumps({"status": "error", "message": "content must be a string"})
-
-            try:
-                result = _skill_service(_request_agent_id(body)).write_content(
-                    name, content, expected_mtime=body.get("expected_mtime"),
-                )
-            except WorkspaceConflictError as e:
-                return json.dumps({"status": "error", "code": "conflict", "message": str(e)})
-
-            logger.info(f"[WebChannel] Skill saved: {name} ({result['size']} bytes)")
-            return json.dumps({"status": "success", **result}, ensure_ascii=False)
-        except (ValueError, FileNotFoundError) as e:
-            return json.dumps({"status": "error", "message": str(e)})
-        except PermissionError:
-            return json.dumps({"status": "error", "message": "permission denied"})
-        except Exception as e:
-            logger.error(f"[WebChannel] Skill write error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class MemoryHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.memory.service import MemoryService
-            params = web.input(
-                page='1', page_size='20', category='memory', agent_id=''
-            )
-            workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
-            service = MemoryService(workspace_root)
-            result = service.list_files(
-                page=int(params.page), page_size=int(params.page_size),
-                category=params.category,
-            )
-            return json.dumps({"status": "success", **result}, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Memory API error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class MemoryContentHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.memory.service import MemoryService
-            params = web.input(filename='', category='memory', agent_id='')
-            if not params.filename:
-                return json.dumps({"status": "error", "message": "filename required"})
-            workspace_root = _get_workspace_root(agent_id=_request_agent_id(params))
-            service = MemoryService(workspace_root)
-            result = service.get_content(params.filename, category=params.category)
-            return json.dumps({"status": "success", **result}, ensure_ascii=False)
-        except ValueError:
-            return json.dumps({"status": "error", "message": "invalid filename"})
-        except FileNotFoundError:
-            return json.dumps({"status": "error", "message": "file not found"})
-        except Exception as e:
-            logger.error(f"[WebChannel] Memory content API error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class LogsHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'text/event-stream; charset=utf-8')
-        web.header('Cache-Control', 'no-cache')
-        web.header('X-Accel-Buffering', 'no')
-
-        log_path = os.path.join(get_data_root(), "run.log")
-
-        def generate():
-            if not os.path.isfile(log_path):
-                yield b"data: {\"type\": \"error\", \"message\": \"run.log not found\"}\n\n"
-                return
-
-            # Read last 200 lines for initial display
-            try:
-                with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
-                    lines = f.readlines()
-                tail_lines = lines[-200:]
-                chunk = ''.join(tail_lines)
-                payload = json.dumps({"type": "init", "content": chunk}, ensure_ascii=False)
-                yield f"data: {payload}\n\n".encode('utf-8')
-            except Exception as e:
-                yield f"data: {{\"type\": \"error\", \"message\": \"{e}\"}}\n\n".encode('utf-8')
-                return
-
-            # Tail new lines
-            try:
-                with open(log_path, 'r', encoding='utf-8', errors='replace') as f:
-                    f.seek(0, 2)  # seek to end
-                    deadline = time.time() + 600  # 10 min max
-                    while time.time() < deadline:
-                        line = f.readline()
-                        if line:
-                            payload = json.dumps({"type": "line", "content": line}, ensure_ascii=False)
-                            yield f"data: {payload}\n\n".encode('utf-8')
-                        else:
-                            yield b": keepalive\n\n"
-                            time.sleep(1)
-            except GeneratorExit:
-                return
-            except Exception:
-                return
-
-        return generate()
-
-
-class LogsDownloadHandler:
-    """Serve the full run.log as a file download for offline troubleshooting.
-
-    The /api/logs stream only replays the last 200 lines; this returns the whole
-    file so users can attach it to a bug report.
-    """
-
-    def GET(self):
-        _require_auth()
-        log_path = os.path.join(get_data_root(), "run.log")
-        if not os.path.isfile(log_path):
-            raise web.notfound()
-
-        try:
-            with open(log_path, 'rb') as f:
-                data = f.read()
-        except Exception as e:
-            logger.error(f"[WebChannel] Log download error: {e}")
-            raise web.internalerror()
-
-        # Timestamped name so multiple downloads don't overwrite each other.
-        fname = f"cowagent-{time.strftime('%Y%m%d-%H%M%S')}.log"
-        web.header('Content-Type', 'text/plain; charset=utf-8')
-        web.header('Content-Disposition', f'attachment; filename="{fname}"')
-        web.header('Content-Length', str(len(data)))
-        web.header('Cache-Control', 'no-store')
-        return data
-
-
 class AssetsHandler:
     def GET(self, file_path):  # 修改默认参数
         try:
@@ -913,217 +624,6 @@ class AssetsHandler:
 # System assets (memory / knowledge / persona files) always live in state_root,
 # never in a project dir. When a session has a project open, a relative ref to
 
-
-
-
-class KnowledgeListHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.knowledge.service import KnowledgeService
-            params = web.input(agent_id='')
-            svc = KnowledgeService(
-                _get_workspace_root(agent_id=_request_agent_id(params))
-            )
-            result = svc.list_tree()
-            return json.dumps({"status": "success", **result}, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Knowledge list error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class KnowledgeReadHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from pathlib import Path
-            from agent.knowledge.service import KnowledgeService
-            params = web.input(path='', agent_id='')
-            svc = KnowledgeService(
-                _get_workspace_root(agent_id=_request_agent_id(params))
-            )
-            result = svc.read_file(params.path)
-            # Absolute directory of the doc (posix separators), so clients can
-            # resolve image srcs that are relative to the doc into /api/file
-            # URLs. Additive field; read_file itself stays untouched.
-            rel = str(result["path"]).replace("\\", "/")
-            result["dir"] = Path(svc.knowledge_dir, *rel.split("/")).parent.as_posix()
-            return json.dumps({"status": "success", **result}, ensure_ascii=False)
-        except (ValueError, FileNotFoundError) as e:
-            return json.dumps({"status": "error", "message": str(e)})
-        except Exception as e:
-            logger.error(f"[WebChannel] Knowledge read error: {e}")
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class KnowledgeGraphHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.knowledge.service import KnowledgeService
-            params = web.input(agent_id='')
-            svc = KnowledgeService(
-                _get_workspace_root(agent_id=_request_agent_id(params))
-            )
-            return json.dumps(svc.build_graph(), ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Knowledge graph error: {e}")
-            return json.dumps({"nodes": [], "links": []})
-
-
-class KnowledgeActionHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            body = json.loads(web.data() or b"{}")
-            action = body.get("action", "")
-            payload = body.get("payload") or {}
-            from agent.knowledge.service import KnowledgeService
-            result = KnowledgeService(
-                _get_workspace_root(agent_id=_request_agent_id(body))
-            ).dispatch(action, payload)
-            return json.dumps({
-                "status": "success" if result["code"] < 300 else "error",
-                **result,
-            }, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Knowledge action error: {e}")
-            return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
-
-
-class KnowledgeImportHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from agent.knowledge.service import KnowledgeService
-            content_length = int(getattr(web.ctx, "env", {}).get("CONTENT_LENGTH") or 0)
-            if content_length > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
-                return json.dumps({
-                    "status": "error",
-                    "code": 413,
-                    "message": "import batch too large",
-                    "payload": None,
-                })
-            params = _raw_web_input()
-            agent_id = _request_agent_id(params)
-            target_category = params.get("target_category", "")
-            conflict_strategy = params.get("conflict_strategy", "skip")
-            uploaded = _ensure_list(params.get("files"))
-            single = params.get("file")
-            if single is not None:
-                uploaded.append(single)
-            if not uploaded:
-                return json.dumps({"status": "error", "code": 400, "message": "No files uploaded", "payload": None})
-            if len(uploaded) > KnowledgeService.MAX_IMPORT_FILES:
-                return json.dumps({
-                    "status": "error",
-                    "code": 400,
-                    "message": f"too many files: max {KnowledgeService.MAX_IMPORT_FILES}",
-                    "payload": None,
-                })
-
-            files = []
-            total_size = 0
-            for file_obj in uploaded:
-                if file_obj is None:
-                    continue
-                filename = getattr(file_obj, "filename", "") or getattr(file_obj, "name", "")
-                content = _read_uploaded_file_bytes_limited(file_obj, KnowledgeService.MAX_IMPORT_FILE_SIZE)
-                total_size += len(content)
-                if total_size > KnowledgeService.MAX_IMPORT_TOTAL_SIZE:
-                    return json.dumps({
-                        "status": "error",
-                        "code": 413,
-                        "message": "import batch too large",
-                        "payload": None,
-                    })
-                files.append({
-                    "filename": filename,
-                    "content": content,
-                })
-
-            result = KnowledgeService(
-                _get_workspace_root(agent_id=agent_id)
-            ).dispatch("import_documents", {
-                "target_category": target_category,
-                "conflict_strategy": conflict_strategy,
-                "files": files,
-            })
-            return json.dumps({
-                "status": "success" if result["code"] < 300 else "error",
-                **result,
-            }, ensure_ascii=False)
-        except Exception as e:
-            logger.error(f"[WebChannel] Knowledge import error: {e}", exc_info=True)
-            return json.dumps({"status": "error", "code": 500, "message": str(e), "payload": None})
-
-
-class VersionHandler:
-    def GET(self):
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from cli.update_service import version_payload
-        # Local metadata only — never contacts GitHub.
-        return json.dumps(version_payload(), ensure_ascii=False)
-
-
-class UpdateCheckHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from cli.update_service import check_for_updates, version_payload
-            payload = version_payload()
-            logger.info("[WebChannel] update check requested (current v%s)", payload["version"])
-            result = check_for_updates(payload["version"])
-            result.update({
-                "install_kind": payload["install_kind"],
-                "update_supported": payload["update_supported"],
-                "unsupported_reason": payload["unsupported_reason"],
-            })
-            if result.get("up_to_date"):
-                logger.info("[WebChannel] update check: already up to date (v%s)", payload["version"])
-            else:
-                latest = (result.get("latest") or {}).get("tag") or "?"
-                logger.info("[WebChannel] update check: newer version available -> %s", latest)
-            return json.dumps(result, ensure_ascii=False)
-        except Exception as e:
-            logger.error("[WebChannel] update check failed: %s", e, exc_info=True)
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class UpdateStartHandler:
-    def POST(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        try:
-            from cli.update_service import UpdateError, schedule_web_update
-            logger.info("[WebChannel] one-click update requested")
-            status = schedule_web_update()
-            return json.dumps({"status": "success", "update": status}, ensure_ascii=False)
-        except UpdateError as e:
-            logger.error("[WebChannel] update could not start at step '%s': %s", e.step, e.message)
-            return json.dumps({
-                "status": "error",
-                "step": e.step,
-                "message": e.message,
-                "output": e.output,
-            })
-        except Exception as e:
-            logger.error("[WebChannel] update start failed: %s", e, exc_info=True)
-            return json.dumps({"status": "error", "message": str(e)})
-
-
-class UpdateStatusHandler:
-    def GET(self):
-        _require_auth()
-        web.header('Content-Type', 'application/json; charset=utf-8')
-        from cli.update_service import read_update_status
-        return json.dumps(read_update_status(), ensure_ascii=False)
 
 URLS = (
     '/', 'ChatHandler',
