@@ -37,6 +37,9 @@ chat_client: LinkAIClient
 CHANNEL_ACTIONS = {"channel_create", "channel_update", "channel_delete"}
 
 
+AGENT_ACTIONS = {"agent_create", "agent_update", "agent_delete"}
+
+
 # channelType -> config key mapping for app credentials.
 # secret_key may be "" for single-token channels (e.g. telegram/discord).
 # For slack, appId carries bot_token and appSecret carries app_token.
@@ -77,7 +80,12 @@ def _acting_user(user_id):
 
 class CloudClient(LinkAIClient):
     def __init__(self, api_key: str, channel, host: str = "", port=None):
-        super().__init__(api_key, host, port=port)
+        # Older base client versions do not accept a ``port`` kwarg; fall back
+        # to the positional signature so both old and new versions work.
+        try:
+            super().__init__(api_key, host, port=port)
+        except TypeError:
+            super().__init__(api_key, host)
         self.channel = channel
         self.client_type = channel.channel_type
         self.channel_mgr = None
@@ -194,6 +202,10 @@ class CloudClient(LinkAIClient):
             self._dispatch_channel_action(action, config.get("data", {}))
             return
 
+        if action in AGENT_ACTIONS:
+            self._dispatch_agent_action(action, config.get("data", {}))
+            return
+
         if config.get("enabled") != "Y":
             return
 
@@ -301,6 +313,95 @@ class CloudClient(LinkAIClient):
             self._handle_channel_update(channel_type, data)
         elif action == "channel_delete":
             self._handle_channel_delete(channel_type, data)
+
+    # ------------------------------------------------------------------
+    # agent operations (add/remove an agent without a restart)
+    # ------------------------------------------------------------------
+    def _dispatch_agent_action(self, action: str, data: dict):
+        agent_id = str(data.get("id") or data.get("agentId") or "").strip()
+        if not agent_id:
+            logger.warning(f"[CloudClient] Agent action '{action}' missing id, data={data}")
+            return
+        logger.info(f"[CloudClient] Agent action: {action}, id={agent_id}")
+        if action == "agent_create":
+            self._handle_agent_create(agent_id, data)
+        elif action == "agent_update":
+            self._handle_agent_update(agent_id, data)
+        elif action == "agent_delete":
+            self._handle_agent_delete(agent_id)
+
+    def _handle_agent_update(self, agent_id: str, data: dict):
+        """Apply a rename / model change to a live agent."""
+        fields = {}
+        if data.get("name"):
+            fields["name"] = str(data.get("name")).strip()
+        if data.get("model"):
+            fields["model"] = data.get("model")
+        if not fields:
+            return
+        try:
+            from agent.admin import get_agent_admin_service
+            service = get_agent_admin_service()
+            service.update_agent(agent_id, **fields)
+            self._reload_agents(service)
+            logger.info(f"[CloudClient] Agent '{agent_id}' updated: {list(fields)}")
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to update agent '{agent_id}': {e}", exc_info=True)
+
+    def _handle_agent_delete(self, agent_id: str):
+        """Remove an agent, its workspace and roster entry, then re-point the
+        live runtime. The default agent is the instance itself and is refused
+        by the admin service."""
+        try:
+            from agent.admin import get_agent_admin_service
+            service = get_agent_admin_service()
+            service.delete_agent(agent_id)
+            self._reload_agents(service)
+            logger.info(f"[CloudClient] Agent '{agent_id}' deleted")
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to delete agent '{agent_id}': {e}", exc_info=True)
+
+    def _handle_agent_create(self, agent_id: str, data: dict):
+        """Add a new agent and re-point the live runtime, so it can answer
+        without a restart. A no-op when agent support is unavailable."""
+        name = str(data.get("name") or agent_id).strip()
+        model = data.get("model")
+        # Asset isolation for the new agent. Values are "own" (a private copy)
+        # or "shared" (draw on the shared library); unset keeps the default
+        # shared behaviour so existing callers are unaffected.
+        knowledge_mode = data.get("knowledge_mode") or data.get("knowledgeMode")
+        skill_mode = data.get("skill_mode") or data.get("skillMode")
+        try:
+            from agent.admin import get_agent_admin_service
+        except Exception as e:
+            logger.warning(f"[CloudClient] agent create unavailable: {e}")
+            return
+        try:
+            service = get_agent_admin_service()
+            service.create_agent(
+                agent_id=agent_id,
+                name=name,
+                knowledge_mode=knowledge_mode,
+                skill_mode=skill_mode,
+            )
+            if model:
+                try:
+                    service.update_agent(agent_id, model=model)
+                except Exception as e:
+                    logger.warning(f"[CloudClient] set agent model failed: {e}")
+            self._reload_agents(service)
+            logger.info(f"[CloudClient] Agent '{agent_id}' created")
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to create agent '{agent_id}': {e}", exc_info=True)
+
+    @staticmethod
+    def _reload_agents(service):
+        """Re-point the running runtime at the updated roster."""
+        try:
+            from channel.web.web_channel import _reload_agent_runtime
+            _reload_agent_runtime(service)
+        except Exception as e:
+            logger.warning(f"[CloudClient] agent runtime reload skipped: {e}")
 
     # ------------------------------------------------------------------
     # per-instance channel operations (multi-instance path)
@@ -673,14 +774,32 @@ class CloudClient(LinkAIClient):
         :return: response dict
         """
         action = data.get("action", "")
-        payload = data.get("payload")
+        payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_memory: action={action}")
 
-        svc = self.memory_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._memory_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "MemoryService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _memory_service_for(self, agent_id):
+        """A MemoryService bound to the requested agent's workspace. Falls back
+        to the process-wide default-agent service when no agent is requested,
+        so single-agent installs are unaffected."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.memory_service
+        try:
+            from agent.memory.service import MemoryService
+            return MemoryService(workspace)
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build MemoryService for agent: {e}")
+            return self.memory_service
 
     # ------------------------------------------------------------------
     # knowledge callback
@@ -694,14 +813,33 @@ class CloudClient(LinkAIClient):
         :return: response dict
         """
         action = data.get("action", "")
-        payload = data.get("payload")
+        payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_knowledge: action={action}")
 
-        svc = self.knowledge_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._knowledge_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "KnowledgeService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _knowledge_service_for(self, agent_id):
+        """A KnowledgeService bound to the requested agent's workspace. Falls
+        back to the process-wide default-agent service when no agent is
+        requested, so single-agent installs are unaffected. An agent with its
+        own knowledge/ reads that; otherwise it transparently reads the shared one."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.knowledge_service
+        try:
+            from agent.knowledge.service import KnowledgeService
+            return KnowledgeService(str(workspace))
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build KnowledgeService for agent: {e}")
+            return self.knowledge_service
 
     # ------------------------------------------------------------------
     # workspace callback
@@ -721,11 +859,29 @@ class CloudClient(LinkAIClient):
 
         logger.info(f"[CloudClient] on_workspace: action={action}, path={payload.get('path', '')}")
 
-        svc = self.workspace_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._workspace_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "WorkspaceService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _workspace_service_for(self, agent_id):
+        """A WorkspaceService rooted at the requested agent's workspace. Falls
+        back to the process-wide default-agent service when no agent is
+        requested, so single-agent installs are unaffected."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.workspace_service
+        try:
+            from agent.workspace.service import WorkspaceService
+            return WorkspaceService(str(workspace))
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build WorkspaceService for agent: {e}")
+            return self.workspace_service
 
     # ------------------------------------------------------------------
     # chat callback
@@ -745,10 +901,25 @@ class CloudClient(LinkAIClient):
         # Console user on whose behalf this runs; usage is attributed to them
         # instead of the account this deployment is registered under.
         user_id = payload.get("user_id") or data.get("user_id")
+        # Which agent should answer. Absent means the default agent, so
+        # single-agent installs keep working unchanged.
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        agent_id = self._resolve_chat_agent_id(agent_id)
+        # Shared conversation: the roster on it and the teammate addressed for
+        # this turn. Both optional; absent keeps the single-agent behaviour.
+        speaker_agent_id = self._resolve_optional_agent_id(
+            payload.get("speaker_agent_id") or payload.get("speakerAgentId")
+        )
+        members = payload.get("members")
+        if isinstance(members, list):
+            members = [m for m in (self._resolve_optional_agent_id(x) for x in members) if m]
+        else:
+            members = None
         if not session_id.startswith("session_"):
             session_id = f"session_{session_id}"
         logger.info(f"[CloudClient] on_chat: session={session_id}, channel={channel_type}, "
-                    f"user_id={user_id}, query={query[:80]}")
+                    f"user_id={user_id}, agent_id={agent_id}, speaker={speaker_agent_id}, "
+                    f"members={members}, query={query[:80]}")
 
         # Cancel / steer fast-path. These are NOT new agent turns — they act on
         # the run already in flight for this session. The web channel intercepts
@@ -758,7 +929,7 @@ class CloudClient(LinkAIClient):
         stripped = (query or "").strip()
         steer_flag = bool(payload.get("steer"))
         if stripped == "/cancel":
-            handled = self._handle_cancel(session_id, send_chunk_fn)
+            handled = self._handle_cancel(session_id, send_chunk_fn, agent_id)
             if handled:
                 return
         elif steer_flag or stripped.startswith("/steer"):
@@ -767,10 +938,10 @@ class CloudClient(LinkAIClient):
                 if stripped.startswith("/steer")
                 else stripped
             )
-            self._handle_steer(session_id, instruction, send_chunk_fn)
+            self._handle_steer(session_id, instruction, send_chunk_fn, agent_id)
             return
 
-        with _acting_user(user_id):
+        with _acting_user(user_id), self._chat_identity(agent_id, user_id, session_id):
             # Intercept cow/slash commands before the agent runs
             try:
                 from plugins import PluginManager
@@ -789,7 +960,98 @@ class CloudClient(LinkAIClient):
                 raise RuntimeError("ChatService not available")
 
             svc.run(query=query, session_id=session_id, channel_type=channel_type,
-                    send_chunk_fn=send_chunk_fn)
+                    send_chunk_fn=self._aliasing_sender(send_chunk_fn), agent_id=agent_id,
+                    speaker_agent_id=speaker_agent_id, members=members)
+
+    def _aliasing_sender(self, send_chunk_fn):
+        """Report the default agent to remote callers by its reserved alias,
+        matching how they address it (see AgentRegistry.get_addressed)."""
+        def send(chunk):
+            if isinstance(chunk, dict) and chunk.get("chunk_type") == "speaker":
+                chunk = {**chunk, "agent_id": self._alias_agent_id(chunk.get("agent_id"))}
+            send_chunk_fn(chunk)
+        return send
+
+    @staticmethod
+    def _alias_agent_id(agent_id):
+        """The default agent's id as seen from outside: the reserved alias."""
+        try:
+            from agent.registry import DEFAULT_AGENT_ALIAS, get_agent_registry
+            if agent_id and agent_id == get_agent_registry().default_agent_id:
+                return DEFAULT_AGENT_ALIAS
+        except Exception:
+            pass
+        return agent_id
+
+    def _resolve_optional_agent_id(self, agent_id):
+        """Map an addressed id (including the reserved ``"default"`` alias) to
+        the configured agent id, or None when absent or unknown. Unknown
+        teammates are dropped rather than failing the turn: the owner still
+        answers, which is what ``_resolve_speaker`` does for them anyway."""
+        agent_id = str(agent_id).strip() if agent_id is not None else ""
+        if not agent_id:
+            return None
+        try:
+            from agent.registry import get_agent_registry
+            return get_agent_registry().get_addressed(agent_id, require_enabled=False).id
+        except Exception:
+            logger.warning(f"[CloudClient] unknown agent id ignored: {agent_id}")
+            return None
+
+    def _resolve_chat_agent_id(self, agent_id):
+        """Validate a requested agent id, or fall back to the default agent
+        when none is requested.
+
+        Returns None when no bridge is available yet so callers keep their
+        existing default-agent behaviour. A requested agent that is unknown or
+        disabled is an error: answering as the default agent instead would
+        silently mix up two agents' sessions and memory.
+        """
+        agent_id = str(agent_id).strip() if agent_id is not None else ""
+        bridge = self._agent_bridge()
+        if bridge is None:
+            return agent_id or None
+        try:
+            return bridge.agent_router.resolve(explicit_agent_id=agent_id or None)
+        except Exception as e:
+            if agent_id:
+                raise RuntimeError(f"agent unavailable: {agent_id}") from e
+            logger.warning(f"[CloudClient] agent route fallback to default: {e}")
+            return None
+
+    def _agent_workspace(self, agent_id):
+        """Resolve a requested agent id to its workspace root, or None to keep
+        the default-agent behaviour when no agent is requested. An agent that is
+        requested but unknown raises KeyError rather than silently serving the
+        default agent's data (see AgentRegistry.get_addressed for the ids that
+        are tolerated)."""
+        agent_id = str(agent_id).strip() if agent_id is not None else ""
+        if not agent_id:
+            return None
+        try:
+            from agent.registry import get_agent_registry
+            registry = get_agent_registry()
+        except Exception as e:
+            logger.warning(f"[CloudClient] agent registry unavailable, using default: {e}")
+            return None
+        return registry.get_addressed(agent_id, require_enabled=False).workspace
+
+    @staticmethod
+    def _agent_not_found(action, agent_id):
+        return {"action": action, "code": 404, "message": f"agent not found: {agent_id}", "payload": None}
+
+    @contextmanager
+    def _chat_identity(self, agent_id, user_id, session_id):
+        """Bind the ambient identity so downstream code resolves the right
+        agent workspace/memory. A no-op when identity support is absent."""
+        try:
+            from common.runtime_identity import identity_scope
+        except Exception:
+            yield
+            return
+        with identity_scope(agent_id=agent_id, user_id=(str(user_id) if user_id else None),
+                            session_id=session_id):
+            yield
 
     def _agent_bridge(self):
         try:
@@ -799,7 +1061,7 @@ class CloudClient(LinkAIClient):
             logger.warning(f"[CloudClient] agent_bridge unavailable: {e}")
             return None
 
-    def _handle_cancel(self, session_id: str, send_chunk_fn) -> bool:
+    def _handle_cancel(self, session_id: str, send_chunk_fn, agent_id: str = None) -> bool:
         """Abort the in-flight run for this session. Returns True if it was our
         command to handle (always True once matched), regardless of whether a
         run was actually running."""
@@ -808,7 +1070,7 @@ class CloudClient(LinkAIClient):
         if bridge is not None:
             try:
                 from agent.protocol import get_cancel_registry
-                key = bridge.scoped_session_key(session_id)
+                key = bridge.scoped_session_key(session_id, agent_id)
                 cancelled = get_cancel_registry().cancel_session(key)
             except Exception as e:
                 logger.warning(f"[CloudClient] cancel failed: {e}")
@@ -817,7 +1079,8 @@ class CloudClient(LinkAIClient):
         send_chunk_fn({"chunk_type": "content", "delta": msg, "segment_id": 0})
         return True
 
-    def _handle_steer(self, session_id: str, instruction: str, send_chunk_fn) -> None:
+    def _handle_steer(self, session_id: str, instruction: str, send_chunk_fn,
+                      agent_id: str = None) -> None:
         """Inject a mid-run instruction into this session's active run."""
         if not instruction:
             send_chunk_fn({"chunk_type": "content",
@@ -827,7 +1090,7 @@ class CloudClient(LinkAIClient):
         status_val = None
         if bridge is not None:
             try:
-                result = bridge.steer_session(session_id, instruction)
+                result = bridge.steer_session(session_id, instruction, agent_id)
                 status_val = getattr(getattr(result, "status", None), "value", None) or str(result)
             except Exception as e:
                 logger.warning(f"[CloudClient] steer failed: {e}")
@@ -901,15 +1164,27 @@ class CloudClient(LinkAIClient):
 
         try:
             from agent.memory.conversation_store import get_conversation_store
-            store = get_conversation_store()
+            # Scope the lookup to the requested agent's workspace so each agent
+            # only sees its own history; None keeps the default-agent behaviour.
+            workspace = self._agent_workspace(payload.get("agent_id") or payload.get("agentId"))
+            store = get_conversation_store(workspace)
             result = store.load_history_page(
                 session_id=session_id,
                 page=page,
                 page_size=page_size,
             )
+            for turn in result.get("messages") or []:
+                extras = turn.get("extras") if isinstance(turn, dict) else None
+                if isinstance(extras, dict) and extras.get("agent_id"):
+                    turn["agent_id"] = self._alias_agent_id(extras["agent_id"])
             return {
                 "action": "query",
                 "payload": {"status": "success", **result},
+            }
+        except KeyError as e:
+            return {
+                "action": "query",
+                "payload": {"status": "error", "message": f"agent not found: {e.args[0] if e.args else ''}"},
             }
         except Exception as e:
             logger.error(f"[CloudClient] History query error: {e}")

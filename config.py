@@ -281,8 +281,11 @@ available_setting = {
     # as before. Each configured workspace is a complete CowAgent workspace.
     "agents": [],
     # Agent handling conversations that no channel instance binds. Defaults to
-    # the first configured agent when unset.
+    # the first configured agent when unset. When no agents list is configured,
+    # also sets the built-in single agent's id.
     "default_agent_id": "",
+    # Optional display name for the built-in single agent.
+    "default_agent_name": "",
     # Routes inbound conversations to an agent. Each entry needs channel_type
     # and agent_id; add conversation_id to bind one chat rather than the whole
     # channel. Unbound conversations go to default_agent_id.
