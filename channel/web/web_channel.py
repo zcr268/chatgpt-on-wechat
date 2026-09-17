@@ -36,7 +36,12 @@ from agent.permission import (
     normalize_mode as permission_normalize_mode,
 )
 from channel.web.api.openai_compat import OpenAIChatCompletionsHandler
-from channel.web.core import providers
+# By name, not as a module: "providers" is a common local variable in the
+# handlers below, and a local binding would shadow the module for the
+# whole function -- including the lines above the assignment.
+from channel.web.core.providers import (
+    PROVIDER_MODELS, is_real_key, legacy_custom_in_use, mask_key,
+)
 # Shared with WebChannel, so it lives in _common. Imported by name rather
 # than as a module: the handlers below read these out of this module's
 # globals, the same place web.py resolves the handler names themselves
@@ -724,11 +729,6 @@ class ChatHandler:
 
 class ConfigHandler:
 
-    # The vendor catalogue lives in channel/web/providers.py, because
-    # ModelsHandler and WebChannel read it too. Aliased here so callers
-    # keep the ConfigHandler.PROVIDER_MODELS spelling they already use.
-    PROVIDER_MODELS = providers.PROVIDER_MODELS
-
     EDITABLE_KEYS = {
         "cow_lang",
         "model", "bot_type", "use_linkai",
@@ -749,13 +749,6 @@ class ConfigHandler:
         "subagent_enabled": ("subagent", "enabled"),
     }
 
-    @staticmethod
-    def _mask_key(value: str) -> str:
-        """Mask the middle part of an API key for display."""
-        if not value or len(value) <= 8:
-            return value
-        return value[:4] + "*" * (len(value) - 8) + value[-4:]
-
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
@@ -769,18 +762,18 @@ class ConfigHandler:
 
             api_bases = {}
             api_keys_masked = {}
-            for pid, pinfo in self.PROVIDER_MODELS.items():
+            for pid, pinfo in PROVIDER_MODELS.items():
                 base_key = pinfo.get("api_base_key")
                 if base_key:
                     api_bases[base_key] = local_config.get(base_key, pinfo["api_base_default"])
                 key_field = pinfo.get("api_key_field")
                 if key_field and key_field not in api_keys_masked:
                     raw = local_config.get(key_field, "")
-                    api_keys_masked[key_field] = self._mask_key(raw) if raw else ""
+                    api_keys_masked[key_field] = mask_key(raw) if raw else ""
 
             providers = {}
             provider_model = local_config.get("model", "")
-            for pid, p in self.PROVIDER_MODELS.items():
+            for pid, p in PROVIDER_MODELS.items():
                 reasoning_by_model = {
                     model: provider_reasoning_metadata(pid, model)
                     for model in p["models"]
@@ -805,8 +798,8 @@ class ConfigHandler:
             try:
                 from models.custom_provider import get_custom_providers
                 custom_list = get_custom_providers()
-                legacy_custom_in_use = ModelsHandler._legacy_custom_in_use(local_config)
-                if custom_list and not legacy_custom_in_use:
+                keep_legacy_custom = legacy_custom_in_use(local_config)
+                if custom_list and not keep_legacy_custom:
                     providers.pop("custom", None)
                 for cp in custom_list:
                     cid = f"custom:{cp.get('id')}"
@@ -1025,7 +1018,7 @@ class ModelsHandler:
     POST /api/models/capability -> set provider/model for a capability
     """
 
-    # Capability -> provider ids drawn from ConfigHandler.PROVIDER_MODELS.
+    # Capability -> provider ids drawn from PROVIDER_MODELS.
     _ASR_PROVIDERS = ["openai", "dashscope", "zhipu", "linkai"]
     # Web-console white-list. Other vendors stay usable via direct config.
     _TTS_PROVIDERS = ["openai", "minimax", "dashscope", "mimo", "linkai"]
@@ -1429,10 +1422,6 @@ class ModelsHandler:
         with open(cls._config_path(), "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
 
-    @staticmethod
-    def _is_real_key(value: str) -> bool:
-        return bool(value) and value not in ("", "YOUR API KEY", "YOUR_API_KEY")
-
     @classmethod
     def _custom_provider_cards(cls, local_config: dict) -> List[dict]:
         """Expand ``custom_providers`` into one card per provider.
@@ -1460,7 +1449,7 @@ class ModelsHandler:
         bot_type = local_config.get("bot_type") or ""
         _, active_id = parse_custom_bot_type(bot_type)
 
-        meta = ConfigHandler.PROVIDER_MODELS.get("custom") or {}
+        meta = PROVIDER_MODELS.get("custom") or {}
         catalog_map = model_catalog.get_catalog_map()
         hidden_map = model_catalog.get_hidden_map()
         cards = []
@@ -1473,7 +1462,7 @@ class ModelsHandler:
             # self-hosted / gateway endpoints need no auth. Treat the provider
             # as configured once it has an api_base, so a keyless-but-valid
             # endpoint isn't shown as an unconfigured (greyed-out) vendor.
-            configured = bool(raw_base) or cls._is_real_key(raw_key)
+            configured = bool(raw_base) or is_real_key(raw_key)
             # A custom endpoint has no presets, so its overrides are its whole
             # list and there is nothing to tombstone.
             catalog = catalog_map.get(f"custom:{pid}") or []
@@ -1491,7 +1480,7 @@ class ModelsHandler:
                 # names are intentionally null.
                 "api_key_field": None,
                 "api_base_field": None,
-                "api_key_masked": ConfigHandler._mask_key(raw_key) if cls._is_real_key(raw_key) else "",
+                "api_key_masked": mask_key(raw_key) if is_real_key(raw_key) else "",
                 "api_base": raw_base,
                 "api_base_default": "",
                 "api_base_placeholder": meta.get("api_base_placeholder") or "",
@@ -1505,20 +1494,9 @@ class ModelsHandler:
         return cards
 
     @classmethod
-    def _legacy_custom_in_use(cls, local_config: dict) -> bool:
-        """True when the flat single-provider custom config is still relevant:
-        either it is the active bot_type, or its key/base fields are filled.
-        In that case the legacy "custom" card must stay visible even when
-        multi ``custom_providers`` entries exist."""
-        if (local_config.get("bot_type") or "") == "custom":
-            return True
-        return (cls._is_real_key(local_config.get("custom_api_key") or "")
-                or bool(local_config.get("custom_api_base")))
-
-    @classmethod
     def _provider_overview(cls) -> List[dict]:
         """All known providers (configured first, unconfigured after).
-        Re-uses ConfigHandler.PROVIDER_MODELS for the canonical list.
+        Re-uses PROVIDER_MODELS for the canonical list.
 
         When the user has defined multiple custom (OpenAI-compatible)
         providers via ``custom_providers``, the single built-in ``custom``
@@ -1531,11 +1509,11 @@ class ModelsHandler:
         # Keep the legacy single "custom" card visible alongside the expanded
         # ones when the flat custom_api_key/base config is still active or
         # filled, so existing single-provider setups never disappear from the UI.
-        keep_legacy_custom = cls._legacy_custom_in_use(local_config)
+        keep_legacy_custom = legacy_custom_in_use(local_config)
         catalog_map = model_catalog.get_catalog_map()
         hidden_map = model_catalog.get_hidden_map()
         items = []
-        for pid, p in ConfigHandler.PROVIDER_MODELS.items():
+        for pid, p in PROVIDER_MODELS.items():
             if pid == "custom" and custom_cards:
                 # Multi-provider mode: emit the expanded cards, plus the
                 # legacy card when it is still in use.
@@ -1546,7 +1524,7 @@ class ModelsHandler:
             base_field = p.get("api_base_key")
             raw_key = local_config.get(key_field, "") if key_field else ""
             raw_base = local_config.get(base_field, "") if base_field else ""
-            configured = cls._is_real_key(raw_key)
+            configured = is_real_key(raw_key)
             overrides = catalog_map.get(pid) or []
             hidden = hidden_map.get(pid) or []
             seed = [] if pid == "custom" else cls._preset_seed(pid)
@@ -1561,7 +1539,7 @@ class ModelsHandler:
                 "is_custom": (pid == "custom"),
                 "api_key_field": key_field,
                 "api_base_field": base_field,
-                "api_key_masked": ConfigHandler._mask_key(raw_key) if configured else "",
+                "api_key_masked": mask_key(raw_key) if configured else "",
                 "api_base": raw_base or (p.get("api_base_default") or ""),
                 "api_base_default": p.get("api_base_default") or "",
                 "api_base_placeholder": p.get("api_base_placeholder") or "",
@@ -1584,9 +1562,9 @@ class ModelsHandler:
             # entry so they cluster where the single custom card used to be.
             base_id = "custom" if it.get("is_custom") else pid
             try:
-                order = list(ConfigHandler.PROVIDER_MODELS.keys()).index(base_id)
+                order = list(PROVIDER_MODELS.keys()).index(base_id)
             except ValueError:
-                order = len(ConfigHandler.PROVIDER_MODELS)
+                order = len(PROVIDER_MODELS)
             return (0 if it["configured"] else 1, order)
 
         items.sort(key=_sort_key)
@@ -1657,7 +1635,7 @@ class ModelsHandler:
         bot_type = local_config.get("bot_type") or ""
         provider_id = "openai" if bot_type == "chatGPT" else bot_type
         is_custom_id = provider_id.startswith("custom:")
-        if (provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id
+        if (provider_id not in PROVIDER_MODELS and not is_custom_id
                 and local_config.get("use_linkai")):
             provider_id = "linkai"
         # When `bot_type` doesn't resolve to a known provider (e.g. it was
@@ -1665,10 +1643,10 @@ class ModelsHandler:
         # inferring from `model`), fall back to the same model-based inference
         # here. Otherwise the wizard would treat a working setup as unconfigured
         # and re-open on every launch. Guarded so a failure can't affect startup.
-        if provider_id not in ConfigHandler.PROVIDER_MODELS and not is_custom_id:
+        if provider_id not in PROVIDER_MODELS and not is_custom_id:
             try:
                 inferred = cls._infer_provider_from_model(local_config.get("model", ""))
-                if inferred in ConfigHandler.PROVIDER_MODELS:
+                if inferred in PROVIDER_MODELS:
                     provider_id = inferred
             except Exception:
                 pass
@@ -1677,8 +1655,8 @@ class ModelsHandler:
         # The legacy "custom" entry stays when its flat config is still used.
         provider_ids = []
         custom_cards = cls._custom_provider_cards(local_config)
-        keep_legacy_custom = cls._legacy_custom_in_use(local_config)
-        for pid in ConfigHandler.PROVIDER_MODELS.keys():
+        keep_legacy_custom = legacy_custom_in_use(local_config)
+        for pid in PROVIDER_MODELS.keys():
             if pid == "custom" and custom_cards:
                 provider_ids.extend(c["id"] for c in custom_cards)
                 if keep_legacy_custom:
@@ -1700,14 +1678,14 @@ class ModelsHandler:
     def _chat_preset_models() -> dict:
         """{provider_id: [model, ...]} for every chat-capable vendor.
 
-        ``ConfigHandler.PROVIDER_MODELS`` carries per-vendor metadata
+        ``PROVIDER_MODELS`` carries per-vendor metadata
         (label, api_key_field, ...) around the model list; the console's model
         picker wants only the lists. Used as the base for the fallback card's
         model lists, so a vendor without a catalog still offers its presets
         while a catalogued one offers its catalog instead.
         """
         out = {}
-        for pid, meta in ConfigHandler.PROVIDER_MODELS.items():
+        for pid, meta in PROVIDER_MODELS.items():
             models = (meta or {}).get("models")
             out[pid] = list(models) if isinstance(models, (list, tuple)) else []
         return out
@@ -1804,16 +1782,16 @@ class ModelsHandler:
         main_provider = chat["current_provider"]
         main_model = chat["current_model"]
         use_linkai_flag = bool(local_config.get("use_linkai", False))
-        linkai_configured = cls._is_real_key(local_config.get("linkai_api_key", ""))
+        linkai_configured = is_real_key(local_config.get("linkai_api_key", ""))
 
         def _try(pid: str, model_default: str):
             # Look up the api_key for this provider via the canonical
             # provider table so we don't hardcode field names here.
-            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            meta = PROVIDER_MODELS.get(pid) or {}
             key_field = meta.get("api_key_field")
             if not key_field:
                 return None
-            if not cls._is_real_key(local_config.get(key_field, "")):
+            if not is_real_key(local_config.get(key_field, "")):
                 return None
             # Pick a model that the vision runtime can actually dispatch to
             # for this provider. Using `main_model` here is unsafe — for
@@ -1851,7 +1829,7 @@ class ModelsHandler:
                 return hit
 
         # 4. OpenAI raw HTTP
-        if cls._is_real_key(local_config.get("open_ai_api_key", "")):
+        if is_real_key(local_config.get("open_ai_api_key", "")):
             return {"provider": "openai", "model": const.GPT_55}
 
         # 5. LinkAI as last resort (only reached when use_linkai is off)
@@ -1929,9 +1907,9 @@ class ModelsHandler:
         suggested = ""
         if not explicit:
             for pid in cls._ASR_PROVIDERS:
-                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                meta = PROVIDER_MODELS.get(pid) or {}
                 key_field = meta.get("api_key_field")
-                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                if key_field and is_real_key(local_config.get(key_field, "")):
                     suggested = pid
                     break
         # Custom (OpenAI-compatible) vendors are selectable too — same pattern
@@ -1962,9 +1940,9 @@ class ModelsHandler:
         suggested = ""
         if not ui_provider:
             for pid in cls._TTS_PROVIDERS:
-                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                meta = PROVIDER_MODELS.get(pid) or {}
                 key_field = meta.get("api_key_field")
-                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                if key_field and is_real_key(local_config.get(key_field, "")):
                     suggested = pid
                     break
         providers = list(cls._TTS_PROVIDERS)
@@ -2004,9 +1982,9 @@ class ModelsHandler:
             for pid in cls._EMBEDDING_PROVIDERS:
                 if pid == "custom":
                     continue
-                meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+                meta = PROVIDER_MODELS.get(pid) or {}
                 key_field = meta.get("api_key_field")
-                if key_field and cls._is_real_key(local_config.get(key_field, "")):
+                if key_field and is_real_key(local_config.get(key_field, "")):
                     suggested = pid
                     break
             if not suggested:
@@ -2066,16 +2044,16 @@ class ModelsHandler:
         proxies to whichever backend it deems appropriate and surfacing
         "LinkAI" alone tells the user nothing actionable."""
         use_linkai_flag = bool(local_config.get("use_linkai", False))
-        linkai_configured = cls._is_real_key(local_config.get("linkai_api_key", ""))
+        linkai_configured = is_real_key(local_config.get("linkai_api_key", ""))
         if use_linkai_flag and linkai_configured:
             return {"provider": "", "model": ""}
 
         for pid, default_model in cls._IMAGE_AUTO_ORDER:
-            meta = ConfigHandler.PROVIDER_MODELS.get(pid) or {}
+            meta = PROVIDER_MODELS.get(pid) or {}
             key_field = meta.get("api_key_field")
             if not key_field:
                 continue
-            if cls._is_real_key(local_config.get(key_field, "")):
+            if is_real_key(local_config.get(key_field, "")):
                 return {"provider": pid, "model": default_model}
         return {"provider": "", "model": ""}
 
@@ -2218,15 +2196,15 @@ class ModelsHandler:
             raw_key = cls._search_provider_key(pid, local_config)
             if pid == "anysearch":
                 # AnySearch: real key, or an explicit anonymous opt-in.
-                ok = cls._is_real_key(raw_key) or anonymous_on
+                ok = is_real_key(raw_key) or anonymous_on
             elif pid == "keenable":
                 # Keenable: real key, or an explicit anonymous opt-in.
-                ok = cls._is_real_key(raw_key) or keenable_anonymous_on
+                ok = is_real_key(raw_key) or keenable_anonymous_on
             elif pid == "searxng":
                 # SearXNG: self-hosted, no auth — available when instance URL is set.
                 ok = bool(searxng_url)
             else:
-                ok = cls._is_real_key(raw_key)
+                ok = is_real_key(raw_key)
             providers.append({
                 "id": pid,
                 "label": cls._SEARCH_PROVIDER_LABELS.get(pid, pid),
@@ -2241,7 +2219,7 @@ class ModelsHandler:
                 # SearXNG stores an instance URL (not a secret), so echo it back
                 # verbatim to prefill/edit; other providers mask their key.
                 "url_masked": searxng_url if pid == "searxng" else "",
-                "api_key_masked": ConfigHandler._mask_key(raw_key) if raw_key else "",
+                "api_key_masked": mask_key(raw_key) if raw_key else "",
             })
             if ok:
                 configured_ids.append(pid)
@@ -2294,7 +2272,7 @@ class ModelsHandler:
         merged = dict(presets)
         catalog_map = model_catalog.get_catalog_map()
         hidden_map = model_catalog.get_hidden_map()
-        ids = [pid for pid in list(merged.keys()) + list(ConfigHandler.PROVIDER_MODELS.keys())
+        ids = [pid for pid in list(merged.keys()) + list(PROVIDER_MODELS.keys())
                if pid != "custom"]
         ids += [c["id"] for c in (custom_cards or [])]
         for pid in dict.fromkeys(ids):  # dedupe, keep order
@@ -2393,7 +2371,7 @@ class ModelsHandler:
             if cap not in entry["capabilities"]:
                 entry["capabilities"].append(cap)
 
-        for m in ConfigHandler.PROVIDER_MODELS.get(pid, {}).get("models") or []:
+        for m in PROVIDER_MODELS.get(pid, {}).get("models") or []:
             add(m if isinstance(m, str) else m.get("value"), "text")
         tables = (
             ("vision", cls._VISION_PROVIDER_MODELS),
@@ -2504,7 +2482,7 @@ class ModelsHandler:
 
     def _handle_set_provider(self, data: dict) -> str:
         provider_id = (data.get("provider_id") or "").strip()
-        meta = ConfigHandler.PROVIDER_MODELS.get(provider_id)
+        meta = PROVIDER_MODELS.get(provider_id)
         if not meta:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
@@ -2550,7 +2528,7 @@ class ModelsHandler:
 
     def _handle_delete_provider(self, data: dict) -> str:
         provider_id = (data.get("provider_id") or "").strip()
-        meta = ConfigHandler.PROVIDER_MODELS.get(provider_id)
+        meta = PROVIDER_MODELS.get(provider_id)
         if not meta:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
@@ -2798,7 +2776,7 @@ class ModelsHandler:
         provider_id = (data.get("provider_id") or "").strip()
         if not provider_id:
             return json.dumps({"status": "error", "message": "provider_id is required"})
-        if provider_id not in ConfigHandler.PROVIDER_MODELS and not provider_id.startswith("custom:"):
+        if provider_id not in PROVIDER_MODELS and not provider_id.startswith("custom:"):
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
         try:
             entries = model_catalog.save_catalog(
@@ -2932,7 +2910,7 @@ class ModelsHandler:
             custom_provider = next((p for p in providers if p.get("id") == custom_id), None)
             if custom_provider is None:
                 return json.dumps({"status": "error", "message": f"unknown custom provider id: {custom_id}"})
-        elif provider_id and provider_id not in ConfigHandler.PROVIDER_MODELS:
+        elif provider_id and provider_id not in PROVIDER_MODELS:
             return json.dumps({"status": "error", "message": f"unknown provider: {provider_id}"})
 
         applied = {}
@@ -2983,7 +2961,7 @@ class ModelsHandler:
                 return None, json.dumps({"status": "error",
                                          "message": f"unknown custom provider id: {custom_id}"})
             return custom_provider, None
-        if provider_id not in ConfigHandler.PROVIDER_MODELS:
+        if provider_id not in PROVIDER_MODELS:
             return None, json.dumps({"status": "error",
                                      "message": f"unknown provider: {provider_id}"})
         return None, None
@@ -6068,7 +6046,7 @@ def _session_model_catalog() -> List[dict]:
     hidden_map = model_catalog.get_hidden_map()
 
     catalog: List[dict] = []
-    for pid, pinfo in ConfigHandler.PROVIDER_MODELS.items():
+    for pid, pinfo in PROVIDER_MODELS.items():
         if pid == "custom" or not pinfo.get("models"):
             continue
         key_field = pinfo.get("api_key_field")
