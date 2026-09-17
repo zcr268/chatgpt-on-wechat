@@ -87,6 +87,22 @@ document.querySelectorAll('.sidebar-item').forEach(item => {
     item.addEventListener('click', () => navigateTo(item.dataset.view));
 });
 
+// The logo goes home, same as the sidebar items do: through navigateTo, so the
+// address bar, the unsaved-edit guard and the mobile drawer all behave as they
+// do for any other destination. It is not a .sidebar-item because it must not
+// pick up the active highlight the chat entry already carries.
+const sidebarHome = document.getElementById('sidebar-home');
+if (sidebarHome) {
+    sidebarHome.addEventListener('click', () => navigateTo('chat'));
+    // role="button" without this is a lie to anyone not using a mouse.
+    sidebarHome.addEventListener('keydown', e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            navigateTo('chat');
+        }
+    });
+}
+
 window.addEventListener('resize', () => {
     if (window.innerWidth >= 1024) {
         document.getElementById('sidebar').classList.remove('-translate-x-full');
