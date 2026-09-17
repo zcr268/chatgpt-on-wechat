@@ -133,39 +133,18 @@ def test_the_handler_actually_serves_the_nested_script_paths():
             assert "javascript" in content_type, (script, content_type)
 
 
-def test_the_old_console_flag_is_off_unless_asked_for():
-    """`python app.py -old` serves the pre-split console for comparison. It
-    reads the flag from the environment on every request, so the check has to
-    fail closed - a stray value must not swap the console out from under a
-    normal install."""
+def test_the_handler_serves_the_assembled_page():
+    """ChatHandler answers with the assembled shell, not the raw file: the raw
+    chat.html is include markers, which a browser renders as nothing."""
     from unittest.mock import patch
 
     import channel.web.web_channel as web_channel
 
-    for value in (None, "", "0", "true", "yes"):
-        env = {} if value is None else {"COW_LEGACY_CONSOLE": value}
-        with patch.dict(os.environ, env, clear=False):
-            if value is None:
-                os.environ.pop("COW_LEGACY_CONSOLE", None)
-            with patch.object(web_channel.web, "header", lambda *a, **k: None):
-                html = web_channel.ChatHandler().GET()
-        assert 'src="/assets/js/core/i18n.js' in html, value
-        assert "assets/legacy/" not in html, value
+    with patch.object(web_channel.web, "header", lambda *a, **k: None):
+        html = web_channel.ChatHandler().GET()
 
-
-def test_asking_for_the_old_console_without_a_snapshot_says_how_to_get_one():
-    """The snapshot is checked out of git rather than committed, so the common
-    first run has nothing to serve. That has to explain itself instead of
-    returning a blank page or a traceback."""
-    from unittest.mock import patch
-
-    import channel.web.web_channel as web_channel
-
-    with patch("os.path.isfile", lambda p: False):
-        page = web_channel._legacy_console_page("probe")
-
-    assert "snapshot_legacy.py" in page
-    assert "<!doctype html>" in page.lower()
+    assert 'src="/assets/js/core/i18n.js' in html
+    assert "<!--#include" not in html
 
 
 def test_the_desktop_bundle_ships_everything_the_page_is_assembled_from():

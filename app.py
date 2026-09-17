@@ -762,14 +762,6 @@ def run():
         # Parse channel_type into a list
         raw_channel = conf().get("channel_type", "web")
 
-        # Serve the console as it was before the frontend was split into
-        # modules, to compare the two against one backend and the same session
-        # history. Needs a snapshot from channel/web/tools/snapshot_legacy.py;
-        # the page says so if it is missing.
-        if "-old" in sys.argv:
-            os.environ["COW_LEGACY_CONSOLE"] = "1"
-            logger.info("[App] -old: serving the pre-split web console")
-
         if "--cmd" in sys.argv:
             channel_names = ["terminal"]
         else:

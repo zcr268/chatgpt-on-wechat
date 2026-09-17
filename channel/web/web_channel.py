@@ -2285,7 +2285,6 @@ class WebChannel(ChatChannel):
             '/poll', 'PollHandler',
             '/stream', 'StreamHandler',
             '/cancel', 'CancelHandler',
-            '/chat', 'ChatHandler',
             '/v1/chat/completions', 'OpenAIChatCompletionsHandler',
             '/config', 'ConfigHandler',
             '/api/models', 'ModelsHandler',
@@ -2816,35 +2815,6 @@ class StreamHandler:
         return WebChannel().stream_response(request_id, after_seq)
 
 
-def _legacy_console_page(cache_bust: str) -> str:
-    """The console as it was before the frontend was split into modules.
-
-    Served instead of the current page when the process was started with
-    ``python app.py -old``, so the two can be compared against one backend and
-    the same session history. The snapshot is checked out of git by
-    ``channel/web/tools/snapshot_legacy.py`` and is not committed.
-
-    That version was one 2k-line file with a hardcoded list of assets to stamp,
-    which is reproduced here rather than reusing the current renderer - the
-    point of the flag is to serve the old page as it actually was.
-    """
-    path = os.path.join(os.path.dirname(__file__), 'static', 'legacy', 'chat.html')
-    if not os.path.isfile(path):
-        return (
-            '<!doctype html><meta charset="utf-8">'
-            '<body style="font:14px/1.6 ui-monospace,monospace;padding:2rem">'
-            '<p>Started with <code>-old</code>, but there is no snapshot of the '
-            'pre-split console to serve.</p><p>Create one, then reload:</p>'
-            '<pre>python channel/web/tools/snapshot_legacy.py</pre>'
-        )
-    with open(path, 'r', encoding='utf-8') as f:
-        html = f.read()
-    for asset in ('legacy/js/console.js', 'legacy/js/workspace.js',
-                  'legacy/js/doc-editor.js', 'legacy/css/console.css'):
-        html = html.replace(f'assets/{asset}', f'assets/{asset}?v={cache_bust}')
-    return html
-
-
 class ChatHandler:
     def GET(self):
         # Content-Type must be explicit: behind a reverse proxy that sends
@@ -2853,22 +2823,11 @@ class ChatHandler:
         web.header('Content-Type', 'text/html; charset=utf-8')
         web.header('Cache-Control', 'no-cache, no-store, must-revalidate')
         web.header('Pragma', 'no-cache')
-        # Read per request, not at import: nothing guarantees this module is
-        # imported after app.py has parsed its arguments.
-        if os.environ.get('COW_LEGACY_CONSOLE') == '1':
-            # The snapshot predates routing: it has no router, and it points at
-            # its scripts relatively, so under a two-segment path like
-            # /settings/models the browser would look for them beside that path
-            # and render nothing. Send it back to the one path it works at.
-            if web.ctx.get('path', '/') != '/':
-                raise web.seeother('/')
-            html = _legacy_console_page(str(int(time.time())))
-        else:
-            # The shell pulls its layout, views and modals in from templates/;
-            # render() assembles them and stamps every first-party asset with
-            # its own mtime, so an upgraded console never runs against cached
-            # old scripts while unchanged ones stay cacheable.
-            html = template.render('chat.html')
+        # The shell pulls its layout, views and modals in from templates/;
+        # render() assembles them and stamps every first-party asset with its
+        # own mtime, so an upgraded console never runs against cached old
+        # scripts while unchanged ones stay cacheable.
+        html = template.render('chat.html')
         # Inject the backend-resolved default language for first-load fallback.
         html = html.replace("{{COW_DEFAULT_LANG}}", i18n.get_language())
         return html
@@ -9086,10 +9045,9 @@ class AssetsHandler:
                 # this path.
                 web.header('Cache-Control', 'public, max-age=31536000, immutable')
             else:
-                # Everything else (vendor bundles, fonts, logos, the -old
-                # snapshot) is served off an unstamped or wall-clock URL, so it
-                # has to be revalidated. no-cache means "keep it, but ask" --
-                # not "do not keep it".
+                # Everything else (vendor bundles, fonts, logos) is served off
+                # an unstamped URL, so it has to be revalidated. no-cache means
+                # "keep it, but ask" -- not "do not keep it".
                 web.header('Cache-Control', 'no-cache')
             if web.ctx.get('env', {}).get('HTTP_IF_NONE_MATCH') == etag:
                 raise web.notmodified()

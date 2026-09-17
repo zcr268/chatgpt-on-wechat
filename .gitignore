@@ -72,8 +72,3 @@ desktop/resources/bin/
 
 # Obsidian editor workspace (accidental commit vector; never part of the app)
 .obsidian/
-
-# Snapshot of the pre-split web console, checked out of git by
-# channel/web/tools/snapshot_legacy.py so `python app.py -old` can serve it for
-# comparison. ~1MB of superseded frontend; git history is the real copy.
-channel/web/static/legacy/
