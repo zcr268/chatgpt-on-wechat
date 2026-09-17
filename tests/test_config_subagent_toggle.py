@@ -40,7 +40,7 @@ except ImportError:
 
 from agent.subagent import SubagentSettings
 from agent.tools.subagent import SubagentTool
-from channel.web import web_channel
+from channel.web.api import config as config_api
 
 ROOT = Path(__file__).parents[1]
 
@@ -51,15 +51,15 @@ def _post(tmp_path, updates, stored=None, runtime=None):
     config_path.write_text(json.dumps(stored or {}), encoding="utf-8")
     live = runtime if runtime is not None else {}
 
-    with patch("channel.web.web_channel._require_auth"), \
-         patch("channel.web.web_channel.web.header"), \
-         patch("channel.web.web_channel.web.data",
+    with patch("channel.web.api.config._require_auth"), \
+         patch("channel.web.api.config.web.header"), \
+         patch("channel.web.api.config.web.data",
                return_value=json.dumps({"updates": updates}).encode()), \
-         patch("channel.web.web_channel.conf", return_value=live), \
-         patch("channel.web.web_channel.get_data_root", return_value=str(tmp_path)), \
-         patch("channel.web.web_channel._read_config_file_for_write",
+         patch("channel.web.api.config.conf", return_value=live), \
+         patch("channel.web.api.config.get_data_root", return_value=str(tmp_path)), \
+         patch("channel.web.api.config._read_config_file_for_write",
                return_value=json.loads(config_path.read_text(encoding="utf-8"))):
-        response = json.loads(web_channel.ConfigHandler().POST())
+        response = json.loads(config_api.ConfigHandler().POST())
 
     return response, json.loads(config_path.read_text(encoding="utf-8")), live
 

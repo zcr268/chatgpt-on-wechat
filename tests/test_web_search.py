@@ -95,7 +95,7 @@ class TestProviderOrder(unittest.TestCase):
         set of providers that hold a dedicated key under tools.web_search.
         Both must track the tool module so a new backend shows up in the
         Search panel with the right credential editor."""
-        from channel.web.web_channel import ModelsHandler
+        from channel.web.api.models import ModelsHandler
 
         self.assertEqual(ModelsHandler._SEARCH_PROVIDERS, web_search_module.PROVIDER_ORDER)
         for pid in web_search_module.PROVIDER_ORDER:
@@ -117,7 +117,7 @@ class TestProviderOrder(unittest.TestCase):
         """The Search panel agrees with the tool: keenable is not configured
         on a fresh install, shows as configured and badged anonymous once
         keenable_anonymous is on, and as configured (no badge) with a key."""
-        from channel.web.web_channel import ModelsHandler
+        from channel.web.api.models import ModelsHandler
 
         with patch.dict(os.environ, {k: "" for k in _ALL_SEARCH_ENV}):
             fresh = ModelsHandler._search_capability({})
@@ -199,9 +199,9 @@ class TestConsoleSearchCredential(unittest.TestCase):
     a real key turns it off, and clearing the key turns it off again."""
 
     def _save(self, payload):
-        from channel.web.web_channel import ModelsHandler
+        from channel.web.api.models import ModelsHandler
 
-        with patch("channel.web.web_channel.conf", return_value={}), \
+        with patch("channel.web.api.models.conf", return_value={}), \
                 patch.object(ModelsHandler, "_read_file_config", return_value={}), \
                 patch.object(ModelsHandler, "_write_file_config") as write:
             out = json.loads(ModelsHandler()._handle_set_search_credential(payload))
