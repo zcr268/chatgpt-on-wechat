@@ -7,6 +7,7 @@ import pytest
 import web
 
 from channel.web import web_channel
+from channel.web.core import channel as channel_core
 from channel.web.api import openai_compat
 from channel.web.api.openai_compat import (
     OpenAIAPIError,
@@ -789,8 +790,9 @@ def test_web_channel_binds_openai_chat_route(monkeypatch):
     channel = web_channel.WebChannel()
     monkeypatch.setattr(channel, "_cleanup_stale_voice_recordings", lambda: None)
     monkeypatch.setattr(web_channel.web, "application", capture_application)
+    # WebChannel reads the host and port, and it lives in core.channel.
     monkeypatch.setattr(
-        web_channel,
+        channel_core,
         "conf",
         lambda: {"web_host": "127.0.0.1", "web_port": 9899},
     )

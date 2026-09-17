@@ -668,3 +668,38 @@ def _live_channel_manager():
         return get_channel_manager()
     except Exception:
         return None
+
+
+def _serve_allowed_roots() -> list:
+    """Roots that /api/file and /preview may read from (symlinks resolved).
+
+    Includes the configured serve root, the Agent workspace, and any project
+    directory a session has opened. Project dirs may live outside the serve
+    root (e.g. ``/tmp/foo``), so previewing files in an opened project would
+    otherwise be denied.
+    """
+    serve_root = conf().get("web_file_serve_root", "~") or "~"
+    roots = [
+        os.path.realpath(os.path.expanduser(serve_root)),
+        os.path.realpath(_get_workspace_root()),
+    ]
+    try:
+        from agent.workspace import project_store
+        for rec in project_store.list_recents():
+            roots.append(os.path.realpath(rec["path"]))
+    except Exception:
+        pass
+    return roots
+
+
+def _is_path_allowed(real_path: str) -> bool:
+    roots = _serve_allowed_roots()
+    if os.sep in roots:
+        return True
+    for root in roots:
+        try:
+            if os.path.commonpath([real_path, root]) == root:
+                return True
+        except ValueError:
+            continue
+    return False
