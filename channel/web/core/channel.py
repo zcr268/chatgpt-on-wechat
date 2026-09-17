@@ -733,7 +733,16 @@ class WebChannel(ChatChannel):
 
             is_directory_upload = bool(directory_files) or bool(directory_rel_paths) or bool(relative_path) or bool(upload_id)
 
-            upload_dir = _get_upload_dir(_request_agent_id(params))
+            # Multipart uploads carry the agent in the query string only: the
+            # client deliberately keeps it out of the form body (a field in
+            # both arrives as a list and breaks handlers), and rawinput("post")
+            # parses the body alone.
+            agent_id = _request_agent_id(params)
+            if not agent_id:
+                from urllib.parse import parse_qs
+                agent_id = _request_agent_id(parse_qs(web.ctx.env.get("QUERY_STRING") or ""))
+
+            upload_dir = _get_upload_dir(agent_id)
             if is_directory_upload:
                 if not upload_id:
                     return _reject("Missing upload_id for directory upload")
@@ -804,7 +813,11 @@ class WebChannel(ChatChannel):
                 file_type = "file"
 
             from urllib.parse import quote
-            preview_url = f"/uploads/{quote(public_path, safe='/')}"
+            # Uploads land in the agent's own workspace, so the URL has to name
+            # the agent: without it /uploads/ resolves against the default
+            # agent's tmp and every non-default agent's preview 404s.
+            suffix = f"?agent_id={quote(str(agent_id), safe='')}" if agent_id else ""
+            preview_url = f"/uploads/{quote(public_path, safe='/')}{suffix}"
 
             logger.info(f"[WebChannel] File uploaded: {original_name} -> {save_path} ({file_type})")
 
@@ -881,12 +894,13 @@ class WebChannel(ChatChannel):
             logger.info(
                 f"[WebChannel] File imported by path: {original_name} -> {save_path} ({file_type}, {size} bytes)"
             )
+            suffix = f"?agent_id={quote(str(agent_id), safe='')}" if agent_id else ""
             return json.dumps({
                 "status": "success",
                 "file_path": save_path,
                 "file_name": original_name,
                 "file_type": file_type,
-                "preview_url": f"/uploads/{quote(safe_name, safe='/')}",
+                "preview_url": f"/uploads/{quote(safe_name, safe='/')}{suffix}",
             }, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] Local file import error: {e}", exc_info=True)
