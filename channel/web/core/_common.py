@@ -28,6 +28,7 @@ import web
 
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
+from common.channel_registry import get_channel_manager
 from common.log import logger
 from config import conf, get_data_root, read_config_template
 
@@ -652,3 +653,18 @@ def _addressed_agent_id(text: str, roster: List[dict]) -> str:
         if re.match(pattern, stripped, re.IGNORECASE):
             return agent_id
     return ""
+
+
+def _live_channel_manager():
+    """Return the running ChannelManager, or None if the app is not up yet.
+
+    app.py runs as ``python app.py``, so ``__main__`` is a *distinct* module
+    object from a later ``import app``; reading ``_channel_mgr`` off
+    ``sys.modules['__main__']`` therefore always yielded None and the console
+    silently refused to start a newly configured channel. The manager is
+    published through ``common.channel_registry`` instead (issue #3120).
+    """
+    try:
+        return get_channel_manager()
+    except Exception:
+        return None

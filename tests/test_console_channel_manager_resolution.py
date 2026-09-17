@@ -87,11 +87,9 @@ class ConsoleChannelManagerResolutionTest(unittest.TestCase):
 
     def test_source_does_not_read_channel_mgr_off_app_module(self):
         """Guard against reintroducing the looked-up-nowhere global."""
-        path = web_channel.__file__
-        if path.endswith(".pyc"):
-            path = path[:-1]
-        with open(path, encoding="utf-8") as fh:
-            source = fh.read()
+        from conftest import web_backend_py
+
+        source = web_backend_py()
         self.assertNotIn("'_channel_mgr'", source)
         self.assertNotIn('"_channel_mgr"', source)
 
