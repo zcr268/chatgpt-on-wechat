@@ -19,6 +19,7 @@ import time
 import uuid
 from queue import Queue, Empty
 from typing import List, Optional
+from urllib.parse import quote
 
 import web
 

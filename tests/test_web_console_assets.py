@@ -117,12 +117,12 @@ def test_the_handler_actually_serves_the_nested_script_paths():
     reachable, so this goes through the handler that answers /assets/."""
     from unittest.mock import patch
 
-    import channel.web.web_channel as web_channel
+    import channel.web.api.pages as pages_api
 
     sent = []
-    with patch.object(web_channel.web, "header",
+    with patch.object(pages_api.web, "header",
                       lambda name, value=None: sent.append((name.lower(), value))):
-        handler = web_channel.AssetsHandler()
+        handler = pages_api.AssetsHandler()
         for script in _scripts(_page()):
             del sent[:]
             body = handler.GET(script)
@@ -138,10 +138,10 @@ def test_the_handler_serves_the_assembled_page():
     chat.html is include markers, which a browser renders as nothing."""
     from unittest.mock import patch
 
-    import channel.web.web_channel as web_channel
+    import channel.web.api.pages as pages_api
 
-    with patch.object(web_channel.web, "header", lambda *a, **k: None):
-        html = web_channel.ChatHandler().GET()
+    with patch.object(pages_api.web, "header", lambda *a, **k: None):
+        html = pages_api.ChatHandler().GET()
 
     assert 'src="/assets/js/core/i18n.js' in html
     assert "<!--#include" not in html
