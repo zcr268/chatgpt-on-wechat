@@ -323,7 +323,7 @@ def test_document_editor_is_loaded_before_its_users():
     # stamp is the asset's own mtime, and render() leaves an asset it cannot
     # stat unstamped -- so this also fails on a reference to a file that is no
     # longer there.
-    from channel.web import template
+    from channel.web.core import template
     rendered = template.render("chat.html")
     unstamped = [ref for ref in re.findall(r'assets/(?:js|css)/[^"\']+', rendered)
                  if not re.search(r"\?v=[0-9a-f]+$", ref)]
@@ -354,7 +354,7 @@ def test_document_editor_contract():
 
 def test_memory_and_skill_editor_wiring():
     # The page is assembled from templates/, so assert against what is served.
-    from channel.web import template
+    from channel.web.core import template
     html = template.render("chat.html")
     from conftest import console_js
     console = console_js()

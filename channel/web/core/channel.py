@@ -25,8 +25,8 @@ import web
 from bridge.context import *
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
-from channel.web import providers
-from channel.web._common import (
+from channel.web.core import providers
+from channel.web.core._common import (
     _addressed_agent_id, _build_artifact_payload, _cancel_reply_text,
     _desktop_token_matches, _ensure_list, _get_upload_dir, _get_workspace_root,
     IMAGE_EXTENSIONS, _is_loopback_request, _is_password_enabled,
@@ -1467,7 +1467,8 @@ class WebChannel(ChatChannel):
 
         # Ensure the static dir exists. In a packaged build it ships read-only
         # inside the bundle, so swallow errors instead of failing startup.
-        static_dir = os.path.join(os.path.dirname(__file__), 'static')
+        web_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        static_dir = os.path.join(web_dir, 'static')
         if not os.path.exists(static_dir):
             try:
                 os.makedirs(static_dir)

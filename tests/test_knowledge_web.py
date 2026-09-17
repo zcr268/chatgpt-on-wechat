@@ -44,7 +44,7 @@ def test_knowledge_action_handler_preserves_dispatch_error(tmp_path):
 def test_knowledge_frontend_management_contract():
     root = Path(__file__).parents[1]
     # The page is assembled from templates/, so assert against what is served.
-    from channel.web import template
+    from channel.web.core import template
     html = template.render("chat.html")
     from conftest import console_js
     js = console_js()

@@ -196,7 +196,7 @@ def test_frontend_contract():
     root = Path(__file__).parents[1]
     # The page is assembled from templates/ and the scripts were split into a
     # core/ and views/ tree, so assert against what is actually served.
-    from channel.web import template
+    from channel.web.core import template
     from conftest import console_js, web_backend_py
 
     html = template.render("chat.html")

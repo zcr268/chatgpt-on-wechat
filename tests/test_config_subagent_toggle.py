@@ -144,7 +144,7 @@ def test_the_switch_is_exposed_by_both_consoles():
     from conftest import console_js, web_backend_py
     web_source = web_backend_py()
     # The page is assembled from templates/, so assert against what is served.
-    from channel.web import template
+    from channel.web.core import template
     web_markup = template.render("chat.html")
     web_console = console_js()
     desktop_page = (ROOT / "desktop/src/renderer/src/pages/settings/BasicSettings.tsx").read_text(encoding="utf-8")

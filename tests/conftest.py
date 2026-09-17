@@ -31,7 +31,7 @@ def console_js():
     from the page's own script tags rather than a copy here, so it cannot fall
     behind a file being added or reordered.
     """
-    from channel.web import template
+    from channel.web.core import template
 
     page = template.render("chat.html")
     parts = []
@@ -101,7 +101,7 @@ def console_template_cache_not_poisoned():
     optimisation, so dropping it around each test costs a few file reads and
     makes the suite independent of the order it ran in.
     """
-    from channel.web import template
+    from channel.web.core import template
 
     template._cache.clear()
     yield

@@ -31,7 +31,9 @@ _FIRST_PARTY_RE = re.compile(r'%s$' % _FIRST_PARTY)
 # generous ceiling that still fails fast on a cycle.
 _MAX_INCLUDE_DEPTH = 8
 
-_WEB_DIR = os.path.dirname(os.path.abspath(__file__))
+# This module lives in channel/web/core/, one level below the web root that
+# chat.html, templates/ and static/ sit in.
+_WEB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _STATIC_DIR = os.path.join(_WEB_DIR, 'static')
 
 # path -> (mtime, text). Keyed on mtime so an edit is picked up on the next

@@ -10,7 +10,7 @@ the invariants the split relies on.
 import os
 import re
 
-from channel.web import template
+from channel.web.core import template
 
 WEB = os.path.join(os.path.dirname(__file__), "..", "channel", "web")
 STATIC = os.path.join(WEB, "static")

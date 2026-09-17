@@ -36,12 +36,12 @@ from agent.permission import (
     normalize_mode as permission_normalize_mode,
 )
 from channel.web.openai_api import OpenAIChatCompletionsHandler
-from channel.web import providers
+from channel.web.core import providers
 # Shared with WebChannel, so it lives in _common. Imported by name rather
 # than as a module: the handlers below read these out of this module's
 # globals, the same place web.py resolves the handler names themselves
 # from, and it keeps the names patchable where the tests already patch them.
-from channel.web._common import (
+from channel.web.core._common import (
     _agent_badge, _build_artifact_payload, _build_preview_url, _check_auth,
     _ensure_list, _get_preview_secret, _get_upload_dir, _get_web_password,
     _get_workspace_root, _is_password_enabled, _raw_web_input,
@@ -52,11 +52,11 @@ from channel.web._common import (
 # Re-exported, not used here. app.py waits on SERVING and channel_factory
 # resolves "channel.web.web_channel.WebChannel" by name, so both have to
 # stay reachable through this module; the tests reach for the rest.
-from channel.web._common import (  # noqa: F401
+from channel.web.core._common import (  # noqa: F401
     SERVING, SSEStreamState, WebMessage,
 )
-from channel.web.channel import WebChannel  # noqa: F401
-from channel.web import template
+from channel.web.core.channel import WebChannel  # noqa: F401
+from channel.web.core import template
 
 def _live_channel_manager():
     """Return the running ChannelManager, or None if the app is not up yet.
