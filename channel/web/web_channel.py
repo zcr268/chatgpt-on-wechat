@@ -35,7 +35,7 @@ from agent.permission import (
     global_mode as permission_global_mode,
     normalize_mode as permission_normalize_mode,
 )
-from channel.web.openai_api import OpenAIChatCompletionsHandler
+from channel.web.api.openai_compat import OpenAIChatCompletionsHandler
 from channel.web.core import providers
 # Shared with WebChannel, so it lives in _common. Imported by name rather
 # than as a module: the handlers below read these out of this module's
