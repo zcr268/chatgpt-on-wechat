@@ -426,7 +426,7 @@ class FeiShuChanel(ChatChannel):
                 msg = event.get("message", {})
 
                 # Skip group messages that don't @-mention the bot (reduce log noise)
-                if msg.get("chat_type") == "group" and not msg.get("mentions") and msg.get("message_type") == "text":
+                if msg.get("chat_type") == "group" and not msg.get("mentions") and msg.get("message_type") in ("text", "post"):
                     return
 
                 logger.debug(f"[FeiShu] websocket receive event: {lark.JSON.marshal(data, indent=2)}")
@@ -737,10 +737,14 @@ class FeiShuChanel(ChatChannel):
         chat_type = msg.get("chat_type")
 
         if chat_type == "group":
-            if not msg.get("mentions") and msg.get("message_type") == "text":
-                # 群聊中未@不响应
-                return
-            if msg.get("mentions") and msg.get("message_type") == "text":
+            # A rich-text (post) message carries text and @mentions just like a
+            # plain text one, and an app holding the broad im:message scope gets
+            # both whether or not the bot is addressed. Gate every message type
+            # that can carry a mention, or a group post slips past the check.
+            if msg.get("message_type") in ("text", "post"):
+                if not msg.get("mentions"):
+                    # 群聊中未@不响应
+                    return
                 if not self._is_mention_bot(msg.get("mentions")):
                     # 只@了群里的其他人，与机器人无关
                     logger.debug(
