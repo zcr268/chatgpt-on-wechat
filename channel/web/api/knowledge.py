@@ -15,6 +15,7 @@ from channel.web.core._common import (
     _raw_web_input,
     _request_agent_id,
     _require_auth,
+    _scoped_agent_id,
 )
 from common.log import logger
 
@@ -136,7 +137,7 @@ class KnowledgeImportHandler:
                     "payload": None,
                 })
             params = _raw_web_input()
-            agent_id = _request_agent_id(params)
+            agent_id = _scoped_agent_id(params)
             target_category = params.get("target_category", "")
             conflict_strategy = params.get("conflict_strategy", "skip")
             uploaded = _ensure_list(params.get("files"))

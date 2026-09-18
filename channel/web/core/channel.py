@@ -32,10 +32,10 @@ from channel.web.core._common import (
     _desktop_token_matches, _ensure_list, _get_upload_dir, _get_workspace_root,
     IMAGE_EXTENSIONS, _is_loopback_request, _is_password_enabled,
     _is_within_directory, _log_bind_failure, MAX_LOCAL_IMPORT_BYTES,
-    _raw_web_input, _read_uploaded_file_bytes, _request_agent_id,
+    _raw_web_input, _read_uploaded_file_bytes,
     _resolve_upload_path, _rewrite_relative_media, _sanitize_upload_id,
-    SERVING, _session_roster, SSEStreamState, _steer_reply_text,
-    VIDEO_EXTENSIONS, WebMessage,
+    _scoped_agent_id, SERVING, _session_roster, SSEStreamState,
+    _steer_reply_text, VIDEO_EXTENSIONS, WebMessage,
 )
 from common import i18n
 from common.log import logger
@@ -737,10 +737,7 @@ class WebChannel(ChatChannel):
             # client deliberately keeps it out of the form body (a field in
             # both arrives as a list and breaks handlers), and rawinput("post")
             # parses the body alone.
-            agent_id = _request_agent_id(params)
-            if not agent_id:
-                from urllib.parse import parse_qs
-                agent_id = _request_agent_id(parse_qs(web.ctx.env.get("QUERY_STRING") or ""))
+            agent_id = _scoped_agent_id(params)
 
             upload_dir = _get_upload_dir(agent_id)
             if is_directory_upload:
@@ -871,10 +868,7 @@ class WebChannel(ChatChannel):
         if size > MAX_LOCAL_IMPORT_BYTES:
             return _reject("File too large")
 
-        agent_id = _request_agent_id(payload)
-        if not agent_id:
-            from urllib.parse import parse_qs
-            agent_id = _request_agent_id(parse_qs(web.ctx.env.get("QUERY_STRING") or ""))
+        agent_id = _scoped_agent_id(payload)
 
         try:
             upload_dir = _get_upload_dir(agent_id)

@@ -29,6 +29,7 @@ from channel.web.core._common import (
     _raw_web_input,
     _request_agent_id,
     _require_auth,
+    _scoped_agent_id,
 )
 from channel.web.core.channel import WebChannel
 from common.log import logger
@@ -67,7 +68,7 @@ class VoiceAsrHandler:
         saved_path = None
         try:
             params = _raw_web_input()
-            agent_id = _request_agent_id(params)
+            agent_id = _scoped_agent_id(params)
             file_obj = params.get("file")
             if file_obj is None:
                 return json.dumps({"status": "error", "message": "no audio file"})
