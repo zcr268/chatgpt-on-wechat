@@ -211,6 +211,7 @@ class ChannelsHandler:
         from agent import team
 
         settings = team.resolve(conf())
+        local_config = conf()
         is_hant = i18n.get_language() == i18n.ZH_HANT
         out = []
         for inst in resolve_channel_instances(settings):
@@ -222,6 +223,13 @@ class ChannelsHandler:
             fields_out = []
             for f in ch_def["fields"]:
                 raw_val = (inst.credentials or {}).get(f["key"], "")
+                # Mirror runtime credential resolution (channel.cfg): when an
+                # instance record is missing a value, the channel falls back to
+                # the global config.json. Show the same value so a credential
+                # the bot actually uses never renders as a blank field (e.g. a
+                # secret that lives only in the global config still shows masked).
+                if raw_val in (None, ""):
+                    raw_val = local_config.get(f["key"], f.get("default", ""))
                 if f["type"] == "secret" and raw_val:
                     display_val = cls._mask_secret(str(raw_val))
                 else:

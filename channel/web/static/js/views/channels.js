@@ -89,9 +89,9 @@ function renderActiveChannels() {
         const hasFields = (ch.fields || []).length > 0;
 
         const weixinWaiting = ch.name === 'weixin' && ch.login_status && ch.login_status !== 'logged_in';
-        const wecomNeedsCreds = ch.name === 'wecom_bot' && !_wecomBotHasCreds(ch);
-        // 飞书 active 卡片渲染带 Tab 的 panel：手动填写 + 扫码重建（覆盖现有配置）
+        // 飞书 / 企微机器人 active 卡片渲染带 Tab 的 panel：手动填写 + 扫码重建（覆盖现有配置）
         const isFeishu = ch.name === 'feishu';
+        const isWecomBot = ch.name === 'wecom_bot';
         // An instance card (multi-Agent feishu) shows the bound agent inline and
         // uses the instance id as its subtitle instead of the bare type name.
         const isInstance = isMultiInstanceType(ch.name) && !!ch.instance_id;
@@ -101,16 +101,13 @@ function renderActiveChannels() {
             statusText = ch.login_status === 'scanned'
                 ? `<span class="text-xs text-primary-500">${t('weixin_scan_scanned')}</span>`
                 : `<span class="text-xs text-amber-500">${t('weixin_scan_waiting')}</span>`;
-        } else if (wecomNeedsCreds) {
-            statusDot = 'bg-amber-400 animate-pulse';
-            statusText = `<span class="text-xs text-amber-500">${t('channels_connecting')}</span>`;
         } else {
             statusDot = 'bg-primary-400';
             statusText = `<span class="text-xs text-primary-500">${t('channels_connected')}</span>`;
         }
 
         card.innerHTML = `
-            <div class="flex items-center gap-4${hasFields || weixinWaiting || wecomNeedsCreds || isFeishu || multiAgentMode() ? ' mb-5' : ''}">
+            <div class="flex items-center gap-4${hasFields || weixinWaiting || isFeishu || isWecomBot || multiAgentMode() ? ' mb-5' : ''}">
                 <div class="w-10 h-10 rounded-xl bg-${ch.color}-50 dark:bg-${ch.color}-900/20 flex items-center justify-center flex-shrink-0">
                     <i class="fas ${ch.icon} text-${ch.color}-500 text-base"></i>
                 </div>
@@ -152,16 +149,7 @@ function renderActiveChannels() {
                     ${t('weixin_scan_title')}
                 </button>
             </div>` : ''}
-            ${wecomNeedsCreds ? `<div id="wecom-active-auth" class="flex flex-col items-center py-2">
-                <p class="text-sm text-slate-500 dark:text-slate-400 mb-3">${t('wecom_scan_desc')}</p>
-                <button onclick="startWecomBotAuthInCard()"
-                    class="px-5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium
-                           cursor-pointer transition-colors duration-150">
-                    <i class="fas fa-qrcode mr-2"></i>${t('wecom_scan_btn')}
-                </button>
-                <div id="wecom-card-scan-status" class="mt-3"></div>
-            </div>` : ''}
-            ${isFeishu ? buildFeishuPanel(ch, true) : (hasFields ? `<div class="space-y-4">
+            ${isFeishu ? buildFeishuPanel(ch, true) : (isWecomBot ? buildWecomBotPanel(ch, true) : (hasFields ? `<div class="space-y-4">
                 ${fieldsHtml}
                 <div class="flex items-center justify-end gap-3 pt-1">
                     <span id="ch-status-${iid}" class="text-xs text-primary-500 opacity-0 transition-opacity duration-300"></span>
@@ -170,7 +158,7 @@ function renderActiveChannels() {
                                cursor-pointer transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
                         id="ch-save-${iid}">${t('channels_save')}</button>
                 </div>
-            </div>` : '')}`;
+            </div>` : ''))}`;
 
         container.appendChild(card);
         bindSecretFieldEvents(card);
