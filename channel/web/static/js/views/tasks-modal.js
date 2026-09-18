@@ -20,6 +20,67 @@ let taskInstances = [];
 let taskAllRecipients = [];
 let selectedTaskInstanceId = '';
 
+// Convert an ISO timestamp into the datetime-local value for a task zone.
+function formatTaskDateTimeLocal(value, timeZone) {
+    if (!value) return '';
+    if (!timeZone) {
+        // Legacy tasks store a naive server-local wall clock. Preserve those
+        // exact digits instead of applying the browser's timezone.
+        const parts = String(value).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+        if (!parts) return '';
+        return `${parts[1]}-${parts[2]}-${parts[3]}T${parts[4]}:${parts[5]}:${parts[6]}`;
+    }
+
+    const instant = new Date(value);
+    if (isNaN(instant.getTime())) return '';
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(instant).reduce((result, part) => {
+        result[part.type] = part.value;
+        return result;
+    }, {});
+    return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+// Return the UTC offset (in milliseconds) at a concrete instant.
+function taskZoneOffsetMs(instant, timeZone) {
+    const parts = new Intl.DateTimeFormat('en-US', {
+        timeZone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hourCycle: 'h23',
+    }).formatToParts(instant).reduce((result, part) => {
+        result[part.type] = part.value;
+        return result;
+    }, {});
+    const asUTC = Date.UTC(
+        Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+        Number(parts.hour), Number(parts.minute), Number(parts.second)
+    );
+    return asUTC - instant.getTime();
+}
+
+// Interpret a datetime-local wall clock in an IANA zone and return UTC ISO.
+function taskLocalTimeToUTC(value, timeZone) {
+    const wallAsUTC = Date.parse(`${value}Z`);
+    if (isNaN(wallAsUTC)) return null;
+
+    if (!timeZone) {
+        // datetime-local is already browser-local; toISOString gives an
+        // explicit instant for backend validation without changing the input.
+        return new Date(value).toISOString();
+    }
+
+    let instant = wallAsUTC;
+    for (let i = 0; i < 2; i += 1) {
+        const offset = taskZoneOffsetMs(new Date(instant), timeZone);
+        instant = wallAsUTC - offset;
+    }
+    return new Date(instant).toISOString();
+}
 // Middle-truncate a long recipient id so the dropdown row's right-hand id stays
 // on one line (e.g. "o9cq807...MYB0@im.wechat").
 function truncateRecipientId(id, max) {
@@ -320,13 +381,11 @@ function openTaskEditModal(task) {
         intervalInput.value = schedule.seconds || '';
     } else if (schedule.type === 'once') {
         if (schedule.run_at) {
-            // Manually parse ISO time string to avoid cross-browser timezone issues with new Date()
-            // run_at format: "YYYY-MM-DDTHH:mm:ss" or "YYYY-MM-DDTHH:mm:ss.ffffff"
-            const parts = schedule.run_at.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
-            if (parts) {
-                const timeInput = document.getElementById('task-edit-once-time');
-                timeInput.value = `${parts[1]}-${parts[2]}-${parts[3]}T${parts[4]}:${parts[5]}:${parts[6]}`;
-            }
+            const timeInput = document.getElementById('task-edit-once-time');
+            timeInput.value = formatTaskDateTimeLocal(
+                schedule.run_at,
+                schedule.timezone || ''
+            );
         }
     }
 
@@ -424,6 +483,8 @@ function saveTaskEdit() {
     }
     
     const scheduleType = getDropdownValue(scheduleTypeSelect) || 'cron';
+    const previousSchedule = (currentEditingTask && currentEditingTask.schedule) || {};
+    const taskTimezone = previousSchedule.timezone || '';
     const schedule = { type: scheduleType };
     
     if (scheduleType === 'cron') {
@@ -443,6 +504,7 @@ function saveTaskEdit() {
             return;
         }
         schedule.expression = expr;
+        if (taskTimezone) schedule.timezone = taskTimezone;
         // Note: detailed cron expression validity is verified by the backend croniter library; frontend only does basic format validation
     } else if (scheduleType === 'interval') {
         const seconds = parseInt(intervalInput.value);
@@ -461,24 +523,27 @@ function saveTaskEdit() {
             setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
             return;
         }
-        // Validate execution time format
-        const selectedTime = new Date(time);
-        if (isNaN(selectedTime.getTime())) {
+        const selectedUTC = taskLocalTimeToUTC(time, taskTimezone);
+        if (!selectedUTC || isNaN(Date.parse(selectedUTC))) {
             statusEl.textContent = currentLang === 'zh' ? '执行时间格式错误' : 'Invalid execution time format';
             statusEl.style.opacity = '1';
             setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
             return;
         }
-        // Validate that time is in the future for one-time tasks
-        if (selectedTime <= new Date()) {
+        if (new Date(selectedUTC) <= new Date()) {
             statusEl.textContent = currentLang === 'zh' ? '执行时间必须在当前时间之后' : 'Execution time must be in the future';
             statusEl.style.opacity = '1';
             setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
             return;
         }
-        // datetime-local value with step="1" is already in YYYY-MM-DDTHH:mm:ss format
-        // Backend _parse_naive_local treats strings without timezone suffix as local time
-        schedule.run_at = time;
+        if (taskTimezone) {
+            schedule.timezone = taskTimezone;
+            schedule.run_at = selectedUTC;
+        } else {
+            // datetime-local value with step="1" remains a legacy naive local
+            // timestamp when the task does not declare an IANA timezone.
+            schedule.run_at = time;
+        }
     }
     
     const actionType = getDropdownValue(actionTypeSelect) || 'send_message';
