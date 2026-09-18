@@ -280,3 +280,12 @@ class DingTalkCardStreamer:
                 card.ai_fail()
         except Exception as exc:
             logger.warning("[DingTalk] Stream: card %s failed: %s", kind, exc)
+            # A finish/fail failure means the card never received the final
+            # content (e.g. missing Card.Streaming.Write permission or a
+            # transient API error), so the card is left blank. Disable the
+            # streamer so _mark_streamed does not set dingtalk_streamed and
+            # send() falls back to a normal reply instead of leaving the user
+            # with an empty card.
+            if kind in ("finish", "fail"):
+                with self._lock:
+                    self.disabled = True
