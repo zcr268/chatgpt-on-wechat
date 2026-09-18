@@ -563,7 +563,11 @@ class QQChannel(ChatChannel):
             if hasattr(reply, "text_content") and reply.text_content:
                 self._send_text(reply.text_content, msg, event_type, msg_id)
                 time.sleep(0.3)
-            self._send_file(reply.content, msg, event_type, msg_id)
+            # The bridge stamps the original filename on the reply; a cloud URL's
+            # last path segment is a random hash, so pass it through to keep the
+            # document's real name (extension included).
+            self._send_file(reply.content, msg, event_type, msg_id,
+                            file_name=getattr(reply, "file_name", ""))
         elif reply.type in (ReplyType.VIDEO, ReplyType.VIDEO_URL):
             self._send_media(reply.content, msg, event_type, msg_id, QQ_FILE_TYPE_VIDEO)
         else:
@@ -680,8 +684,20 @@ class QQChannel(ChatChannel):
     # Rich media upload & send (image / video / file)
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _filename_from_url(file_url: str) -> str:
+        """Best-effort filename from a URL: the last path segment if it has an
+        extension. Returns '' when the URL ends in an opaque token (no '.')."""
+        try:
+            from urllib.parse import urlparse, unquote
+            path = urlparse(file_url).path
+            name = unquote(os.path.basename(path))
+            return name if "." in name else ""
+        except Exception:
+            return ""
+
     def _upload_rich_media(self, file_url: str, file_type: int, msg: QQMessage,
-                           event_type: str) -> str:
+                           event_type: str, file_name: str = "") -> str:
         """
         Upload media via QQ rich media API and return file_info.
         For group: POST /v2/groups/{group_openid}/files
@@ -703,6 +719,13 @@ class QQChannel(ChatChannel):
             "url": file_url,
             "srv_send_msg": False,
         }
+        # For documents, pass an explicit name so it doesn't render as "未命名".
+        # The URL's last path segment is often a random hash, so prefer the
+        # caller-supplied name when present.
+        if file_type == QQ_FILE_TYPE_FILE:
+            file_name = file_name or self._filename_from_url(file_url)
+            if file_name:
+                upload_body["file_name"] = file_name
 
         try:
             resp = requests.post(
@@ -724,7 +747,7 @@ class QQChannel(ChatChannel):
             return ""
 
     def _upload_rich_media_base64(self, file_path: str, file_type: int, msg: QQMessage,
-                                  event_type: str) -> str:
+                                  event_type: str, file_name: str = "") -> str:
         """Upload local file via base64 file_data field."""
         if event_type == "GROUP_AT_MESSAGE_CREATE":
             group_openid = msg._rawmsg.get("group_openid", "")
@@ -749,6 +772,13 @@ class QQChannel(ChatChannel):
             "file_data": file_data,
             "srv_send_msg": False,
         }
+        # base64 carries no filename, so without file_name a document shows
+        # with no extension. Only files (file_type=4) display a name. Prefer the
+        # caller-supplied original name (the local tmp path may be a random one).
+        if file_type == QQ_FILE_TYPE_FILE:
+            file_name = file_name or os.path.basename(file_path)
+            if file_name:
+                upload_body["file_name"] = file_name
 
         try:
             resp = requests.post(
@@ -803,7 +833,8 @@ class QQChannel(ChatChannel):
         else:
             self._send_text("[Image upload failed]", msg, event_type, msg_id)
 
-    def _send_file(self, file_path_or_url: str, msg: QQMessage, event_type: str, msg_id: str):
+    def _send_file(self, file_path_or_url: str, msg: QQMessage, event_type: str, msg_id: str,
+                   file_name: str = ""):
         """Send file reply."""
         if event_type not in ("GROUP_AT_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"):
             self._send_text(str(file_path_or_url), msg, event_type, msg_id)
@@ -814,10 +845,10 @@ class QQChannel(ChatChannel):
 
         if file_path_or_url.startswith(("http://", "https://")):
             file_info = self._upload_rich_media(
-                file_path_or_url, QQ_FILE_TYPE_FILE, msg, event_type)
+                file_path_or_url, QQ_FILE_TYPE_FILE, msg, event_type, file_name=file_name)
         elif os.path.exists(file_path_or_url):
             file_info = self._upload_rich_media_base64(
-                file_path_or_url, QQ_FILE_TYPE_FILE, msg, event_type)
+                file_path_or_url, QQ_FILE_TYPE_FILE, msg, event_type, file_name=file_name)
         else:
             logger.error(f"[QQ] File not found: {file_path_or_url}")
             self._send_text("[File send failed]", msg, event_type, msg_id)
