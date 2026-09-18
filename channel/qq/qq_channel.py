@@ -515,7 +515,11 @@ class QQChannel(ChatChannel):
             context["channel_type"] = self.channel_type
         self.stamp_instance_context(context)
         if "origin_ctype" not in context:
-            context["origin_ctype"] = ctype
+            # A voice message promoted to TEXT via QQ's official ASR carries
+            # its VOICE origin on the message wrapper (QQMessage.origin_ctype);
+            # surface it here so downstream plugins can tell voice-origin
+            # messages apart, mirroring how other channels stamp origin_ctype.
+            context["origin_ctype"] = getattr(kwargs.get("msg"), "origin_ctype", None) or ctype
 
         cmsg = context["msg"]
 
