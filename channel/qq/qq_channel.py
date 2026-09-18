@@ -458,6 +458,23 @@ class QQChannel(ChatChannel):
                 logger.info(f"[QQ] Image cached for session {session_id}")
             return
 
+        # A standalone file / video / voice message carries no text to answer,
+        # so cache it (like an image) for the user's next question instead of
+        # producing an empty context. Without this the attachment was silently
+        # dropped and the agent "received nothing".
+        if qq_msg.ctype == ContextType.FILE:
+            fpath = getattr(qq_msg, "file_path", None)
+            if fpath:
+                ftype = getattr(qq_msg, "file_type", None) or "file"
+                # FileCache understands image/video/other; map voice to a generic
+                # file bucket so it still renders as [文件: ...] downstream.
+                cache_type = ftype if ftype in ("image", "video") else "file"
+                file_cache.add(session_id, fpath, file_type=cache_type)
+                logger.info(f"[QQ] {ftype} cached for session {session_id}: {fpath}")
+            else:
+                logger.warning("[QQ] File message had no downloadable attachment")
+            return
+
         if qq_msg.ctype == ContextType.TEXT:
             cached_files = file_cache.get(session_id)
             if cached_files:
@@ -596,16 +613,20 @@ class QQChannel(ChatChannel):
 
         return None, None, None, None
 
-    def _post_message(self, url: str, body: dict, event_type: str):
+    def _post_message(self, url: str, body: dict, event_type: str) -> bool:
+        """POST a message to the QQ API. Returns True on success so callers can
+        fall back (e.g. Markdown -> plain text) when the platform rejects it."""
         try:
             resp = requests.post(url, json=body, headers=self._get_auth_headers(), timeout=10)
             if resp.status_code in (200, 201, 202, 204):
                 logger.info(f"[QQ] Message sent successfully: event_type={event_type}")
-            else:
-                logger.error(f"[QQ] Failed to send message: status={resp.status_code}, "
-                             f"body={resp.text}")
+                return True
+            logger.error(f"[QQ] Failed to send message: status={resp.status_code}, "
+                         f"body={resp.text}")
+            return False
         except Exception as e:
             logger.error(f"[QQ] Send message error: {e}")
+            return False
 
     # ------------------------------------------------------------------
     # Active send (no original message, e.g. scheduled tasks)
@@ -636,6 +657,21 @@ class QQChannel(ChatChannel):
         if not url:
             logger.warning(f"[QQ] Cannot send reply for event_type: {event_type}")
             return
+        # QQ renders Markdown only via msg_type=2. Custom Markdown is open to all
+        # bots in single (C2C) and group chat (since 2026-04-23), so use it there;
+        # the guild channel / DM APIs need a template (or internal invite), so
+        # those stay plain text. Empty content can't be a Markdown body either.
+        if content and event_type in ("GROUP_AT_MESSAGE_CREATE", "C2C_MESSAGE_CREATE"):
+            md_body = dict(body)
+            md_body["msg_type"] = 2
+            md_body["markdown"] = {"content": content}
+            # A bot whose Markdown is restricted (or content that trips QQ's
+            # Markdown validator) rejects msg_type=2; fall back to plain text so
+            # the user still gets the reply instead of nothing.
+            if self._post_message(url, md_body, event_type):
+                return
+            logger.warning("[QQ] Markdown send rejected, retrying as plain text")
+            body["msg_seq"] = self._get_next_msg_seq(msg_id)
         body["content"] = content
         body["msg_type"] = 0
         self._post_message(url, body, event_type)

@@ -1,4 +1,5 @@
 import os
+import re
 import requests
 
 from bridge.context import ContextType
@@ -10,6 +11,63 @@ from common import state_dir
 def _get_tmp_dir() -> str:
     """Return the workspace tmp directory (absolute path), creating it if needed."""
     return str(state_dir.tmp_dir())
+
+
+def _normalize_url(url: str) -> str:
+    """QQ attachment URLs sometimes come back without a scheme."""
+    if url and not url.startswith(("http://", "https://")):
+        return "https://" + url
+    return url
+
+
+def _attachment_kind(content_type: str) -> str:
+    """Classify a QQ attachment by its content_type into image/video/voice/file.
+
+    Per the QQ Bot docs, content_type is a MIME type for media
+    (image/jpeg, image/png, image/gif, video/mp4) or a bare tag for the
+    rest (``voice`` for voice messages, ``file`` for group files).
+    """
+    ct = (content_type or "").lower()
+    if ct.startswith("image/"):
+        return "image"
+    if ct.startswith("video/") or ct == "video":
+        return "video"
+    if ct.startswith("audio/") or ct in ("voice", "silk"):
+        return "voice"
+    return "file"
+
+
+def _safe_filename(name: str) -> str:
+    """Strip path separators / odd chars so a server-provided filename can't
+    escape the tmp dir or collide with control characters."""
+    name = os.path.basename(name or "")
+    name = re.sub(r"[^\w.\-]+", "_", name).strip("._")
+    return name
+
+
+def _download_attachment(att: dict, msg_id: str, idx: int) -> str:
+    """Download one non-image attachment to the tmp dir, returning its local
+    path (or '' on failure). The extension is taken from the server filename
+    when present so the agent's file tools can infer the type."""
+    url = _normalize_url(att.get("url", ""))
+    if not url:
+        return ""
+    tmp_dir = _get_tmp_dir()
+    fname = _safe_filename(att.get("filename", ""))
+    if not fname:
+        fname = f"qq_{msg_id}_{idx}"
+    # Keep filenames unique per message so two attachments never clobber.
+    local_path = os.path.join(tmp_dir, f"qq_{msg_id}_{idx}_{fname}")
+    try:
+        resp = requests.get(url, timeout=60)
+        resp.raise_for_status()
+        with open(local_path, "wb") as f:
+            f.write(resp.content)
+        logger.info(f"[QQ] Attachment downloaded: {local_path}")
+        return local_path
+    except Exception as e:
+        logger.error(f"[QQ] Failed to download attachment: {e}")
+        return ""
 
 
 class QQMessage(ChatMessage):
@@ -28,56 +86,70 @@ class QQMessage(ChatMessage):
 
         content = event_data.get("content", "").strip()
 
-        attachments = event_data.get("attachments", [])
-        has_image = any(
-            a.get("content_type", "").startswith("image/") for a in attachments
-        ) if attachments else False
+        attachments = event_data.get("attachments", []) or []
+        # A standalone file / image is cached by the channel and attached to the
+        # user's next message; hold its local path here for that flow.
+        self.image_path = None
+        self.file_path = None
+        self.file_type = None
 
-        if has_image and not content:
+        images = [a for a in attachments if _attachment_kind(a.get("content_type", "")) == "image"]
+        non_images = [a for a in attachments if _attachment_kind(a.get("content_type", "")) != "image"]
+
+        if attachments and not content and len(attachments) == 1 and images:
+            # Single image, no caption: keep the legacy IMAGE flow so the channel
+            # caches it and the next text message picks it up.
             self.ctype = ContextType.IMAGE
-            img_attachment = next(
-                a for a in attachments if a.get("content_type", "").startswith("image/")
-            )
-            img_url = img_attachment.get("url", "")
-            if img_url and not img_url.startswith("http"):
-                img_url = "https://" + img_url
-            tmp_dir = _get_tmp_dir()
-            image_path = os.path.join(tmp_dir, f"qq_{self.msg_id}.png")
-            try:
-                resp = requests.get(img_url, timeout=30)
-                resp.raise_for_status()
-                with open(image_path, "wb") as f:
-                    f.write(resp.content)
+            image_path = _download_attachment(images[0], self.msg_id, 0)
+            if image_path:
                 self.content = image_path
                 self.image_path = image_path
-                logger.info(f"[QQ] Image downloaded: {image_path}")
-            except Exception as e:
-                logger.error(f"[QQ] Failed to download image: {e}")
+            else:
                 self.content = "[Image download failed]"
-                self.image_path = None
-        elif has_image and content:
+        elif attachments and not content and len(attachments) == 1 and non_images:
+            # Single file / video / voice, no caption. Cache it like an image so
+            # the user's follow-up question can reference it. Prefer QQ's own ASR
+            # transcript for voice so the agent has something to read even if the
+            # audio download or transcription is not available downstream.
+            att = non_images[0]
+            kind = _attachment_kind(att.get("content_type", ""))
+            self.ctype = ContextType.FILE
+            self.file_type = kind
+            local_path = _download_attachment(att, self.msg_id, 0)
+            self.file_path = local_path
+            asr = att.get("asr_refer_text", "")
+            if local_path:
+                self.content = local_path
+            elif kind == "voice" and asr:
+                # No audio file but we have a transcript: fall back to text.
+                self.ctype = ContextType.TEXT
+                self.content = asr
+                self.file_type = None
+            else:
+                self.content = f"[{kind} download failed]"
+        elif attachments:
+            # Mixed message (caption + one or more attachments), or several
+            # attachments at once: download everything and inline the local
+            # paths as markers the agent can act on, mirroring the WeCom channel.
             self.ctype = ContextType.TEXT
-            image_paths = []
-            tmp_dir = _get_tmp_dir()
+            content_parts = [content] if content else []
             for idx, att in enumerate(attachments):
-                if not att.get("content_type", "").startswith("image/"):
+                kind = _attachment_kind(att.get("content_type", ""))
+                path = _download_attachment(att, self.msg_id, idx)
+                if not path:
+                    asr = att.get("asr_refer_text", "")
+                    if kind == "voice" and asr:
+                        content_parts.append(f"[语音转文字: {asr}]")
                     continue
-                img_url = att.get("url", "")
-                if img_url and not img_url.startswith("http"):
-                    img_url = "https://" + img_url
-                img_path = os.path.join(tmp_dir, f"qq_{self.msg_id}_{idx}.png")
-                try:
-                    resp = requests.get(img_url, timeout=30)
-                    resp.raise_for_status()
-                    with open(img_path, "wb") as f:
-                        f.write(resp.content)
-                    image_paths.append(img_path)
-                except Exception as e:
-                    logger.error(f"[QQ] Failed to download mixed image: {e}")
-            content_parts = [content]
-            for p in image_paths:
-                content_parts.append(f"[图片: {p}]")
-            self.content = "\n".join(content_parts)
+                if kind == "image":
+                    content_parts.append(f"[图片: {path}]")
+                elif kind == "video":
+                    content_parts.append(f"[视频: {path}]")
+                elif kind == "voice":
+                    content_parts.append(f"[语音: {path}]")
+                else:
+                    content_parts.append(f"[文件: {path}]")
+            self.content = "\n".join(content_parts) if content_parts else "[Attachment received]"
         else:
             self.ctype = ContextType.TEXT
             self.content = content
