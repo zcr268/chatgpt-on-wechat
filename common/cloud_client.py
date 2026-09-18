@@ -34,7 +34,10 @@ import os
 chat_client: LinkAIClient
 
 
-CHANNEL_ACTIONS = {"channel_create", "channel_update", "channel_delete"}
+# ``channel_sync`` carries the control plane's complete desired instance list
+# for this client and is reconciled against team.json (add / update / remove).
+# Older kernels that predate it fall through on_config and ignore it.
+CHANNEL_ACTIONS = {"channel_create", "channel_update", "channel_delete", "channel_sync"}
 
 
 AGENT_ACTIONS = {"agent_create", "agent_update", "agent_delete"}
@@ -281,6 +284,10 @@ class CloudClient(LinkAIClient):
     # channel CRUD operations
     # ------------------------------------------------------------------
     def _dispatch_channel_action(self, action: str, data: dict):
+        if action == "channel_sync":
+            self._handle_channel_sync(data)
+            return
+
         channel_type = data.get("channelType")
         if not channel_type:
             logger.warning(f"[CloudClient] Channel action '{action}' missing channelType, data={data}")
@@ -433,23 +440,109 @@ class CloudClient(LinkAIClient):
                 return str(value).strip()
         return None
 
-    def _handle_instance_create(self, instance_id: str, channel_type: str, data: dict):
-        from channel.channel_instances import upsert_instance
+    @staticmethod
+    def _instance_members(data: dict):
+        """Teammates for a channel instance, or None to leave the team as-is.
+
+        A list (even an empty one) is authoritative: ``[]`` clears the team. A
+        control plane that predates teams never sends the key, so its records
+        keep whatever members they had.
+        """
+        for key in ("members", "memberAgentIds", "member_agent_ids"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [str(m).strip() for m in value if str(m or "").strip()]
+        return None
+
+    def _instance_signature(self, inst):
+        """What decides whether a running instance must restart.
+
+        The owner id is normalised so the legacy empty binding and the
+        ``"default"`` alias compare equal to the real default agent: a control
+        plane that starts sending an explicit owner must not bounce every bot.
+        """
+        from agent import team
+        from agent.registry import DEFAULT_AGENT_ALIAS
+
+        owner = (inst.agent_id or "").strip()
+        if not owner or owner == DEFAULT_AGENT_ALIAS:
+            try:
+                owner = team.resolve(conf()).get("default_agent_id") or ""
+            except Exception:
+                owner = ""
+        return (
+            inst.channel_type,
+            owner,
+            tuple(sorted((inst.credentials or {}).items())),
+            tuple(sorted(inst.members or [])),
+        )
+
+    @staticmethod
+    def _is_platform_instance_id(instance_id: str, channel_type: str) -> bool:
+        """True for an id the control plane issued (a UUID).
+
+        Local ids are either the bare channel type (bootstrapped from the flat
+        legacy config) or ``<type>-<10 hex>`` from the local console; anything
+        else was handed down by the platform and may be reconciled away.
+        """
+        import re
+
+        if not instance_id or instance_id == channel_type:
+            return False
+        if channel_type and re.fullmatch(rf"{re.escape(channel_type)}-[0-9a-f]{{10}}", instance_id):
+            return False
+        return True
+
+    def _instance_running(self, instance_id: str) -> bool:
+        if not self.channel_mgr:
+            return False
+        try:
+            return self.channel_mgr.get_channel(instance_id) is not None
+        except Exception:
+            return False
+
+    def _apply_instance(self, instance_id: str, channel_type: str, data: dict) -> bool:
+        """Persist one instance record and start it only when that matters.
+
+        Returns True when the instance was (re)started. An identical record whose
+        channel is already up is left alone: the control plane replays every
+        channel on each login, and a bot must not drop its connection just to be
+        told what it already knows. A record that changed, or one whose channel
+        is not running, is started (restarting if needed).
+        """
+        from channel.channel_instances import get_instance, upsert_instance
+
+        before = get_instance(conf(), instance_id)
         inst = upsert_instance(
             conf(),
             channel_type=channel_type,
             instance_id=instance_id,
             agent_id=self._instance_agent_id(data),
             credentials=self._instance_credentials_from(channel_type, data),
+            members=self._instance_members(data),
+            name=(str(data.get("channelName") or "").strip() or None),
         )
         if not self.channel_mgr:
-            return
+            return False
+        unchanged = (
+            before is not None
+            and self._instance_signature(before) == self._instance_signature(inst)
+        )
+        if unchanged and self._instance_running(instance_id):
+            logger.info(
+                f"[CloudClient] Channel instance '{instance_id}' unchanged and running, skip restart"
+            )
+            return False
         threading.Thread(
             target=self._do_add_instance, args=(inst,), daemon=True
         ).start()
+        return True
+
+    def _handle_instance_create(self, instance_id: str, channel_type: str, data: dict):
+        self._apply_instance(instance_id, channel_type, data)
 
     def _handle_instance_update(self, instance_id: str, channel_type: str, data: dict):
-        from channel.channel_instances import upsert_instance, remove_instance
+        from channel.channel_instances import remove_instance
         enabled = data.get("enabled", "Y")
         if enabled == "N":
             remove_instance(conf(), instance_id)
@@ -458,18 +551,69 @@ class CloudClient(LinkAIClient):
                     target=self._do_remove_channel, args=(instance_id,), daemon=True
                 ).start()
             return
-        inst = upsert_instance(
-            conf(),
-            channel_type=channel_type,
-            instance_id=instance_id,
-            agent_id=self._instance_agent_id(data),
-            credentials=self._instance_credentials_from(channel_type, data),
-        )
-        if not self.channel_mgr:
+        self._apply_instance(instance_id, channel_type, data)
+
+    def _handle_channel_sync(self, data: dict):
+        """Reconcile team.json against the control plane's full desired list.
+
+        ``data["channels"]`` is every instance this client should run, each in
+        the same shape as a ``channel_create`` record. Records are upserted
+        (starting only what changed or is down), then any explicit instance not
+        in the list is removed: a channel deleted on the platform while this
+        kernel was offline must not keep answering from a stale credential. A
+        payload without a list is ignored rather than treated as "remove all".
+        """
+        from channel.channel_instances import read_raw_instances, remove_instance
+
+        channels = data.get("channels")
+        if not isinstance(channels, list):
+            logger.warning("[CloudClient] channel_sync without a channels list, ignored")
             return
-        threading.Thread(
-            target=self._do_add_instance, args=(inst,), daemon=True
-        ).start()
+
+        desired_ids = set()
+        started = 0
+        for record in channels:
+            if not isinstance(record, dict):
+                continue
+            instance_id = str(record.get("channelId") or "").strip()
+            channel_type = str(record.get("channelType") or "").strip()
+            if not instance_id or not channel_type:
+                logger.warning(f"[CloudClient] channel_sync record missing id/type, skipped: {record}")
+                continue
+            if str(record.get("enabled") or "Y") == "N":
+                continue
+            desired_ids.add(instance_id)
+            try:
+                if self._apply_instance(instance_id, channel_type, record):
+                    started += 1
+            except Exception as e:
+                logger.error(f"[CloudClient] channel_sync failed to apply '{instance_id}': {e}", exc_info=True)
+
+        removed = 0
+        for record in read_raw_instances(conf()):
+            instance_id = str(record.get("instance_id") or "").strip()
+            if not instance_id or instance_id in desired_ids:
+                continue
+            channel_type = str(record.get("channel_type") or "").strip()
+            if not self._is_platform_instance_id(instance_id, channel_type):
+                # Bootstrapped legacy records (id == type) and instances the user
+                # created in the local console (``<type>-<hex>``) are not ours to
+                # delete; leaving a stray bot running beats killing a live one.
+                logger.info(
+                    f"[CloudClient] channel_sync keeps non-platform instance '{instance_id}'"
+                )
+                continue
+            remove_instance(conf(), instance_id)
+            removed += 1
+            if self.channel_mgr:
+                threading.Thread(
+                    target=self._do_remove_channel, args=(instance_id,), daemon=True
+                ).start()
+
+        logger.info(
+            f"[CloudClient] channel_sync done: desired={len(desired_ids)}, "
+            f"started={started}, removed={removed}"
+        )
 
     def _handle_instance_delete(self, instance_id: str, channel_type: str, data: dict):
         from channel.channel_instances import remove_instance
@@ -480,11 +624,10 @@ class CloudClient(LinkAIClient):
             ).start()
 
     def _do_add_instance(self, inst):
-        """Start (or restart) one instance and report its type-level status.
+        """Start (or restart) one instance and report its status.
 
-        Status is reported at the channel-type level (not the instance id) so it
-        stays compatible with the existing status protocol; instance-level status
-        can be layered on once the control plane tracks it.
+        The report names both the channel type (what older control planes key
+        on) and the instance id, so two instances of one type stay distinct.
         """
         try:
             self.channel_mgr.add_channel(inst)
@@ -494,23 +637,34 @@ class CloudClient(LinkAIClient):
                 f"[CloudClient] Failed to add channel instance '{inst.instance_id}': {e}",
                 exc_info=True,
             )
-            self.send_channel_status(inst.channel_type, "error", str(e))
+            self.send_channel_status(inst.channel_type, "error", str(e), channel_id=inst.instance_id)
             return
         ch = self.channel_mgr.get_channel(inst.instance_id)
         if not ch:
-            self.send_channel_status(inst.channel_type, "error", "channel instance not found")
+            self.send_channel_status(
+                inst.channel_type, "error", "channel instance not found", channel_id=inst.instance_id
+            )
             return
+        if inst.channel_type in ("weixin", "wx") and hasattr(ch, "login_status"):
+            # Scan-to-login: the channel itself reports "qrcode" / "connected"
+            # as the login progresses; a premature "connected" here would hide
+            # the QR code the user still has to scan.
+            if getattr(ch, "login_status", "") in ("waiting_scan", "scanned", "idle"):
+                logger.info(
+                    f"[CloudClient] Channel instance '{inst.instance_id}' awaits QR login, skip status"
+                )
+                return
         success, error = ch.wait_startup(timeout=3)
         if success:
             logger.info(
                 f"[CloudClient] Channel instance '{inst.instance_id}' connected, reporting status"
             )
-            self.send_channel_status(inst.channel_type, "connected")
+            self.send_channel_status(inst.channel_type, "connected", channel_id=inst.instance_id)
         else:
             logger.warning(
                 f"[CloudClient] Channel instance '{inst.instance_id}' startup failed: {error}"
             )
-            self.send_channel_status(inst.channel_type, "error", error)
+            self.send_channel_status(inst.channel_type, "error", error, channel_id=inst.instance_id)
 
     def _handle_channel_create(self, channel_type: str, data: dict):
         local_config = conf()
@@ -708,7 +862,27 @@ class CloudClient(LinkAIClient):
         except Exception as e:
             logger.error(f"[CloudClient] Failed to remove channel '{channel_type}': {e}")
 
-    def send_channel_qrcode(self, channel_type: str, qrcode_url: str):
+    def send_channel_status(self, channel_type: str, status: str, error: str = None, channel_id: str = ""):
+        """Report a channel's connection state to the control plane.
+
+        Overrides the SDK method so the report can name the instance
+        (``channelId``): with several instances of one type on a runtime, a
+        type-level status would overwrite its siblings. A control plane that
+        predates the field simply ignores it.
+        """
+        if not self.client_id:
+            return
+        from linkai.api.client.client import ClientMsgType
+        msg = self._build_package(ClientMsgType.CHANNEL_STATUS)
+        msg["data"]["channelType"] = channel_type
+        msg["data"]["status"] = status
+        if error:
+            msg["data"]["error"] = str(error)
+        if channel_id:
+            msg["data"]["channelId"] = channel_id
+        self._send_package(msg)
+
+    def send_channel_qrcode(self, channel_type: str, qrcode_url: str, channel_id: str = ""):
         """Report QR code URL for a channel that requires scan-to-login."""
         if self.client_id:
             from linkai.api.client.client import ClientMsgType
@@ -716,6 +890,8 @@ class CloudClient(LinkAIClient):
             msg["data"]["channelType"] = channel_type
             msg["data"]["status"] = "qrcode"
             msg["data"]["qrcodeUrl"] = qrcode_url
+            if channel_id:
+                msg["data"]["channelId"] = channel_id
             self._send_package(msg)
             logger.info(f"[CloudClient] Sent QR code status for '{channel_type}'")
 
