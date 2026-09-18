@@ -191,6 +191,32 @@ class TestModelsHandler(unittest.TestCase):
         self.assertEqual(file_config["voice_to_text_model"], "qwen3-asr-flash")
         self.assertEqual(result["model"], "qwen3-asr-flash")
 
+    def test_set_asr_empty_model_clears_for_default_option(self):
+        # LinkAI exposes an explicit empty-value option ("默认 · 由网关自动
+        # 选择引擎"); picking it must clear the stored model so the gateway
+        # falls back to its own default instead of keeping the old id.
+        from channel.web.api.models import ModelsHandler
+
+        local_config = {"voice_to_text_model": "doubao"}
+        file_config = {"voice_to_text_model": "doubao"}
+        handler = ModelsHandler()
+
+        with patch("channel.web.api.models.conf", return_value=local_config):
+            with patch.object(ModelsHandler, "_read_file_config", return_value=file_config):
+                with patch.object(ModelsHandler, "_write_file_config"):
+                    with patch.object(ModelsHandler, "_refresh_voice_routing"):
+                        result = json.loads(handler._handle_set_capability({
+                            "capability": "asr",
+                            "provider_id": "linkai",
+                            "model": "",
+                        }))
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(local_config["voice_to_text"], "linkai")
+        self.assertEqual(local_config["voice_to_text_model"], "")
+        self.assertEqual(file_config["voice_to_text_model"], "")
+        self.assertEqual(result["model"], "")
+
     def test_chat_capability_infers_provider_when_bot_type_empty(self):
         """A config with an empty bot_type but a recognizable model should
         resolve to the right provider (mirrors the runtime bridge inference),

@@ -96,10 +96,14 @@ class ModelsHandler:
         "zhipu": [
             {"value": "glm-asr-2512", "hint": "智谱语音识别"},
         ],
-        # LinkAI gateway pins whisper-1 for ASR and ignores any other id,
-        # so expose only that to avoid misleading the user.
+        # LinkAI gateway routes ASR by `model` (see
+        # https://docs.link-ai.tech/platform/api/voice-recognition). An empty
+        # value means "let the gateway pick its default engine".
         "linkai": [
-            {"value": "whisper-1", "hint": "网关固定使用"},
+            {"value": "", "hint": "默认"},
+            {"value": "doubao", "hint": "火山豆包"},
+            {"value": "whisper-1", "hint": "OpenAI Whisper"},
+            {"value": "baidu", "hint": "百度"},
         ],
     }
 
@@ -2179,13 +2183,23 @@ class ModelsHandler:
         file_cfg = self._read_file_config()
         local_config["voice_to_text"] = provider_id
         file_cfg["voice_to_text"] = provider_id
-        # Only overwrite the model when one is supplied. An empty model means
-        # "keep whatever is configured" so switching provider from the console
-        # never wipes a user's hand-set voice_to_text_model (runtime falls back
-        # to the engine default via `or DEFAULT_ASR_MODEL` regardless).
+        # Normally an empty model means "keep whatever is configured" so
+        # switching provider from the console never wipes a user's hand-set
+        # voice_to_text_model (runtime falls back to the engine default via
+        # `or DEFAULT_ASR_MODEL` regardless). The exception is a provider that
+        # exposes an explicit empty-value option (e.g. LinkAI's "默认 · 由网关
+        # 自动选择引擎"): picking it is a deliberate "use the gateway default",
+        # so clear the stored model instead of silently keeping the old one.
+        offers_default = any(
+            (m if isinstance(m, str) else m.get("value", "")) == ""
+            for m in (self._ASR_PROVIDER_MODELS.get(provider_id) or [])
+        )
         if model:
             local_config["voice_to_text_model"] = model
             file_cfg["voice_to_text_model"] = model
+        elif offers_default:
+            local_config["voice_to_text_model"] = ""
+            file_cfg["voice_to_text_model"] = ""
         self._write_file_config(file_cfg)
         logger.info(
             f"[ModelsHandler] asr updated: provider={provider_id!r} "

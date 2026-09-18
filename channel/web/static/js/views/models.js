@@ -1584,7 +1584,12 @@ function rebuildCapabilityModelDropdown(def, providerId, selectedModel, scope) {
             return { value: entry, label: entry };
         }
         modelValues.push(entry.value);
-        return { value: entry.value, label: entry.label || entry.value, hint: entry.hint || '' };
+        // An empty value is an explicit "use the gateway default" option
+        // (e.g. LinkAI ASR). It has no model id, so fall back to its hint as
+        // the label; otherwise the row and trigger would render blank. The
+        // hint is then only kept as a secondary label for real model ids.
+        const label = entry.label || entry.value || entry.hint || (currentLang === 'zh' ? '默认' : 'Default');
+        return { value: entry.value, label: label, hint: entry.value ? (entry.hint || '') : '' };
     });
     opts.push({ value: '__custom__', label: currentLang === 'zh' ? '自定义' : 'Custom' });
 
