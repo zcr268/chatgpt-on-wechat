@@ -120,10 +120,23 @@ export interface SubStep {
   error?: string
 }
 
+export interface ToolRetrievalMetadata {
+  mode: 'retrieved' | 'fallback'
+  total_mcp_tools: number
+  selected_mcp_tools: number
+  builtin_tools: number
+  top_k: number
+  candidate_count: number
+  selected_tools: string[]
+  ranked_tools: Array<{ name: string; score: number }>
+  fallback_reason?: string | null
+}
+
 /** A single ordered step inside an assistant turn (matches backend history). */
 export interface MessageStep {
-  type: 'thinking' | 'content' | 'tool'
+  type: 'thinking' | 'content' | 'tool' | 'retrieval'
   content?: string
+  retrieval?: ToolRetrievalMetadata
   // tool step fields
   id?: string
   name?: string
@@ -299,6 +312,7 @@ export interface ToolCall {
 export type StreamEventType =
   | 'delta'
   | 'reasoning'
+  | 'tool_retrieval'
   | 'tool_start'
   | 'tool_progress'
   | 'tool_end'
@@ -328,6 +342,16 @@ export interface StreamEvent {
   display?: string
   execution_time?: number
   has_tool_calls?: boolean
+  /** `tool_retrieval`: sanitized MCP retrieval decision metadata. */
+  mode?: 'retrieved' | 'fallback'
+  total_mcp_tools?: number
+  selected_mcp_tools?: number
+  builtin_tools?: number
+  top_k?: number
+  candidate_count?: number
+  selected_tools?: string[]
+  ranked_tools?: Array<{ name: string; score: number }>
+  fallback_reason?: string | null
   /** `tool_end`: true when the call was refused by the session permission mode. */
   permission_denied?: boolean
   /** `tool_end`: the mode that refused the call. */

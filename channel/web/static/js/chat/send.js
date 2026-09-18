@@ -403,6 +403,53 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     scrollChatToBottom();
                 }
 
+            } else if (item.type === 'tool_retrieval') {
+                ensureBotEl();
+                const fallback = item.mode === 'fallback';
+                const selected = Array.isArray(item.selected_tools) ? item.selected_tools : [];
+                const ranked = Array.isArray(item.ranked_tools) ? item.ranked_tools : [];
+                const summary = (fallback ? t('retrieval_fallback') : t('retrieval_selected'))
+                    .replace('{selected}', String(item.selected_mcp_tools || 0))
+                    .replace('{total}', String(item.total_mcp_tools || 0));
+                const details = [];
+                if (!fallback && selected.length) {
+                    details.push(`
+                        <div class="tool-detail-section">
+                            <div class="tool-detail-label">${t('retrieval_selected_tools')}</div>
+                            <pre class="tool-detail-content">${escapeHtml(selected.join(', '))}</pre>
+                        </div>`);
+                }
+                if (!fallback && ranked.length) {
+                    const ranking = ranked.map(tool => {
+                        const score = Number(tool.score);
+                        return `${tool.name} (${Number.isFinite(score) ? score.toFixed(3) : '0.000'})`;
+                    }).join(', ');
+                    details.push(`
+                        <div class="tool-detail-section">
+                            <div class="tool-detail-label">${t('retrieval_ranking')}</div>
+                            <pre class="tool-detail-content">${escapeHtml(ranking)}</pre>
+                        </div>`);
+                }
+                if (item.fallback_reason) {
+                    details.push(`
+                        <div class="tool-detail-section">
+                            <div class="tool-detail-label">${t('retrieval_fallback_reason')}</div>
+                            <pre class="tool-detail-content">${escapeHtml(String(item.fallback_reason))}</pre>
+                        </div>`);
+                }
+
+                const retrievalEl = document.createElement('div');
+                retrievalEl.className = 'agent-step agent-tool-step agent-retrieval-step';
+                retrievalEl.innerHTML = `
+                    <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
+                        <i class="fas ${fallback ? 'fa-layer-group text-amber-400' : 'fa-filter text-primary-400'} flex-shrink-0 tool-icon"></i>
+                        <span class="tool-name">${escapeHtml(summary)}</span>
+                        <i class="fas fa-chevron-right tool-chevron"></i>
+                    </div>
+                    <div class="tool-detail">${details.join('')}</div>`;
+                stepsEl.appendChild(retrievalEl);
+                scrollChatToBottom();
+
             } else if (item.type === 'tool_start') {
                 ensureBotEl();
                 if (currentReasoningEl) {
