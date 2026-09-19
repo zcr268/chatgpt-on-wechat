@@ -533,21 +533,23 @@ class MemoryManager:
     
     @staticmethod
     def _normalize_weights(vector_weight: float, keyword_weight: float) -> tuple:
-        """Clamp fusion weights into a valid (non-negative) pair.
+        """Clamp fusion weights into a valid (non-negative, finite) pair.
 
         The weighted average below is renormalized over only the channels that
         actually returned a chunk, so only the *ratio* between the two weights
-        matters. Negative weights are clamped to 0 and an all-zero pair falls
-        back to equal weighting, so a misconfigured value can never produce a
-        negative or meaningless combined score.
+        matters. Negative and non-finite weights (NaN, +/-inf) are clamped to 0,
+        and an all-zero pair falls back to equal weighting, so a misconfigured
+        value can never produce a negative or meaningless combined score.
         """
+        import math
+
         try:
             v = float(vector_weight)
             k = float(keyword_weight)
         except (TypeError, ValueError):
             return 0.5, 0.5
-        v = v if v > 0 else 0.0
-        k = k if k > 0 else 0.0
+        v = v if (math.isfinite(v) and v > 0) else 0.0
+        k = k if (math.isfinite(k) and k > 0) else 0.0
         if v == 0.0 and k == 0.0:
             return 0.5, 0.5
         return v, k

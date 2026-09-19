@@ -52,6 +52,11 @@ def test_weight_validation_and_degradation():
     assert MemoryManager._normalize_weights(0.0, 0.0) == (0.5, 0.5)
     assert MemoryManager._normalize_weights(-1.0, -2.0) == (0.5, 0.5)
     assert MemoryManager._normalize_weights("x", "y") == (0.5, 0.5)
+    # Non-finite weights (inf/nan) must be clamped too: inf passes `> 0` and
+    # would otherwise propagate into the fused score.
+    assert MemoryManager._normalize_weights(float("inf"), 0.3) == (0.0, 0.3)
+    assert MemoryManager._normalize_weights(0.7, float("nan")) == (0.7, 0.0)
+    assert MemoryManager._normalize_weights(float("inf"), float("nan")) == (0.5, 0.5)
 
     # A bad weight config must not produce negative scores or crash.
     merged = _merge([_result("a", 0.9)], [], vector_weight=-1.0, keyword_weight=-1.0)
