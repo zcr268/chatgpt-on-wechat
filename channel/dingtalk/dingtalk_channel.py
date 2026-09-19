@@ -23,11 +23,28 @@ from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
 from common import state_dir
 from channel.dingtalk.dingtalk_message import DingTalkMessage
+from channel.dingtalk.dingtalk_stream_card import (
+    DingTalkCardStreamer,
+    sanitize_dingtalk_markdown,
+)
 from common.expired_dict import ExpiredDict
 from common.log import logger
 from common.singleton import singleton
 from common.time_check import time_checker
 from config import conf
+
+
+def _markdown_preview_title(markdown: str, limit: int = 30) -> str:
+    """Plain-text title for a webhook markdown message.
+
+    DingTalk requires a non-empty title; it is only shown in the conversation
+    list preview, not inside the bubble, so use the first line of the reply.
+    """
+    for line in (markdown or "").splitlines():
+        text = line.strip().strip("#>*-_`|").strip()
+        if text:
+            return text[:limit]
+    return "CowAgent"
 
 
 class CustomAICardReplier(CardReplier):
@@ -710,6 +727,7 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         if context:
             from agent.team_addressing import stamp_speaker_from_channel
             stamp_speaker_from_channel(self, context, cmsg.content)
+            self._maybe_attach_dingtalk_stream(context)
             self.produce(context)
 
 
@@ -789,8 +807,35 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         if context:
             from agent.team_addressing import stamp_speaker_from_channel
             stamp_speaker_from_channel(self, context, cmsg.content)
+            self._maybe_attach_dingtalk_stream(context)
             self.produce(context)
 
+
+    def _maybe_attach_dingtalk_stream(self, context: Context):
+        if not context:
+            return context
+        if not conf().get("dingtalk_card_enabled"):
+            return context
+        msg = context.get("msg")
+        if msg is None or getattr(msg, "incoming_message", None) is None:
+            return context
+        context["on_event"] = self._make_dingtalk_stream_callback(context)
+        return context
+
+    def _make_dingtalk_stream_callback(self, context: Context):
+        incoming = context["msg"].incoming_message
+        is_group = bool(context.get("isgroup"))
+        sender_id = getattr(incoming, "sender_staff_id", None)
+        recipients = None if is_group else ([sender_id] if sender_id else None)
+
+        def start_card():
+            # No title: the AI card template omits the header row (and its
+            # divider) when msgTitle is absent, so the card reads like a plain
+            # markdown message.
+            return self.ai_markdown_card_start(incoming, recipients=recipients)
+
+        streamer = DingTalkCardStreamer(start_card=start_card, context=context)
+        return streamer.handle_event
 
     def send(self, reply: Reply, context: Context):
         logger.debug(f"[DingTalk] send() called with reply.type={reply.type}, content_length={len(str(reply.content))}")
@@ -985,8 +1030,13 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
 
         # 处理文本消息
         elif reply.type == ReplyType.TEXT:
+            if context.get("dingtalk_streamed"):
+                logger.debug("[DingTalk] streaming already delivered text reply, skipping send()")
+                return
             logger.info(f"[DingTalk] Sending text message, length={len(reply.content)}")
-            if conf().get("dingtalk_card_enabled"):
+            # If the streaming card failed (typically missing card permission),
+            # the one-shot card API would fail the same way, so use the webhook.
+            if conf().get("dingtalk_card_enabled") and not context.get("dingtalk_stream_failed"):
                 logger.info("[Dingtalk] sendMsg={}, receiver={}".format(reply, receiver))
                 def reply_with_text():
                     self.reply_text(reply.content, incoming_message)
@@ -1006,9 +1056,28 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
                     # 暂不支持其它类型消息回复
                     reply_with_text()
             else:
-                self.reply_text(reply.content, incoming_message)
+                self._reply_markdown_or_text(reply.content, incoming_message)
             return
-    
+
+    def _reply_markdown_or_text(self, content: str, incoming_message) -> None:
+        """Reply through the session webhook as a markdown message.
+
+        This needs no card permission. DingTalk answers HTTP 200 with a
+        non-zero ``errcode`` on rejection (the SDK only checks the HTTP
+        status), so inspect the body and fall back to plain text on failure.
+        """
+        markdown = sanitize_dingtalk_markdown(content)
+        title = _markdown_preview_title(markdown)
+        try:
+            result = self.reply_markdown(title, markdown, incoming_message)
+        except Exception as e:
+            logger.warning(f"[DingTalk] markdown reply raised {e}, falling back to text")
+            result = None
+        if isinstance(result, dict) and result.get("errcode", 0) == 0:
+            return
+        logger.warning(f"[DingTalk] markdown reply rejected: {result}, falling back to text")
+        self.reply_text(content, incoming_message)
+
     def _send_file_message(self, access_token: str, incoming_message, msg_key: str, msg_param: dict, is_group: bool) -> bool:
         """
         发送文件/视频消息的通用方法
