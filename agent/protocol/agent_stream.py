@@ -2471,12 +2471,17 @@ class AgentStreamExecutor:
 
     def _trim_messages(self):
         """
-        智能清理消息历史，保持对话完整性
+        Compact message history by complete turns.
 
-        使用完整轮次作为清理单位，确保：
-        1. 不会在对话中间截断
-        2. 工具调用链（tool_use + tool_result）保持完整
-        3. 每轮对话都是完整的（用户消息 + AI回复 + 工具调用）
+        Token budget is checked first so conversations that still fit the
+        input window are kept intact even when turn count exceeds
+        ``max_context_turns``. Over-budget conversations then apply the
+        turn-count cap and the existing compress / discard-half strategy.
+
+        Uses complete turns as the unit of cleanup so that:
+        1. History is never cut mid-turn
+        2. Tool-call chains (tool_use + tool_result) stay intact
+        3. Each kept turn is complete (user + assistant + tools)
         """
         if not self.messages or not self.agent:
             return
@@ -2489,7 +2494,50 @@ class AgentStreamExecutor:
         
         if not turns:
             return
-        
+
+        # Token budget first. The turn-count cap must not discard history
+        # (or fire a summary LLM) when the full conversation still fits.
+        # Get context window from agent (based on model)
+        context_window = self.agent._get_model_context_window()
+
+        # The window is shared by prompt + completion. Always keep the input
+        # budget below (window - output reserve) so a full prompt plus the
+        # provider's default completion budget can't overflow the window and
+        # trigger the "maximum context length ... you requested N tokens" 400
+        # (which otherwise loops). The window follows the effective model:
+        # a session override uses that model, message channels the global one.
+        output_reserve = self.agent._get_output_reserve_tokens()
+        input_ceiling = max(1, context_window - output_reserve)
+
+        # An explicit agent cap (sub agents inherit one so they cannot widen
+        # the session's reach) applies, but never above the input ceiling.
+        if hasattr(self.agent, 'max_context_tokens') and self.agent.max_context_tokens:
+            max_tokens = min(self.agent.max_context_tokens, input_ceiling)
+        else:
+            max_tokens = input_ceiling
+
+        # Estimate system prompt tokens
+        system_tokens = self.agent._estimate_message_tokens({"role": "system", "content": self.system_prompt})
+        available_tokens = max_tokens - system_tokens
+
+        # Calculate current tokens
+        current_tokens = sum(self._estimate_turn_tokens(turn) for turn in turns)
+
+        # If under limit, keep all complete turns (even if over max_context_turns)
+        if current_tokens + system_tokens <= max_tokens:
+            # Reconstruct message list from turns
+            new_messages = []
+            for turn in turns:
+                new_messages.extend(turn['messages'])
+            
+            old_count = len(self.messages)
+            self.messages = new_messages
+            
+            if old_count > len(self.messages):
+                logger.info(f"   Rebuilt message list: {old_count} -> {len(self.messages)} messages")
+            return
+
+        # Over budget: turn-count cap then remaining token strategy.
         # Step 2: 轮次限制 - 超出时移除前一半，保留后一半
         if len(turns) > self.max_context_turns:
             removed_count = len(turns) // 2
@@ -2517,47 +2565,16 @@ class AgentStreamExecutor:
                         context_summary_callback=cb,
                     )
 
-        # Step 3: Token 限制 - 保留完整轮次
-        # Get context window from agent (based on model)
-        context_window = self.agent._get_model_context_window()
-
-        # The window is shared by prompt + completion. Always keep the input
-        # budget below (window - output reserve) so a full prompt plus the
-        # provider's default completion budget can't overflow the window and
-        # trigger the "maximum context length ... you requested N tokens" 400
-        # (which otherwise loops). The window follows the effective model:
-        # a session override uses that model, message channels the global one.
-        output_reserve = self.agent._get_output_reserve_tokens()
-        input_ceiling = max(1, context_window - output_reserve)
-
-        # An explicit agent cap (sub agents inherit one so they cannot widen
-        # the session's reach) applies, but never above the input ceiling.
-        if hasattr(self.agent, 'max_context_tokens') and self.agent.max_context_tokens:
-            max_tokens = min(self.agent.max_context_tokens, input_ceiling)
-        else:
-            max_tokens = input_ceiling
-
-        # Estimate system prompt tokens
-        system_tokens = self.agent._estimate_message_tokens({"role": "system", "content": self.system_prompt})
-        available_tokens = max_tokens - system_tokens
-
-        # Calculate current tokens
-        current_tokens = sum(self._estimate_turn_tokens(turn) for turn in turns)
-        
-        # If under limit, reconstruct messages and return
-        if current_tokens + system_tokens <= max_tokens:
-            # Reconstruct message list from turns
-            new_messages = []
-            for turn in turns:
-                new_messages.extend(turn['messages'])
-            
-            old_count = len(self.messages)
-            self.messages = new_messages
-            
-            # Log if we removed messages due to turn limit
-            if old_count > len(self.messages):
-                logger.info(f"   Rebuilt message list: {old_count} -> {len(self.messages)} messages")
-            return
+            current_tokens = sum(self._estimate_turn_tokens(turn) for turn in turns)
+            if current_tokens + system_tokens <= max_tokens:
+                new_messages = []
+                for turn in turns:
+                    new_messages.extend(turn['messages'])
+                old_count = len(self.messages)
+                self.messages = new_messages
+                if old_count > len(self.messages):
+                    logger.info(f"   Rebuilt message list: {old_count} -> {len(self.messages)} messages")
+                return
 
         # Token limit exceeded — tiered strategy based on turn count:
         #
