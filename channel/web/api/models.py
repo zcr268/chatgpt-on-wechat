@@ -802,7 +802,7 @@ class ModelsHandler:
         ("gemini",    "gemini_api_key",    const.GEMINI_38_FLASH),
         ("qianfan",   "qianfan_api_key",   const.ERNIE_45_TURBO_VL),
         ("zhipu",     "zhipu_ai_api_key",  const.GLM_5V_TURBO),
-        ("minimax",   "minimax_api_key",   const.MINIMAX_TEXT_01),
+        ("minimax",   "minimax_api_key",   const.MINIMAX_M3),
         ("mimo",      "mimo_api_key",      const.MIMO_V2_5_PRO),
     ]
 
