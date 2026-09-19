@@ -23,10 +23,7 @@ from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
 from common import state_dir
 from channel.dingtalk.dingtalk_message import DingTalkMessage
-from channel.dingtalk.dingtalk_stream_card import (
-    DINGTALK_AI_CARD_TITLE,
-    DingTalkCardStreamer,
-)
+from channel.dingtalk.dingtalk_stream_card import DingTalkCardStreamer
 from common.expired_dict import ExpiredDict
 from common.log import logger
 from common.singleton import singleton
@@ -786,11 +783,10 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         recipients = None if is_group else ([sender_id] if sender_id else None)
 
         def start_card():
-            return self.ai_markdown_card_start(
-                incoming,
-                title=DINGTALK_AI_CARD_TITLE,
-                recipients=recipients,
-            )
+            # No title: the AI card template omits the header row (and its
+            # divider) when msgTitle is absent, so the card reads like a plain
+            # markdown message.
+            return self.ai_markdown_card_start(incoming, recipients=recipients)
 
         streamer = DingTalkCardStreamer(start_card=start_card, context=context)
         return streamer.handle_event

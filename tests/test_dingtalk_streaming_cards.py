@@ -73,6 +73,9 @@ class FakeCard:
     def ai_streaming(self, markdown, append=False):
         self.calls.append(("stream", markdown, append))
 
+    def streaming(self, card_instance_id, key, content, append, finished, failed):
+        self.calls.append(("finalize", key, content, finished))
+
     def ai_finish(self, markdown=None, button_list=None, tips=""):
         self.calls.append(("finish", markdown, list(button_list or []), tips))
 
@@ -189,6 +192,9 @@ def test_tool_turn_separator_then_final_response():
     )
     streams = [item[1] for item in card.calls if item[0] == "stream"]
     assert any("---" in text and "looking" in text for text in streams)
+    # The streaming channel must be finalized with the full markdown before the
+    # regular finish update, otherwise DingTalk keeps the last streamed chunk.
+    assert card.calls[-2] == ("finalize", "msgContent", "final answer", True)
     assert card.calls[-1] == ("finish", "final answer", [], "")
 
 

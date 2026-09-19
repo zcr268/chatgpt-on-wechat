@@ -6,16 +6,14 @@ card leaves PROCESSING instead of sitting on a spinner after the turn ends.
 """
 from __future__ import annotations
 
-import logging
 import queue
 import re
 import threading
 import time
 from typing import Any, Callable, Optional
 
-logger = logging.getLogger(__name__)
+from common.log import logger
 
-DINGTALK_AI_CARD_TITLE = "📌 内容由AI生成"
 _STREAM_THROTTLE_S = 0.15
 _FENCE_RE = re.compile(r"```[\w+-]*\n.*?```", re.DOTALL)
 _HTML_TAG_RE = re.compile(r"</?([a-zA-Z][a-zA-Z0-9]*)\b[^>]*>")
@@ -275,6 +273,23 @@ class DingTalkCardStreamer:
                 card.ai_streaming(payload, append=False)
             elif kind == "finish":
                 markdown, buttons = payload
+                # Once msgContent has been pushed through /v1.0/card/streaming,
+                # DingTalk keeps that key in streaming mode and ignores regular
+                # cardParamMap updates until the stream is finalized. ai_finish
+                # only does a regular update, so without this the card would
+                # freeze on the last streamed chunk (often just the first token
+                # when the reply arrives faster than the throttle). Finalize the
+                # stream with the full markdown first, then mark the card done.
+                streaming = getattr(card, "streaming", None)
+                if callable(streaming):
+                    streaming(
+                        card.card_instance_id,
+                        "msgContent",
+                        markdown,
+                        append=False,
+                        finished=True,
+                        failed=False,
+                    )
                 card.ai_finish(markdown=markdown, button_list=buttons or [])
             elif kind == "fail":
                 card.ai_fail()
