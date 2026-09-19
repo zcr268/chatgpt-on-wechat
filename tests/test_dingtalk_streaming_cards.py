@@ -209,6 +209,7 @@ def test_start_failure_does_not_mark_streamed():
     streamer.handle_event({"type": "agent_end", "data": {"final_response": "x"}})
     assert streamer.disabled is True
     assert ctx.get("dingtalk_streamed") is None
+    assert ctx.get("dingtalk_stream_failed") is True
 
 
 def test_empty_card_id_falls_back():
@@ -374,16 +375,52 @@ def test_send_one_shot_card_still_notifies_group_when_not_streamed(monkeypatch):
     assert any("新的消息" in str(item) for item in texts)
 
 
-def test_send_plain_text_when_cards_disabled(monkeypatch):
+def test_send_uses_webhook_when_stream_failed_even_if_cards_enabled(monkeypatch):
+    from channel.dingtalk import dingtalk_channel as mod
+
+    monkeypatch.setattr(mod, "conf", lambda: {"dingtalk_card_enabled": True})
+    ch = _bare_channel()
+    markdowns = []
+    ch.reply_markdown = lambda title, text, incoming: (
+        markdowns.append(text) or {"errcode": 0}
+    )
+    ch.reply_ai_markdown_button = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("one-shot card would fail the same way; must not run")
+    )
+    ctx = _context(extra={"dingtalk_stream_failed": True})
+    ch.send(Reply(ReplyType.TEXT, "hello"), ctx)
+    assert markdowns == ["hello"]
+
+
+def test_send_webhook_markdown_when_cards_disabled(monkeypatch):
+    from channel.dingtalk import dingtalk_channel as mod
+
+    monkeypatch.setattr(mod, "conf", lambda: {"dingtalk_card_enabled": False})
+    ch = _bare_channel()
+    markdowns = []
+    ch.reply_markdown = lambda title, text, incoming: (
+        markdowns.append((title, text)) or {"errcode": 0}
+    )
+    ch.reply_text = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("text path must not run when markdown succeeds")
+    )
+    ch.reply_ai_markdown_button = lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("card path must not run")
+    )
+    ctx = _context()
+    ch.send(Reply(ReplyType.TEXT, "# Hello\n\n**plain**"), ctx)
+    # title is a non-empty plain-text preview derived from the first line
+    assert markdowns == [("Hello", "# Hello\n\n**plain**")]
+
+
+def test_send_falls_back_to_text_when_markdown_rejected(monkeypatch):
     from channel.dingtalk import dingtalk_channel as mod
 
     monkeypatch.setattr(mod, "conf", lambda: {"dingtalk_card_enabled": False})
     ch = _bare_channel()
     texts = []
+    ch.reply_markdown = lambda title, text, incoming: {"errcode": 400, "errmsg": "bad"}
     ch.reply_text = lambda content, incoming: texts.append(content)
-    ch.reply_ai_markdown_button = lambda *a, **k: (_ for _ in ()).throw(
-        AssertionError("card path must not run")
-    )
     ctx = _context()
     ch.send(Reply(ReplyType.TEXT, "plain"), ctx)
     assert texts == ["plain"]

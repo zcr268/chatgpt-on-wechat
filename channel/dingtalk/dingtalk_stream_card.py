@@ -1,8 +1,9 @@
 """DingTalk AI-card streaming: markdown subset + incremental card updates.
 
-Used by the DingTalk channel when dingtalk_card_enabled is true.
-The SDK lifecycle is ai_start -> ai_streaming -> ai_finish/ai_fail so the
-card leaves PROCESSING instead of sitting on a spinner after the turn ends.
+sanitize_dingtalk_markdown is shared with the webhook markdown reply; the
+streamer is used only when dingtalk_card_enabled is true. The SDK lifecycle
+is ai_start -> ai_streaming -> ai_finish/ai_fail so the card leaves
+PROCESSING instead of sitting on a spinner after the turn ends.
 """
 from __future__ import annotations
 
@@ -194,6 +195,13 @@ class DingTalkCardStreamer:
             return
         self.context["dingtalk_streamed"] = True
 
+    def _disable(self) -> None:
+        """Stop streaming and tell send() to use the permission-free webhook."""
+        with self._lock:
+            self.disabled = True
+        if self.context is not None:
+            self.context["dingtalk_stream_failed"] = True
+
     def _ensure_card(self):
         with self._lock:
             if self.disabled:
@@ -204,16 +212,11 @@ class DingTalkCardStreamer:
             card = self._start_card()
         except Exception as exc:
             logger.warning("[DingTalk] Stream: create AI card failed: %s", exc)
-            with self._lock:
-                self.disabled = True
+            self._disable()
             return None
         if card is None or not getattr(card, "card_instance_id", None):
-            logger.warning(
-                "[DingTalk] Stream: create AI card failed (empty card id). "
-                "Falling back to a one-shot reply."
-            )
-            with self._lock:
-                self.disabled = True
+            logger.warning("[DingTalk] Stream: create AI card failed (empty card id)")
+            self._disable()
             return None
         with self._lock:
             self.card = card
@@ -273,13 +276,9 @@ class DingTalkCardStreamer:
                 card.ai_streaming(payload, append=False)
             elif kind == "finish":
                 markdown, buttons = payload
-                # Once msgContent has been pushed through /v1.0/card/streaming,
-                # DingTalk keeps that key in streaming mode and ignores regular
-                # cardParamMap updates until the stream is finalized. ai_finish
-                # only does a regular update, so without this the card would
-                # freeze on the last streamed chunk (often just the first token
-                # when the reply arrives faster than the throttle). Finalize the
-                # stream with the full markdown first, then mark the card done.
+                # msgContent stays in streaming mode until finalized, and
+                # ai_finish only does a regular update that DingTalk ignores
+                # meanwhile. Finalize the stream with the full markdown first.
                 streaming = getattr(card, "streaming", None)
                 if callable(streaming):
                     streaming(
@@ -295,12 +294,8 @@ class DingTalkCardStreamer:
                 card.ai_fail()
         except Exception as exc:
             logger.warning("[DingTalk] Stream: card %s failed: %s", kind, exc)
-            # A finish/fail failure means the card never received the final
-            # content (e.g. missing Card.Streaming.Write permission or a
-            # transient API error), so the card is left blank. Disable the
-            # streamer so _mark_streamed does not set dingtalk_streamed and
-            # send() falls back to a normal reply instead of leaving the user
-            # with an empty card.
+            # The card never received the final content (e.g. missing
+            # Card.Streaming.Write); disable so send() delivers a fallback
+            # instead of leaving an empty card.
             if kind in ("finish", "fail"):
-                with self._lock:
-                    self.disabled = True
+                self._disable()
