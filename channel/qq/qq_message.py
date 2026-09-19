@@ -92,6 +92,13 @@ class QQMessage(ChatMessage):
         self.image_path = None
         self.file_path = None
         self.file_type = None
+        # QQ's own ASR transcript for a voice attachment (asr_refer_text);
+        # empty for non-voice messages or when the server omits the field.
+        self.asr_text = ""
+        # Traceability marker: set to VOICE when a voice message is promoted
+        # to TEXT via the official transcript, so downstream (plugins, logs)
+        # can still tell the message originated as voice.
+        self.origin_ctype = None
 
         images = [a for a in attachments if _attachment_kind(a.get("content_type", "")) == "image"]
         non_images = [a for a in attachments if _attachment_kind(a.get("content_type", "")) != "image"]
@@ -107,26 +114,49 @@ class QQMessage(ChatMessage):
             else:
                 self.content = "[Image download failed]"
         elif attachments and not content and len(attachments) == 1 and non_images:
-            # Single file / video / voice, no caption. Cache it like an image so
-            # the user's follow-up question can reference it. Prefer QQ's own ASR
-            # transcript for voice so the agent has something to read even if the
-            # audio download or transcription is not available downstream.
+            # Single file / video / voice, no caption. A voice message that
+            # carries QQ's official ASR transcript goes straight through as
+            # TEXT so it triggers an immediate reply; everything else keeps
+            # the legacy FILE cache flow (answered with the user's next
+            # text message).
             att = non_images[0]
             kind = _attachment_kind(att.get("content_type", ""))
-            self.ctype = ContextType.FILE
-            self.file_type = kind
-            local_path = _download_attachment(att, self.msg_id, 0)
-            self.file_path = local_path
-            asr = att.get("asr_refer_text", "")
-            if local_path:
-                self.content = local_path
-            elif kind == "voice" and asr:
-                # No audio file but we have a transcript: fall back to text.
+            asr = str(att.get("asr_refer_text") or "").strip() if kind == "voice" else ""
+            if kind == "voice" and asr:
+                # Official transcript available: reply now with the recognized
+                # text instead of caching the audio and waiting for a
+                # follow-up message.
+                local_path = _download_attachment(att, self.msg_id, 0)
+                self.origin_ctype = ContextType.VOICE
                 self.ctype = ContextType.TEXT
                 self.content = asr
-                self.file_type = None
+                self.file_path = local_path or None
+                self.file_type = "voice"
+                self.asr_text = asr
+                logger.info(
+                    "[QQ] VOICE->TEXT via official ASR | "
+                    f"msg_id={self.msg_id} | event={event_type} | "
+                    f"asr_refer_text({len(asr)} chars)=\"{asr}\" | "
+                    f"audio_saved={local_path or 'DOWNLOAD_FAILED'} | "
+                    "downstream sees TEXT (immediate reply), origin=VOICE"
+                )
             else:
-                self.content = f"[{kind} download failed]"
+                # Plain file / video / voice without a transcript: keep the
+                # FILE cache path so the user's next text message picks it up.
+                self.ctype = ContextType.FILE
+                self.file_type = kind
+                local_path = _download_attachment(att, self.msg_id, 0)
+                self.file_path = local_path
+                if local_path:
+                    self.content = local_path
+                else:
+                    self.content = f"[{kind} download failed]"
+                if kind == "voice":
+                    logger.info(
+                        "[QQ] voice WITHOUT asr_refer_text -> FILE cache path | "
+                        f"msg_id={self.msg_id} | audio_saved={local_path or 'DOWNLOAD_FAILED'} | "
+                        "no reply until the next text message arrives"
+                    )
         elif attachments:
             # Mixed message (caption + one or more attachments), or several
             # attachments at once: download everything and inline the local
@@ -135,9 +165,9 @@ class QQMessage(ChatMessage):
             content_parts = [content] if content else []
             for idx, att in enumerate(attachments):
                 kind = _attachment_kind(att.get("content_type", ""))
+                asr = str(att.get("asr_refer_text") or "").strip()
                 path = _download_attachment(att, self.msg_id, idx)
                 if not path:
-                    asr = att.get("asr_refer_text", "")
                     if kind == "voice" and asr:
                         content_parts.append(f"[语音转文字: {asr}]")
                     continue
@@ -146,7 +176,10 @@ class QQMessage(ChatMessage):
                 elif kind == "video":
                     content_parts.append(f"[视频: {path}]")
                 elif kind == "voice":
-                    content_parts.append(f"[语音: {path}]")
+                    if asr:
+                        content_parts.append(f"[语音: {path}\nQQ官方转写: {asr}]")
+                    else:
+                        content_parts.append(f"[语音: {path}]")
                 else:
                     content_parts.append(f"[文件: {path}]")
             self.content = "\n".join(content_parts) if content_parts else "[Attachment received]"
@@ -187,5 +220,8 @@ class QQMessage(ChatMessage):
         else:
             raise NotImplementedError(f"Unsupported QQ event type: {event_type}")
 
-        logger.debug(f"[QQ] Message parsed: type={event_type}, ctype={self.ctype}, "
+        origin_note = ""
+        if self.origin_ctype == ContextType.VOICE:
+            origin_note = f", origin=VOICE (VOICE->TEXT via official ASR)"
+        logger.debug(f"[QQ] Message parsed: type={event_type}, ctype={self.ctype}{origin_note}, "
                      f"from={self.from_user_id}, content_len={len(self.content)}")
