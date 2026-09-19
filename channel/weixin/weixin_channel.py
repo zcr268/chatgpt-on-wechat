@@ -292,7 +292,9 @@ class WeixinChannel(ChatChannel):
             from common import cloud_client
             client = getattr(cloud_client, "chat_client", None)
             if client and getattr(client, "client_id", None):
-                client.send_channel_qrcode("weixin", qrcode_url)
+                client.send_channel_qrcode(
+                    "weixin", qrcode_url, channel_id=self._cloud_channel_id()
+                )
         except Exception as e:
             logger.warning(f"[Weixin] Failed to notify cloud QR code: {e}")
 
@@ -304,9 +306,20 @@ class WeixinChannel(ChatChannel):
             from common import cloud_client
             client = getattr(cloud_client, "chat_client", None)
             if client and getattr(client, "client_id", None):
-                client.send_channel_status("weixin", "connected")
+                client.send_channel_status(
+                    "weixin", "connected", channel_id=self._cloud_channel_id()
+                )
         except Exception as e:
             logger.warning(f"[Weixin] Failed to notify cloud connected: {e}")
+
+    def _cloud_channel_id(self) -> str:
+        """The platform-issued instance id, or "" for the legacy single channel.
+
+        The bare type name is what a legacy install runs under; reporting it as
+        an id would make the control plane look up a channel that never existed.
+        """
+        instance_id = getattr(self, "instance_id", "") or ""
+        return "" if instance_id in ("", "weixin", "wx") else instance_id
 
     def _qr_login(self, base_url: str) -> dict:
         """Perform interactive QR code login. Returns dict with token/base_url or empty dict."""

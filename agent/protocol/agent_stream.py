@@ -1234,7 +1234,25 @@ class AgentStreamExecutor:
         mode: str = "fallback",
         fallback_reason: Optional[str] = None,
     ) -> None:
-        """Expose sanitized MCP retrieval metadata to streaming consumers."""
+        """Expose sanitized MCP retrieval metadata to streaming consumers.
+
+        Fallback (full-injection) is a diagnostic-only condition: it carries no
+        user-actionable information, so it is logged for troubleshooting and
+        NOT surfaced to clients. Only successful ``retrieved`` decisions, which
+        explain why the injected tool set shrank, are emitted to the frontend.
+        """
+        if mode == "fallback":
+            reason = fallback_reason or (
+                decision.fallback_reason
+                if decision is not None
+                else "selection_unavailable"
+            )
+            logger.info(
+                f"[ToolRetrieval] Full injection of {len(mcp_tools)} MCP tool(s) "
+                f"(reason={reason})"
+            )
+            return
+
         if not callable(getattr(self, "_emit_event", None)):
             return
 

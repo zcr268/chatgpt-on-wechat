@@ -12,9 +12,24 @@ from types import SimpleNamespace
 
 import pytest
 
-from agent.registry import AgentRegistry
+from agent.registry import AgentRegistry, get_agent_registry, set_agent_registry
 from bridge.agent_bridge import AgentBridge
 from bridge.agent_initializer import AgentInitializer
+
+
+@pytest.fixture(autouse=True)
+def registry_restored():
+    """Never let a pinned registry outlive the test that pinned it.
+
+    Two of the classes below pin a registry so the roster they build is what
+    resolves a workspace. ``set_agent_registry`` pins process-wide and keeps
+    answering from that instance even after configuration moves on, so without
+    this teardown the registry stays pinned for the rest of the run and every
+    later test -- here, and in whichever module pytest reaches next -- resolves
+    its workspace through this file's ``tmp_path``.
+    """
+    yield
+    set_agent_registry(None)
 
 
 class _FakeInitializer:
@@ -548,7 +563,7 @@ class TestMentionParsing:
 
     @staticmethod
     def _resolve(text, roster=None):
-        from channel.web.web_channel import _addressed_agent_id
+        from channel.web.core._common import _addressed_agent_id
 
         if roster is None:
             roster = TestMentionParsing.ROSTER
@@ -684,3 +699,18 @@ class TestStripCopiedSpeakerPrefix:
             == "浓缩一版"
         )
         assert bridge._strip_speaker_prefix("正常回复", labels) == "正常回复"
+
+
+def test_a_pinned_registry_does_not_outlive_its_test(tmp_path, monkeypatch):
+    """The classes above pin one, so the registry must follow configuration again.
+
+    ``_bridge`` builds a two-Agent roster under the test's ``tmp_path``. A
+    registry still pinned to a previous test's roster ignores every later
+    ``agent_workspace`` -- so this check moves the configured workspace and
+    insists the registry moves with it.
+    """
+    from config import conf
+
+    before = get_agent_registry().get(require_enabled=False).workspace
+    monkeypatch.setitem(conf(), "agent_workspace", str(tmp_path / "solo"))
+    assert get_agent_registry().get(require_enabled=False).workspace != before

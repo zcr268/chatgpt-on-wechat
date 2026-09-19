@@ -300,6 +300,29 @@ export const useChatStore = create<ChatState>((set, get) => {
           }
           break
 
+        case 'tool_retrieval':
+          updateMsg(sid, botId, (m) => ({
+            ...m,
+            steps: [
+              ...(m.steps || []),
+              {
+                type: 'retrieval',
+                retrieval: {
+                  mode: data.mode === 'fallback' ? 'fallback' : 'retrieved',
+                  total_mcp_tools: data.total_mcp_tools || 0,
+                  selected_mcp_tools: data.selected_mcp_tools || 0,
+                  builtin_tools: data.builtin_tools || 0,
+                  top_k: data.top_k || 0,
+                  candidate_count: data.candidate_count || 0,
+                  selected_tools: data.selected_tools || [],
+                  ranked_tools: data.ranked_tools || [],
+                  fallback_reason: data.fallback_reason,
+                },
+              },
+            ],
+          }))
+          break
+
         case 'tool_start':
           updateMsg(sid, botId, (m) => {
             // commit any reasoning into a thinking step

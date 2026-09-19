@@ -35,6 +35,8 @@ class ChatService:
         channel_type: str = "",
         agent_id: str = None,
         request_id: str = None,  # noqa: RUF013
+        speaker_agent_id: str = None,
+        members: list = None,
     ):
         """
         Run the agent for *query* and stream results back via *send_chunk_fn*.
@@ -46,21 +48,16 @@ class ChatService:
         :param session_id: session identifier for agent isolation
         :param send_chunk_fn: callable(chunk_data: dict) to send a streaming chunk
         :param channel_type: source channel (e.g. "web", "feishu") for persistence
-        :param agent_id: selected agent profile; defaults to the configured default
+        :param agent_id: agent that owns the conversation; defaults to the configured default
         :param request_id: per-request cancellation key; defaults to session scope
+        :param speaker_agent_id: teammate addressed for this turn; it answers in
+            the owner's conversation, so the transcript stays in one place
+        :param members: roster of the conversation (teammate ids). When given it
+            is authoritative and reconciled onto the session, like a team channel
         """
+        # The conversation belongs to ``resolved_agent_id`` (its owner); only the
+        # voice answering this turn may differ. Same model as agent_reply.
         resolved_agent_id = self.agent_bridge._resolve_agent_id(agent_id)
-        agent = self.agent_bridge.get_agent(
-            session_id=session_id, agent_id=resolved_agent_id
-        )
-        if agent is None:
-            raise RuntimeError("Failed to initialise agent for the session")
-
-        # Pass context metadata to model for downstream API requests
-        if hasattr(agent, 'model'):
-            agent.model.channel_type = channel_type or ""
-            agent.model.session_id = session_id or ""
-            agent.model.agent_id = resolved_agent_id
 
         # Build a context so context-aware tools (e.g. scheduler) can resolve the
         # receiver/session. This streaming path bypasses agent_bridge.agent_reply,
@@ -68,6 +65,45 @@ class ChatService:
         context = self._build_context(
             query, session_id, channel_type, resolved_agent_id
         )
+        speaker_id = resolved_agent_id
+        model_query = query
+        is_team = False
+        if speaker_agent_id or members is not None:
+            if members is not None:
+                context["members"] = list(members)
+            if speaker_agent_id:
+                context["speaker_agent_id"] = speaker_agent_id
+            self.agent_bridge._seed_team_members(session_id, resolved_agent_id, context)
+            speaker_id = self.agent_bridge._resolve_speaker(resolved_agent_id, context)
+            is_team = speaker_id != resolved_agent_id or self._has_team(session_id, resolved_agent_id)
+            if speaker_agent_id:
+                # What the model is asked once the address has been acted on
+                # (also when the owner itself was named); the transcript keeps
+                # the verbatim query.
+                model_query = self.agent_bridge._strip_address(query, speaker_id)
+            agent = self.agent_bridge.get_agent(
+                session_id=session_id,
+                agent_id=speaker_id,
+                host_agent_id=resolved_agent_id,
+            )
+        else:
+            agent = self.agent_bridge.get_agent(
+                session_id=session_id, agent_id=resolved_agent_id
+            )
+        if agent is None:
+            raise RuntimeError("Failed to initialise agent for the session")
+        if is_team:
+            # One transcript per team conversation: reload it with author labels
+            # so this speaker sees the turns others spoke since it last ran.
+            self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            self._send_speaker(send_chunk_fn, speaker_id)
+
+        # Pass context metadata to model for downstream API requests
+        if hasattr(agent, 'model'):
+            agent.model.channel_type = channel_type or ""
+            agent.model.session_id = session_id or ""
+            agent.model.agent_id = speaker_id
+
         self._attach_context_aware_tools(agent, context)
 
         # Mark this session as mid-run so the self-evolution idle scan does not
@@ -305,7 +341,7 @@ class ChatService:
                     f"session={session_id}"
                 )
                 return
-            response = executor.run_stream(query)
+            response = executor.run_stream(model_query)
         except Exception:
             # If executor cleared messages (context overflow), sync back
             if len(executor.messages) == 0:
@@ -381,13 +417,23 @@ class ChatService:
             agent.messages = list(executor.messages)
 
         # Persist new messages to SQLite so they survive restarts and
-        # can be queried via the HISTORY interface.
+        # can be queried via the HISTORY interface. The store is the owner's:
+        # a guest speaker writes into the shared transcript, stamped as author.
         if new_messages:
+            workspace_root = agent.workspace_dir
+            if is_team:
+                new_messages = self.agent_bridge._attribute_to_speaker(
+                    new_messages, speaker_id
+                )
+                new_messages = self.agent_bridge._strip_speaker_prefix_from_messages(
+                    new_messages
+                )
+                workspace_root = self._owner_workspace(resolved_agent_id, agent)
             self._persist_messages(
                 session_id,
                 list(new_messages),
                 channel_type,
-                workspace_root=agent.workspace_dir,
+                workspace_root=workspace_root,
             )
 
         # Store executor reference for files_to_send access
@@ -427,6 +473,40 @@ class ChatService:
         ctx["channel_type"] = channel_type or ""
         ctx["agent_id"] = agent_id
         return ctx
+
+    @staticmethod
+    def _has_team(session_id: str, host_agent_id: str) -> bool:
+        """Whether the session has teammates on it (a shared conversation)."""
+        if not session_id:
+            return False
+        try:
+            from agent.workspace import session_prefs
+            return bool(session_prefs.get_prefs(session_id, host_agent_id).get("members"))
+        except Exception:
+            return False
+
+    def _send_speaker(self, send_chunk_fn, speaker_id: str) -> None:
+        """Tell the client who is answering this turn, so a shared conversation
+        can attribute the reply to the right agent as it streams."""
+        try:
+            profile = self.agent_bridge.agent_registry.get(speaker_id, require_enabled=False)
+            send_chunk_fn({
+                "chunk_type": "speaker",
+                "agent_id": profile.id,
+                "name": profile.name,
+                "avatar": profile.avatar or "",
+            })
+        except Exception as e:
+            logger.debug(f"[ChatService] speaker chunk skipped: {e}")
+
+    def _owner_workspace(self, owner_agent_id: str, agent) -> str:
+        """Workspace whose store holds the conversation: the owner's."""
+        try:
+            return self.agent_bridge.agent_registry.get(
+                owner_agent_id, require_enabled=False
+            ).workspace
+        except Exception:
+            return agent.workspace_dir
 
     def _attach_context_aware_tools(self, agent, context):
         """Attach the current context to tools that need turn metadata."""

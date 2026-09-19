@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Loader2, Check, X, Lightbulb, Shield } from 'lucide-react'
+import { ChevronRight, Loader2, Check, X, Lightbulb, ListFilter, Layers3, Shield } from 'lucide-react'
 import type { MessageStep, SubStep } from '../types'
 import { t } from '../i18n'
 import Markdown from './Markdown'
@@ -27,6 +27,55 @@ const ThinkingStep: React.FC<{ content: string; streaming?: boolean }> = ({ cont
         <pre className="mt-1.5 ml-4 p-2 rounded-md bg-inset-2 border border-subtle whitespace-pre-wrap leading-relaxed max-h-[260px] overflow-y-auto font-sans text-content-tertiary">
           {content}
         </pre>
+      )}
+    </div>
+  )
+}
+
+const RetrievalStep: React.FC<{ step: MessageStep }> = ({ step }) => {
+  const [expanded, setExpanded] = useState(false)
+  const retrieval = step.retrieval
+  if (!retrieval) return null
+
+  const fallback = retrieval.mode === 'fallback'
+  const summary = (fallback ? t('retrieval_fallback') : t('retrieval_selected'))
+    .replace('{selected}', String(retrieval.selected_mcp_tools))
+    .replace('{total}', String(retrieval.total_mcp_tools))
+
+  return (
+    <div className="text-xs text-content-tertiary mb-1 last:mb-0">
+      <button
+        type="button"
+        className="w-full flex items-center gap-1.5 text-left hover:text-content-secondary select-none transition-colors"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {fallback ? <Layers3 size={12} /> : <ListFilter size={12} />}
+        <span className="flex-1">{summary}</span>
+        <ChevronRight size={11} className={`transition-transform opacity-50 ${expanded ? 'rotate-90' : ''}`} />
+      </button>
+      {expanded && (
+        <div className="mt-1.5 ml-4 p-2 rounded-md bg-inset border border-subtle space-y-2">
+          {!fallback && retrieval.selected_tools.length > 0 && (
+            <div>
+              <div className="font-medium opacity-60 mb-1">{t('retrieval_selected_tools')}</div>
+              <div className="font-mono text-[11px] break-all">{retrieval.selected_tools.join(', ')}</div>
+            </div>
+          )}
+          {!fallback && retrieval.ranked_tools.length > 0 && (
+            <div>
+              <div className="font-medium opacity-60 mb-1">{t('retrieval_ranking')}</div>
+              <div className="font-mono text-[11px] break-all">
+                {retrieval.ranked_tools.map((tool) => `${tool.name} (${tool.score.toFixed(3)})`).join(', ')}
+              </div>
+            </div>
+          )}
+          {retrieval.fallback_reason && (
+            <div>
+              <div className="font-medium opacity-60 mb-1">{t('retrieval_fallback_reason')}</div>
+              <div className="font-mono text-[11px] break-all">{retrieval.fallback_reason}</div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   )
@@ -180,6 +229,7 @@ const MessageSteps: React.FC<{ steps: MessageStep[] }> = ({ steps }) => {
     <div>
       {steps.map((step, i) => {
         if (step.type === 'thinking') return <ThinkingStep key={i} content={step.content || ''} />
+        if (step.type === 'retrieval') return <RetrievalStep key={i} step={step} />
         if (step.type === 'tool') return <ToolStep key={i} step={step} />
         if (step.type === 'content' && step.content)
           return (
@@ -193,5 +243,5 @@ const MessageSteps: React.FC<{ steps: MessageStep[] }> = ({ steps }) => {
   )
 }
 
-export { ThinkingStep, ToolStep }
+export { ThinkingStep, RetrievalStep, ToolStep }
 export default MessageSteps
