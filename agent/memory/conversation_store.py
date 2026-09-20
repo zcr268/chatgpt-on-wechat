@@ -1878,13 +1878,35 @@ class ConversationStore:
         replace it on corruption. Without this check, every later query would
         keep failing with "no such table: sessions" for the whole process
         lifetime, so new messages would silently stop being persisted.
+
+        The stat identity alone is not sufficient: filesystems that hand freed
+        inodes straight back (ext4/tmpfs, e.g. CI /tmp) can recreate the file
+        under the exact same (dev, ino) pair, so the replacement is also caught
+        by verifying the core table is still present.
         """
-        if self._db_identity() == self._schema_identity:
+        if self._db_identity() == self._schema_identity and self._schema_present():
             return
         logger.warning(
             "[ConversationStore] Shared DB file was replaced; recreating conversation schema"
         )
         self._init_db()
+
+    def _schema_present(self) -> bool:
+        try:
+            conn = self._raw_connect()
+        except sqlite3.Error:
+            return False
+        try:
+            return (
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
+                ).fetchone()
+                is not None
+            )
+        except sqlite3.Error:
+            return False
+        finally:
+            conn.close()
 
     def _migrate(self, conn: sqlite3.Connection) -> None:
         """Apply incremental schema migrations on existing databases."""
