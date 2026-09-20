@@ -14,15 +14,26 @@ import unittest.mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from common.utils import expand_path
 from config import conf, load_config
+
+
+#: The setup below isolates each test by pointing "~" at a temp dir, and
+#: `expand_path` resolves "~" through `os.path.expanduser`. On Windows,
+#: `ntpath.expanduser` reads USERPROFILE and ignores HOME entirely, so
+#: redirecting HOME alone left the code under test still resolving the real
+#: home directory - the "isolated" workspace was never the one actually used,
+#: which made these assertions either vacuous or a read of live user data.
+_HOME_VARS = ("HOME", "USERPROFILE")
 
 
 class TestMemoryGlobalConfigSync(unittest.TestCase):
     def setUp(self):
         load_config()
         self.tmp = tempfile.mkdtemp()
-        self._real_home = os.environ.get("HOME")
-        os.environ["HOME"] = self.tmp
+        self._real_home = {name: os.environ.get(name) for name in _HOME_VARS}
+        for name in _HOME_VARS:
+            os.environ[name] = self.tmp
         self.workspace = os.path.join(self.tmp, "custom_workspace")
         os.makedirs(self.workspace)
 
@@ -45,10 +56,11 @@ class TestMemoryGlobalConfigSync(unittest.TestCase):
         else:
             conf()["agent_workspace"] = self._orig_agent_workspace
 
-        if self._real_home is None:
-            os.environ.pop("HOME", None)
-        else:
-            os.environ["HOME"] = self._real_home
+        for name, value in self._real_home.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def test_setup_memory_system_syncs_global_config(self):
@@ -129,10 +141,16 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
     def setUp(self):
         load_config()
         self.tmp = tempfile.mkdtemp()
-        self._real_home = os.environ.get("HOME")
-        os.environ["HOME"] = self.tmp
+        self._real_home = {name: os.environ.get(name) for name in _HOME_VARS}
+        for name in _HOME_VARS:
+            os.environ[name] = self.tmp
 
-        self.legacy_root = os.path.join(self.tmp, "cow")
+        # Resolved through the same helper the code under test uses, so the
+        # assertions below compare like with like. An os.path.join(self.tmp,
+        # "cow") expectation never matched on Windows: expanduser keeps the
+        # literal "/cow" from "~/cow", so the warning text carries a mixed
+        # separator the hand-built path doesn't reproduce.
+        self.legacy_root = expand_path("~/cow")
         self.new_workspace = os.path.join(self.tmp, "custom_workspace")
         os.makedirs(self.new_workspace)
 
@@ -144,10 +162,11 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         else:
             conf()["agent_workspace"] = self._orig_agent_workspace
 
-        if self._real_home is None:
-            os.environ.pop("HOME", None)
-        else:
-            os.environ["HOME"] = self._real_home
+        for name, value in self._real_home.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def _write_legacy_db(self):
