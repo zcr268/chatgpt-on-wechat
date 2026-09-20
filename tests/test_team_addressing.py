@@ -120,3 +120,61 @@ def test_the_web_console_roster_resolves_the_default_alias_too(registry):
     roster = _roster_from_members("ops", ["default"])
 
     assert [item["id"] for item in roster] == ["ops", "agent-abc"]
+
+
+def test_the_alias_is_deduped_whichever_order_it_arrives_in(registry):
+    """Dedupe must not depend on the alias being the first of the two names.
+
+    Comparing the raw input against the entries already collected happens to
+    catch ``["default", "agent-abc"]`` -- by then the roster holds the resolved
+    id, which the second name matches literally. The reverse order is the case
+    only a resolved key can see, and it is the order a member list grows in:
+    the agent is invited by id, then the alias arrives from an older row.
+    """
+    from channel.web.core._common import _roster_from_members
+
+    members = ["agent-abc", "default"]
+
+    assert [item["id"] for item in roster_from_members("ops", members)] == ["ops", "agent-abc"]
+    assert [item["id"] for item in _roster_from_members("ops", members)] == ["ops", "agent-abc"]
+
+
+def test_the_session_team_panel_resolves_the_default_alias_too(registry):
+    """The panel the user actually clicks is a third copy of the same rule.
+
+    ``channel.web.api.sessions._session_team_state`` badges the member list for
+    the console's team menu. Left unresolved, the alias is reported as an
+    unknown id: a row named ``"default"``, marked unavailable, for a teammate
+    the conversation can already reach -- and because the menu subtracts the
+    member ids it was given from the invitable list, the agent behind the alias
+    is still offered as somebody left to invite.
+    """
+    from channel.web.api.sessions import _session_team_state
+
+    state = _session_team_state({"members": ["default"]}, "ops")
+
+    assert [member["id"] for member in state["members"]] == ["agent-abc"]
+    assert state["members"][0]["name"] == "CowAgent"
+    assert state["members"][0]["available"] is True
+
+
+def test_the_session_team_panel_lists_one_row_per_teammate(registry):
+    """Same dedupe rule as the roster: two names for one agent are one row."""
+    from channel.web.api.sessions import _session_team_state
+
+    state = _session_team_state({"members": ["agent-abc", "default"]}, "ops")
+
+    assert [member["id"] for member in state["members"]] == ["agent-abc"]
+
+
+def test_the_session_team_panel_reports_an_owner_addressed_by_alias(registry):
+    """Reading the owner with ``get`` raised on the alias, so the whole settings
+    response failed -- the panel could not be drawn at all for a conversation
+    opened by the documented ``"default"`` id."""
+    from channel.web.api.sessions import _session_team_state
+
+    state = _session_team_state({"members": ["ops"]}, "default")
+
+    assert state["owner"]["id"] == "agent-abc"
+    # The owner is not offered as a teammate to invite into its own conversation.
+    assert [item["id"] for item in state["candidates"]] == ["ops"]
