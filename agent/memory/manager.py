@@ -5,7 +5,7 @@ Provides high-level interface for memory operations
 """
 
 import os
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Sequence, Tuple
 from pathlib import Path
 import hashlib
 from datetime import datetime, timedelta
@@ -15,6 +15,30 @@ from agent.memory.storage import MemoryStorage, MemoryChunk, SearchResult
 from agent.memory.chunker import TextChunker
 from agent.memory.embedding import EmbeddingProvider, EmbeddingCache
 from agent.memory.summarizer import MemoryFlushManager, create_memory_files_if_needed
+
+
+def _index_rel_path(file_path: Path, roots: Sequence[Tuple[Path, str]]) -> Optional[str]:
+    """Index key for a scanned file, or None when no known root contains it.
+
+    Scanned files do not all come from one root: ``common.state_dir`` sends an
+    Agent that has no local ``knowledge/`` of its own to the SHARED root, so
+    sync() legitimately walks files outside the workspace. Keying those off the
+    workspace alone raises ValueError, and because that ran inside sync()'s file
+    loop a single such file aborted the whole sync — taking down every retrieval
+    that goes through the ``search()`` in front of it (#3175).
+
+    Each root carries the prefix its files are keyed under, so shared knowledge
+    keeps the ``knowledge/note.md`` key it would have had inside the workspace:
+    the index keeps its shape when an Agent gains or loses a private copy, and
+    nothing has to be reindexed.
+    """
+    for root, prefix in roots:
+        try:
+            rel = file_path.relative_to(root)
+        except ValueError:
+            continue
+        return str(Path(prefix) / rel) if prefix else str(rel)
+    return None
 
 
 class MemoryManager:
@@ -311,11 +335,12 @@ class MemoryManager:
                     scope = "shared"
                 files_to_scan.append((file_path, "memory", scope, user_id))
 
+        from common import state_dir
         from config import conf
+        knowledge_dir: Optional[Path] = None
         if conf().get("knowledge", True):
             # Resolve through state_dir so an Agent without its own knowledge/
             # scans the shared base rather than an empty (or missing) local one.
-            from common import state_dir
             knowledge_dir = Path(state_dir.knowledge_dir(base=workspace_dir))
             if knowledge_dir.exists():
                 for file_path in knowledge_dir.rglob("*.md"):
@@ -327,16 +352,40 @@ class MemoryManager:
         # where the class object is older than the method's source.
         pending: List[Dict[str, Any]] = []
         workspace_dir_path = self.config.get_workspace()
+        from common.log import logger
+
+        # Roots a scanned file may legitimately sit under, most specific first,
+        # each paired with the prefix its files are keyed under. Resolved once
+        # rather than per file: shared_root() goes through the Agent registry.
+        # knowledge_dir comes first so a knowledge file keys the same whether it
+        # is this Agent's own copy or the shared one it fell back to.
+        index_roots: List[Tuple[Path, str]] = []
+        if knowledge_dir is not None:
+            index_roots.append((knowledge_dir, "knowledge"))
+        index_roots.append((Path(workspace_dir_path), ""))
+        try:
+            index_roots.append((state_dir.shared_root(), ""))
+        except Exception:
+            # No resolvable shared root (registry not ready). The workspace
+            # still covers every file that is not a shared fallback.
+            pass
+
         for file_path, source, scope, user_id in files_to_scan:
             try:
                 content = file_path.read_text(encoding='utf-8')
             except Exception:
                 continue
             file_hash = MemoryStorage.compute_hash(content)
-            if source == "knowledge":
-                rel_path = str(Path("knowledge") / file_path.relative_to(knowledge_dir))
-            else:
-                rel_path = str(file_path.relative_to(workspace_dir_path))
+            rel_path = _index_rel_path(file_path, index_roots)
+            if rel_path is None:
+                # Defensive: every scan target above resolves under one of the
+                # roots. Skip just this file so one oddity cannot cost the Agent
+                # its whole memory, and say so rather than dropping it silently.
+                logger.warning(
+                    f"[MemoryManager] Skipping {file_path}: it sits under none of "
+                    f"this Agent's roots, so it has no stable index key"
+                )
+                continue
             if self.storage.get_file_hash(rel_path) == file_hash:
                 continue
             # Markdown files (memory + knowledge) get structure-aware chunking;
