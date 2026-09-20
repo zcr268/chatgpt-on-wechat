@@ -162,6 +162,23 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         conf()["agent_workspace"] = workspace_root
         app._warn_if_legacy_workspace_data_exists()
 
+    def _assert_no_legacy_warning(self, mock_warning):
+        """No warning *about the legacy root*, which is all these tests claim.
+
+        Not a bare assert_not_called(): "log" is the process-wide logger, and
+        the suite leaves memory-sync daemon threads running behind it, so any
+        unrelated line logged from one of them inside the patched window would
+        fail a test that has nothing to do with it.
+        """
+        offenders = [
+            str(call.args[0])
+            for call in mock_warning.call_args_list
+            if call.args and self.legacy_root in str(call.args[0])
+        ]
+        self.assertEqual(
+            offenders, [], f"Expected no legacy-workspace warning, got: {offenders}"
+        )
+
     def test_warns_when_legacy_data_exists_at_a_different_path(self):
         self._write_legacy_db()
         with self.assertLogs("log", level="WARNING") as cm:
@@ -195,7 +212,7 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         logger = logging.getLogger("log")
         with unittest.mock.patch.object(logger, "warning") as mock_warning:
             self._check(self.legacy_root)
-        mock_warning.assert_not_called()
+        self._assert_no_legacy_warning(mock_warning)
 
     def test_no_warning_when_only_hidden_files_are_left_over(self):
         """
@@ -211,7 +228,7 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         logger = logging.getLogger("log")
         with unittest.mock.patch.object(logger, "warning") as mock_warning:
             self._check(self.new_workspace)
-        mock_warning.assert_not_called()
+        self._assert_no_legacy_warning(mock_warning)
 
     def test_no_warning_when_paths_differ_only_by_case(self):
         """
@@ -235,7 +252,7 @@ class TestLegacyWorkspaceWarning(unittest.TestCase):
         logger = logging.getLogger("log")
         with unittest.mock.patch.object(logger, "warning") as mock_warning:
             self._check(differently_cased_workspace)
-        mock_warning.assert_not_called()
+        self._assert_no_legacy_warning(mock_warning)
 
 
 if __name__ == "__main__":
