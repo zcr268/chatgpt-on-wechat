@@ -1,4 +1,4 @@
-﻿"""
+"""
 Agent Stream Execution Module - Multi-turn reasoning based on tool-call
 
 Provides streaming output, event system, and complete tool-call loop
@@ -2530,42 +2530,99 @@ class AgentStreamExecutor:
         
         if not turns:
             return
-        
-        # Step 2: Calculate token budget (context window - output reserve - system prompt)
+
+        # Step 2: Calculate the token budget (context window - output reserve - system prompt)
+        # Get context window from agent (based on model)
         context_window = self.agent._get_model_context_window()
+
+        # The window is shared by prompt + completion. Always keep the input
+        # budget below (window - output reserve) so a full prompt plus the
+        # provider's default completion budget can't overflow the window and
+        # trigger the "maximum context length ... you requested N tokens" 400
+        # (which otherwise loops). The window follows the effective model:
+        # a session override uses that model, message channels the global one.
         output_reserve = self.agent._get_output_reserve_tokens()
         input_ceiling = max(1, context_window - output_reserve)
 
+        # An explicit agent cap (sub agents inherit one so they cannot widen
+        # the session's reach) applies, but never above the input ceiling.
         if hasattr(self.agent, 'max_context_tokens') and self.agent.max_context_tokens:
             max_tokens = min(self.agent.max_context_tokens, input_ceiling)
         else:
             max_tokens = input_ceiling
 
-        system_tokens = self.agent._estimate_message_tokens(
-            {"role": "system", "content": self.system_prompt})
+        system_tokens = self.agent._estimate_message_tokens({"role": "system", "content": self.system_prompt})
         budget = max_tokens - system_tokens
+        current_tokens = sum(self._estimate_turn_tokens(turn) for turn in turns)
 
-        # Step 3: Token-budget-first unified trim (replaces old turn-count + token two-pass)
+        # Step 3: Trim to satisfy BOTH constraints (AND):
+        #   1) token budget  — the hard safety limit so the prompt never
+        #      overflows the model context window;
+        #   2) max_context_turns — an explicit cost/latency cap.
+        # History is only kept when it fits within the token budget AND the
+        # turn cap. If both are already satisfied, keep everything untouched
+        # (no trimming, no summary LLM call).
+        if current_tokens + system_tokens <= max_tokens and len(turns) <= self.max_context_turns:
+            new_messages = []
+            for turn in turns:
+                new_messages.extend(turn['messages'])
+
+            old_count = len(self.messages)
+            self.messages = new_messages
+            if old_count > len(self.messages):
+                logger.info(f"   Rebuilt message list: {old_count} -> {len(self.messages)} messages")
+            return
+
+        # Primary: token-budget-first trim. Walk turns newest -> oldest and keep
+        # the longest suffix that fits the budget (removes only the minimum
+        # turns needed, not a blind "remove half").
         kept_turns, discarded_turns = self._token_budget_trim(turns, budget)
-        current_tokens = sum(self._estimate_turn_tokens(t) for t in turns)
-        kept_tokens = sum(self._estimate_turn_tokens(t) for t in kept_turns)
 
-        # Safety net: turn count cap (secondary trigger, not primary)
+        # Secondary: turn-count cap acts as an explicit cost safety net. Even
+        # when the kept turns fit the token budget, never keep more than
+        # max_context_turns of them.
         if len(kept_turns) > self.max_context_turns:
             extra = kept_turns[:len(kept_turns) - self.max_context_turns]
             discarded_turns = extra + discarded_turns
             kept_turns = kept_turns[-self.max_context_turns:]
-            kept_tokens = sum(self._estimate_turn_tokens(t) for t in kept_turns)
 
         if not discarded_turns:
-            return  # Everything fits within budget and turn cap
+            # Nothing needed discarding (a single oversized newest turn is kept
+            # as-is and handled by the reactive _smart_compact_to_budget path).
+            return
+
+        kept_tokens = sum(self._estimate_turn_tokens(t) for t in kept_turns)
+
+        # Few-turn fallback: when only a handful of turns remain but they still
+        # exceed the token budget, compressing them to plain text is preferable
+        # to discarding — losing even one turn is too painful when context is
+        # already thin. This keeps the user query + final reply of each turn.
+        COMPRESS_THRESHOLD = 5
+        if len(kept_turns) < COMPRESS_THRESHOLD and kept_tokens + system_tokens > max_tokens:
+            compressed_turns = []
+            for t in kept_turns:
+                compressed = compress_turn_to_text_only(t)
+                if compressed["messages"]:
+                    compressed_turns.append(compressed)
+
+            # Still flush the discarded older turns (if any) to memory below,
+            # then rebuild from the compressed survivors.
+            new_tokens = sum(self._estimate_turn_tokens(t) for t in compressed_turns)
+            logger.info(
+                f"📦 Context tokens exceeded (turns<{COMPRESS_THRESHOLD}): "
+                f"~{kept_tokens + system_tokens} > {max_tokens}, "
+                f"compressed {len(kept_turns)} turns to plain text "
+                f"(~{kept_tokens + system_tokens} -> ~{new_tokens + system_tokens} tokens)"
+            )
+            kept_turns = compressed_turns
 
         logger.info(
-            f"💾 Token-budget trim: {len(turns)} turns (~{current_tokens + system_tokens} tok)"
-            f" -> {len(kept_turns)} turns (~{kept_tokens + system_tokens} tok, budget {budget + system_tokens} tok)"
+            f"💾 Context trim: {len(turns)} turns (~{current_tokens + system_tokens} tok)"
+            f" -> {len(kept_turns)} turns (budget {budget + system_tokens} tok, turn cap {self.max_context_turns})"
         )
 
-        # Flush to daily memory + inject context summary (single async LLM call)
+        # Flush discarded turns to daily memory + inject context summary
+        # (single async LLM call). Only fires because we truly discarded turns.
         if self.agent.memory_manager:
             discarded_messages = []
             for turn in discarded_turns:
@@ -2584,7 +2641,6 @@ class AgentStreamExecutor:
         for turn in kept_turns:
             new_messages.extend(turn['messages'])
 
-        old_count = len(self.messages)
         self.messages = new_messages
 
     def _prepare_messages(self) -> List[Dict[str, Any]]:

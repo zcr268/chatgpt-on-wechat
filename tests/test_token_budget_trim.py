@@ -11,6 +11,8 @@ Covers the scenarios described in Issue #3178:
 import unittest
 from unittest.mock import MagicMock, patch
 
+from agent.protocol.agent_stream import AgentStreamExecutor
+
 
 def _make_msg(role, text):
     return {"role": role, "content": [{"type": "text", "text": text}]}
@@ -50,8 +52,10 @@ class TestTokenBudgetTrim(unittest.TestCase):
     """Test _token_budget_trim() in isolation."""
 
     def setUp(self):
-        # We'll create a minimal mock that has _estimate_turn_tokens
-        self.obj = MagicMock()
+        # Use a real executor instance (without running __init__) so the actual
+        # _token_budget_trim implementation is exercised, and only stub out the
+        # per-turn token estimate.
+        self.obj = AgentStreamExecutor.__new__(AgentStreamExecutor)
         self.obj._estimate_turn_tokens = MagicMock(side_effect=lambda t: t.get("_tokens", 100))
 
     def _turn(self, tokens):
