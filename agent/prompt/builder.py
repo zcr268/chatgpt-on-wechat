@@ -421,6 +421,32 @@ def _state_path_prefix(workspace_dir: str, project_dir: Optional[str]) -> str:
     return workspace_dir.rstrip("/") + "/"
 
 
+def _knowledge_base_path(workspace_dir: str, project_dir: Optional[str] = None) -> str:
+    """Knowledge root spelled the way the file tools will actually resolve it.
+
+    ``state_dir`` sends an Agent with no ``knowledge/`` of its own to the shared
+    root, which does not sit under this workspace. Naming it as a bare
+    ``knowledge/`` then aims every ``read`` at the workspace, where none of the
+    pages are: the Agent is handed an index of pages it cannot open, and spends
+    its turns hunting for them instead of answering (#3175 follow-up).
+
+    On a single-Agent install the two are the same directory, so that case keeps
+    the relative spelling it has today, project-mode prefix included.
+    """
+    relative = f"{_state_path_prefix(workspace_dir, project_dir)}knowledge"
+    if not workspace_dir:
+        return relative
+    try:
+        from common import state_dir
+        root = str(state_dir.knowledge_dir(base=workspace_dir))
+        own = os.path.join(workspace_dir, "knowledge")
+        if os.path.realpath(root) == os.path.realpath(own):
+            return relative
+        return root
+    except Exception:
+        return relative
+
+
 def _build_memory_section(
     memory_manager: Any,
     tools: Optional[List[Any]],
@@ -440,7 +466,7 @@ def _build_memory_section(
     p = _state_path_prefix(workspace_dir, project_dir)
     mem_md = f"{p}MEMORY.md"
     mem_dir = f"{p}memory"
-    kb_dir = f"{p}knowledge"
+    kb_dir = _knowledge_base_path(workspace_dir, project_dir)
 
     has_memory_tools = False
     if tools:
@@ -555,8 +581,9 @@ def _build_knowledge_section(
     except Exception:
         return []
 
-    # Anchor knowledge paths to ~/cow when a project cwd is active.
-    kb = f"{_state_path_prefix(workspace_dir, project_dir)}knowledge"
+    # Anchor knowledge paths to ~/cow when a project cwd is active, and to the
+    # shared root when this Agent reads the shared copy.
+    kb = _knowledge_base_path(workspace_dir, project_dir)
 
     if language == "en":
         lines = [
