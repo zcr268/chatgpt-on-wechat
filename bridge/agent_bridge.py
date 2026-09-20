@@ -759,17 +759,24 @@ class AgentBridge:
 
     def _clean_team_members(self, members, host_agent_id: str) -> list:
         """Normalize a roster: drop the owner, blanks, dupes and unknown/disabled
-        Agents, preserving order. Returns the teammates to store on a session."""
+        Agents, preserving order. Returns the teammates to store on a session.
+
+        Members arrive as ids a caller may address an Agent by, so the reserved
+        "default" alias is resolved here too; storing the resolved id keeps the
+        roster comparable with the owner and with an id sent the other way.
+        """
         cleaned = []
         for mid in members or []:
             mid = str(mid or "").strip()
-            if not mid or mid == host_agent_id or mid in cleaned:
+            if not mid:
                 continue
             try:
-                self.agent_registry.get(mid, require_enabled=True)
+                resolved = self.agent_registry.get_addressed(mid, require_enabled=True).id
             except Exception:
                 continue  # skip unknown/disabled teammates
-            cleaned.append(mid)
+            if resolved == host_agent_id or resolved in cleaned:
+                continue
+            cleaned.append(resolved)
         return cleaned
 
     def _resolve_speaker(self, host_agent_id: str, context: Context = None) -> str:
