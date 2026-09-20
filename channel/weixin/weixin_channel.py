@@ -16,6 +16,7 @@ import requests
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
+from channel.channel_instances import is_local_instance_id
 from channel.weixin.weixin_api import (
     WeixinApi, upload_media_to_cdn,
     DEFAULT_BASE_URL, CDN_BASE_URL,
@@ -121,20 +122,24 @@ class WeixinChannel(ChatChannel):
             if creds.get("base_url"):
                 base_url = creds["base_url"]
 
-        # Fallback for an instance whose token was scanned via the QR flow: that
-        # flow writes to the default (id-less) credentials file, so the first
-        # instance to start inherits it here rather than being pushed back into
-        # a fresh scan. Claimed once — copied into this instance's own file — so
-        # a later restart reads it from the per-instance path directly.
-        if not token and getattr(self, "instance_id", ""):
+        # The console's scan flow writes to the default (id-less) credentials
+        # file, so an instance created on this machine may find its freshly
+        # scanned token there rather than in its own file. Adopt it once and
+        # copy it into this instance's file: the next start reads it locally and
+        # the default file is free for the next scan, so two instances never end
+        # up sharing one login. Ids provided from outside are never bootstrapped
+        # this way — they stand for a distinct bot and go through their own scan.
+        instance_id = getattr(self, "instance_id", "") or ""
+        if not token and is_local_instance_id(instance_id, "weixin"):
             legacy = _load_credentials(get_weixin_credentials_path())
             if legacy.get("token"):
                 token = legacy["token"]
                 if legacy.get("base_url"):
                     base_url = legacy["base_url"]
+                creds = self._adopt_credentials(legacy, creds)
                 logger.info(
-                    f"[Weixin] instance '{self.instance_id}' inherited its token "
-                    f"from the QR-login default file"
+                    f"[Weixin] instance '{instance_id}' adopted the token from the "
+                    f"default credentials file"
                 )
 
         # Restore persisted context_tokens so scheduler can deliver pushes
@@ -210,6 +215,21 @@ class WeixinChannel(ChatChannel):
     # credentials JSON so scheduled pushes survive process restarts.
     # All mutation + disk IO is serialized via _context_tokens_lock so that
     # concurrent updates can never lose each other's writes.
+
+    def _adopt_credentials(self, source: dict, own: dict) -> dict:
+        """Copy a login adopted from *source* into this instance's own file.
+
+        Anything this instance already persisted wins over the source; the
+        merged result is returned so the caller can keep using it. Best-effort:
+        a failed write only costs a re-adopt on the next start.
+        """
+        merged = dict(source or {})
+        merged.update({k: v for k, v in (own or {}).items() if v})
+        try:
+            _save_credentials(self._credentials_path, merged)
+        except Exception as e:
+            logger.warning(f"[Weixin] Failed to persist adopted credentials: {e}")
+        return merged
 
     def _restore_context_tokens_from_creds(self, creds: dict) -> None:
         if not isinstance(creds, dict):

@@ -142,8 +142,8 @@ function renderActiveChannels() {
                     <div class="cfg-dropdown-menu"></div>
                 </div>
             </div>` : ''}
-            ${weixinWaiting ? `<div id="weixin-active-qr" class="flex flex-col items-center py-2">
-                <button onclick="showWeixinActiveQr()"
+            ${weixinWaiting ? `<div id="weixin-active-qr-${escapeHtml(iid)}" class="flex flex-col items-center py-2">
+                <button onclick="showWeixinActiveQr('${escapeHtml(iid)}')"
                     class="px-4 py-2 rounded-lg bg-primary-500 hover:bg-primary-600 text-white text-sm font-medium
                            cursor-pointer transition-colors duration-150">
                     ${t('weixin_scan_title')}
@@ -165,7 +165,7 @@ function renderActiveChannels() {
         initChannelTeam(ch);
 
         if (weixinWaiting) {
-            startWeixinActiveStatusPoll();
+            startWeixinActiveStatusPoll(iid);
         }
     });
 }

@@ -20,6 +20,7 @@ behavior byte-for-byte.
 from __future__ import annotations
 
 import os
+import re
 import secrets
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping, Optional
@@ -48,6 +49,26 @@ def new_instance_id(channel_type: str, taken: Iterable[str] = ()) -> str:
         candidate = f"{ctype}-{secrets.token_hex(_INSTANCE_ID_RANDOM_LEN // 2 + 1)[:_INSTANCE_ID_RANDOM_LEN]}"
         if candidate not in existing:
             return candidate
+
+
+def is_local_instance_id(instance_id: str, channel_type: str) -> bool:
+    """True if *instance_id* was minted on this machine for *channel_type*.
+
+    Local ids have exactly two shapes: the bare channel type (a legacy flat
+    config folded into ``channel_instances``) and ``{channel_type}-{random}``
+    from :func:`new_instance_id`. Any other id was provided from outside and
+    stands for a distinct, separately provisioned bot. Callers use this to
+    decide whether an instance may adopt machine-local state that was written
+    without an id (e.g. a credentials file) or must be treated as brand new.
+    """
+    iid = (instance_id or "").strip()
+    raw = (channel_type or "").strip()
+    ctype = _normalize_type(raw)
+    if not iid or not ctype:
+        return False
+    if iid in (ctype, raw):
+        return True
+    return re.fullmatch(rf"{re.escape(ctype)}-[0-9a-f]{{{_INSTANCE_ID_RANDOM_LEN}}}", iid) is not None
 
 
 # Per channel type, the config keys that make up its credentials. Only these

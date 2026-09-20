@@ -6,43 +6,75 @@
 // WeChat QR Login
 // =====================================================================
 let _weixinQrPollTimer = null;
-let _weixinStatusPollTimer = null;
+// Status polls are keyed by card (`iid`): the legacy per-type card is 'weixin',
+// a multi-instance card is its instance id. Several cards may wait for a scan
+// at once, so each keeps its own timer.
+let _weixinStatusPollTimers = {};
 
-function stopWeixinStatusPoll() {
-    if (_weixinStatusPollTimer) {
-        clearTimeout(_weixinStatusPollTimer);
-        _weixinStatusPollTimer = null;
+function stopWeixinStatusPoll(iid) {
+    if (iid === undefined) {
+        Object.keys(_weixinStatusPollTimers).forEach(k => stopWeixinStatusPoll(k));
+        return;
+    }
+    if (_weixinStatusPollTimers[iid]) {
+        clearTimeout(_weixinStatusPollTimers[iid]);
+        delete _weixinStatusPollTimers[iid];
     }
 }
 
-function startWeixinActiveStatusPoll() {
-    stopWeixinStatusPoll();
-    _weixinStatusPollTimer = setTimeout(() => {
+function isWeixinInstanceCard(iid) {
+    return !!iid && iid !== 'weixin';
+}
+
+// Instance cards get their own QR panel. The legacy card and the "add channel"
+// flow keep the single `weixin-qr-panel`, which the standalone poll
+// (pollWeixinQrStatus) looks up by that fixed id — so those paths are untouched.
+function weixinQrPanelId(iid) {
+    return isWeixinInstanceCard(iid) ? `weixin-qr-panel-${iid}` : 'weixin-qr-panel';
+}
+
+// Locate this card's entry in an /api/channels payload: instances carry their
+// own login_status; the legacy card lives in the per-type list.
+function findWeixinEntry(data, iid) {
+    if (isWeixinInstanceCard(iid)) {
+        return (data.instances || []).find(i => i.instance_id === iid) || null;
+    }
+    return (data.channels || []).find(c => c.name === 'weixin') || null;
+}
+
+function startWeixinActiveStatusPoll(iid) {
+    iid = iid || 'weixin';
+    stopWeixinStatusPoll(iid);
+    _weixinStatusPollTimers[iid] = setTimeout(() => {
         fetch('/api/channels').then(r => r.json()).then(data => {
             if (data.status !== 'success') return;
-            const wx = (data.channels || []).find(c => c.name === 'weixin');
-            if (!wx || !wx.active) return;
+            const wx = findWeixinEntry(data, iid);
+            if (!wx || (!isWeixinInstanceCard(iid) && !wx.active)) return;
             if (wx.login_status === 'logged_in') {
                 channelsData = data.channels;
+                channelInstancesView = data.instances || [];
                 renderActiveChannels();
             } else {
-                const ch = channelsData.find(c => c.name === 'weixin');
-                if (ch) ch.login_status = wx.login_status;
-                startWeixinActiveStatusPoll();
+                const local = isWeixinInstanceCard(iid)
+                    ? channelInstancesView.find(i => i.instance_id === iid)
+                    : channelsData.find(c => c.name === 'weixin');
+                if (local && wx.login_status) local.login_status = wx.login_status;
+                startWeixinActiveStatusPoll(iid);
             }
-        }).catch(() => { startWeixinActiveStatusPoll(); });
+        }).catch(() => { startWeixinActiveStatusPoll(iid); });
     }, 3000);
 }
 
-function showWeixinActiveQr() {
-    const container = document.getElementById('weixin-active-qr');
+function showWeixinActiveQr(iid) {
+    iid = iid || 'weixin';
+    const container = document.getElementById(`weixin-active-qr-${iid}`);
     if (!container) return;
     container.innerHTML = `
-        <div id="weixin-qr-panel" class="flex flex-col items-center py-2">
+        <div id="${weixinQrPanelId(iid)}" class="flex flex-col items-center py-2">
             <p class="text-sm text-slate-500 dark:text-slate-400 mb-4">${t('weixin_scan_loading')}</p>
         </div>`;
-    stopWeixinStatusPoll();
-    startWeixinQrLogin();
+    stopWeixinStatusPoll(iid);
+    startWeixinQrLogin(iid);
 }
 
 function stopWeixinQrPoll() {
@@ -52,32 +84,48 @@ function stopWeixinQrPoll() {
     }
 }
 
-function startWeixinQrLogin() {
+// How long to keep asking a live instance for its code before giving up: the
+// channel may still be fetching it, or restarting after an expired attempt.
+const WEIXIN_QR_PENDING_MAX_TRIES = 15;
+
+function startWeixinQrLogin(iid, pendingTries) {
     stopWeixinQrPoll();
-    fetch('/api/weixin/qrlogin')
+    pendingTries = pendingTries || 0;
+    const url = isWeixinInstanceCard(iid)
+        ? `/api/weixin/qrlogin?instance_id=${encodeURIComponent(iid)}`
+        : '/api/weixin/qrlogin';
+    fetch(url)
         .then(r => r.json())
         .then(data => {
-            const panel = document.getElementById('weixin-qr-panel');
+            const panel = document.getElementById(weixinQrPanelId(iid));
             if (!panel) return;
+            if (data.status === 'pending') {
+                if (pendingTries >= WEIXIN_QR_PENDING_MAX_TRIES) {
+                    panel.innerHTML = `<p class="text-sm text-red-500">${t('weixin_scan_fail')}</p>`;
+                    return;
+                }
+                setTimeout(() => startWeixinQrLogin(iid, pendingTries + 1), 2000);
+                return;
+            }
             if (data.status !== 'success') {
                 panel.innerHTML = `<p class="text-sm text-red-500">${t('weixin_scan_fail')}: ${data.message || ''}</p>`;
                 return;
             }
-            renderWeixinQr(data.qr_image || data.qrcode_url, 'waiting');
+            renderWeixinQr(data.qr_image || data.qrcode_url, 'waiting', iid);
             if (data.source === 'channel') {
-                startWeixinActiveStatusPoll();
+                startWeixinActiveStatusPoll(iid);
             } else {
                 pollWeixinQrStatus();
             }
         })
         .catch(() => {
-            const panel = document.getElementById('weixin-qr-panel');
+            const panel = document.getElementById(weixinQrPanelId(iid));
             if (panel) panel.innerHTML = `<p class="text-sm text-red-500">${t('weixin_scan_fail')}</p>`;
         });
 }
 
-function renderWeixinQr(qrcodeUrl, status) {
-    const panel = document.getElementById('weixin-qr-panel');
+function renderWeixinQr(qrcodeUrl, status, iid) {
+    const panel = document.getElementById(weixinQrPanelId(iid));
     if (!panel) return;
 
     let statusText = t('weixin_scan_waiting');

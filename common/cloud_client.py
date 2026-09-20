@@ -479,19 +479,17 @@ class CloudClient(LinkAIClient):
 
     @staticmethod
     def _is_platform_instance_id(instance_id: str, channel_type: str) -> bool:
-        """True for an id the control plane issued (a UUID).
+        """True for an id the control plane issued, i.e. anything not minted locally.
 
-        Local ids are either the bare channel type (bootstrapped from the flat
-        legacy config) or ``<type>-<10 hex>`` from the local console; anything
-        else was handed down by the platform and may be reconciled away.
+        Only such instances may be reconciled away by a sync; local ones (the
+        bare type bootstrapped from the flat config, or ``<type>-<hex>`` from
+        the local console) are never ours to delete.
         """
-        import re
+        from channel.channel_instances import is_local_instance_id
 
-        if not instance_id or instance_id == channel_type:
+        if not instance_id:
             return False
-        if channel_type and re.fullmatch(rf"{re.escape(channel_type)}-[0-9a-f]{{10}}", instance_id):
-            return False
-        return True
+        return not is_local_instance_id(instance_id, channel_type)
 
     def _instance_running(self, instance_id: str) -> bool:
         if not self.channel_mgr:
@@ -895,27 +893,38 @@ class CloudClient(LinkAIClient):
             self._send_package(msg)
             logger.info(f"[CloudClient] Sent QR code status for '{channel_type}'")
 
-    def _report_channel_startup(self, channel_type: str):
-        """Wait for channel startup result and report to cloud."""
-        ch = self.channel_mgr.get_channel(channel_type)
+    def _report_channel_startup(self, name: str):
+        """Wait for a channel's startup result and report it to the cloud.
+
+        ``name`` is the key the manager registered the channel under: the bare
+        channel type for a legacy single-instance channel, but the instance id
+        for a multi-instance one. The report needs the real type (plus the id
+        separately), so both are read off the channel and only fall back to the
+        key — otherwise an instance would report its uuid as its channel type.
+        """
+        ch = self.channel_mgr.get_channel(name)
         if not ch:
-            self.send_channel_status(channel_type, "error", "channel instance not found")
+            self.send_channel_status(name, "error", "channel instance not found")
             return
+
+        channel_type = getattr(ch, "channel_type", "") or name
+        instance_id = getattr(ch, "instance_id", "") or ""
+        channel_id = instance_id if instance_id != channel_type else ""
 
         if channel_type in ("weixin", "wx") and hasattr(ch, "login_status"):
             login_status = getattr(ch, "login_status", "")
             if login_status in ("waiting_scan", "scanned", "idle"):
-                logger.info(f"[CloudClient] Channel '{channel_type}' is waiting for QR login, "
+                logger.info(f"[CloudClient] Channel '{name}' is waiting for QR login, "
                             "skip reporting connected")
                 return
 
         success, error = ch.wait_startup(timeout=3)
         if success:
-            logger.info(f"[CloudClient] Channel '{channel_type}' connected, reporting status")
-            self.send_channel_status(channel_type, "connected")
+            logger.info(f"[CloudClient] Channel '{name}' connected, reporting status")
+            self.send_channel_status(channel_type, "connected", channel_id=channel_id)
         else:
-            logger.warning(f"[CloudClient] Channel '{channel_type}' startup failed: {error}")
-            self.send_channel_status(channel_type, "error", error)
+            logger.warning(f"[CloudClient] Channel '{name}' startup failed: {error}")
+            self.send_channel_status(channel_type, "error", error, channel_id=channel_id)
 
     # ------------------------------------------------------------------
     # skill callback

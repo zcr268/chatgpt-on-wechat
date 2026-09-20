@@ -154,11 +154,17 @@ class ChannelsHandler:
         return lead + rest
 
     @staticmethod
-    def _get_weixin_login_status() -> str:
+    def _get_weixin_login_status(instance_id: str = "weixin") -> str:
+        """Login state of the running Weixin channel registered under *instance_id*.
+
+        The bare type is the legacy single-instance key; multi-instance channels
+        register under their own id. Returns "unknown" when nothing is running
+        under that key so a card never claims a login it cannot see.
+        """
         try:
             mgr = _live_channel_manager()
             if mgr:
-                ch = mgr.get_channel("weixin")
+                ch = mgr.get_channel(instance_id or "weixin")
                 if ch and hasattr(ch, 'login_status'):
                     return ch.login_status
         except Exception:
@@ -253,7 +259,7 @@ class ChannelsHandler:
             elif is_hant and isinstance(label_val, dict):
                 label_val = label_val.copy()
                 label_val["zh-Hant"] = i18n.to_traditional(label_val.get("zh", ""))
-            out.append({
+            card = {
                 "name": inst.channel_type,
                 "instance_id": inst.instance_id,
                 "channel_type": inst.channel_type,
@@ -266,7 +272,15 @@ class ChannelsHandler:
                 "color": ch_def["color"],
                 "active": True,
                 "fields": fields_out,
-            })
+            }
+            # A Weixin instance is only "connected" once its scan login is
+            # done; surface the live state so a card waiting for a scan says
+            # so (and offers the QR) instead of claiming to be connected.
+            if inst.channel_type == "weixin":
+                status = cls._get_weixin_login_status(inst.instance_id)
+                if status != "unknown":
+                    card["login_status"] = status
+            out.append(card)
         return out
 
     def GET(self):
@@ -837,20 +851,65 @@ class WeixinQrHandler:
         except ImportError:
             return ""
 
+    # instance_id -> monotonic time of the last restart this handler kicked off,
+    # so a card polling while the channel comes back up cannot restart it again.
+    _restart_kicked = {}
+    _RESTART_COOLDOWN_S = 20
+
     @staticmethod
-    def _get_running_channel():
+    def _get_running_channel(instance_id: str = ""):
         try:
             mgr = _live_channel_manager()
             if mgr:
-                return mgr.get_channel("weixin")
+                return mgr.get_channel(instance_id or "weixin")
         except Exception:
             pass
         return None
+
+    def _instance_qr(self, instance_id: str) -> str:
+        """QR for an existing instance: read it off the running channel.
+
+        The channel owns the scan for a live instance (it persists the token to
+        its own credentials file on confirm), so this never falls back to the
+        standalone flow — that one saves to the id-less default file, which the
+        instance would not pick up, and its follow-up "connect" would create a
+        second instance. If the channel's login attempt has already given up
+        (status idle, no QR), restart it once so a fresh code is issued.
+        """
+        ch = self._get_running_channel(instance_id)
+        if ch is None:
+            return json.dumps({"status": "error", "message": "channel instance is not running"})
+
+        qr_url = getattr(ch, "_current_qr_url", "") or ""
+        if qr_url:
+            return json.dumps({
+                "status": "success",
+                "qrcode_url": qr_url,
+                "qr_image": self._qr_to_data_uri(qr_url),
+                "source": "channel",
+                "instance_id": instance_id,
+            })
+
+        login_status = getattr(ch, "login_status", "")
+        last = WeixinQrHandler._restart_kicked.get(instance_id, 0)
+        if login_status == "idle" and time.monotonic() - last > self._RESTART_COOLDOWN_S:
+            WeixinQrHandler._restart_kicked[instance_id] = time.monotonic()
+            mgr = _live_channel_manager()
+            if mgr:
+                threading.Thread(target=mgr.restart, args=(instance_id,), daemon=True).start()
+                logger.info(f"[WebChannel] Weixin instance '{instance_id}' idle without QR, restarting for a new code")
+        # Either the channel is mid-login and has not fetched a code yet, or a
+        # restart is under way; the client retries shortly.
+        return json.dumps({"status": "pending", "instance_id": instance_id})
 
     def GET(self):
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
+            instance_id = (web.input().get("instance_id") or "").strip()
+            if instance_id and instance_id != "weixin":
+                return self._instance_qr(instance_id)
+
             running_ch = self._get_running_channel()
             if running_ch and hasattr(running_ch, '_current_qr_url') and running_ch._current_qr_url:
                 qr_image = self._qr_to_data_uri(running_ch._current_qr_url)
