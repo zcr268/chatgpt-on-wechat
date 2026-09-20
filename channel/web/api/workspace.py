@@ -13,6 +13,7 @@ import sys
 
 import web
 
+from agent.tools.utils.memory_path import indexes_rel_path
 from channel.web.core._common import (
     _build_preview_url,
     _is_path_allowed,
@@ -189,13 +190,6 @@ def _editable_target(raw_path: str, session_id: str = None, agent_id: str = None
     return svc, rel
 
 
-def _is_memory_rel(rel_path: str) -> bool:
-    """True if a workspace-relative path points at a memory file backed by the
-    vector index (so an edit has to be re-embedded, not just written)."""
-    p = (rel_path or "").lstrip("./")
-    return p == "MEMORY.md" or p.startswith(("memory/", "memory\\"))
-
-
 def _mark_memory_dirty(agent_id: str = None) -> None:
     """Flag the agent's memory index stale after a console edit to a memory file.
 
@@ -274,9 +268,11 @@ class WorkspaceWriteHandler:
             except WorkspaceConflictError as e:
                 return json.dumps({"status": "error", "code": "conflict", "message": str(e)})
 
-            # A memory file feeds the vector index; re-embed it on edit so search
-            # doesn't keep returning the stale pre-edit text.
-            if _is_memory_rel(rel):
+            # A memory or knowledge file feeds the vector index; re-embed it on
+            # edit so search doesn't keep returning the stale pre-edit text.
+            # Same check the write/edit tools use, so both paths agree on which
+            # files those are.
+            if indexes_rel_path(rel):
                 _mark_memory_dirty(agent_id)
 
             logger.info(f"[WebChannel] Workspace file saved: {result['path']} ({result['size']} bytes)")
