@@ -619,20 +619,29 @@ def _agent_badge(profile) -> dict:
 
 
 def _roster_from_members(host_agent_id: str, members) -> List[dict]:
-    """Badge every reachable member of a conversation, host first."""
+    """Badge every reachable member of a conversation, host first.
+
+    Same rule as ``agent.team_addressing.roster_from_members``, reserved
+    "default" alias included: the browser and an IM group have to agree on who
+    is reachable. Deduped on the resolved id, because an alias and the id it
+    resolves to name one teammate.
+    """
     from agent.registry import get_agent_registry
 
     if not members:
         return []
     registry = get_agent_registry()
     roster: List[dict] = []
+    seen: set = set()
     for agent_id in [host_agent_id, *members]:
-        if any(item["id"] == agent_id for item in roster):
-            continue
         try:
-            roster.append(_agent_badge(registry.get(agent_id)))
+            profile = registry.get_addressed(agent_id)
         except Exception:
             continue
+        if profile.id in seen:
+            continue
+        seen.add(profile.id)
+        roster.append(_agent_badge(profile))
     return roster
 
 

@@ -5,7 +5,10 @@ a turn is addressed to with the same rule, so a name resolves the same way
 whether it was typed in a browser or an IM group.
 """
 
-from agent.team_addressing import addressed_agent_id
+import pytest
+
+from agent.registry import AgentProfile, AgentRegistry, set_agent_registry
+from agent.team_addressing import addressed_agent_id, roster_from_members
 
 
 ROSTER = [
@@ -51,3 +54,69 @@ def test_boundary_requires_separator_or_end():
     # colon / comma / whitespace / CJK punctuation all count as a boundary
     assert addressed_agent_id("@ops：查一下", ROSTER) == "ops"
     assert addressed_agent_id("@ops", ROSTER) == "ops"
+
+
+@pytest.fixture
+def registry(tmp_path):
+    """A team whose default agent was given an id at provisioning time.
+
+    That is the configuration the reserved ``"default"`` alias exists for: the
+    id stays stable and meaningful, but a caller still has to be able to reach
+    the agent without knowing it.
+    """
+    pinned = AgentRegistry(
+        [
+            AgentProfile("agent-abc", "CowAgent", str(tmp_path / "cow")),
+            AgentProfile("ops", "Ops", str(tmp_path / "ops")),
+        ],
+        default_agent_id="agent-abc",
+    )
+    set_agent_registry(pinned)
+    try:
+        yield pinned
+    finally:
+        # ``None``, not the instance: pinning one back would outlive the test.
+        set_agent_registry(None)
+
+
+def test_a_member_invited_by_the_default_alias_stays_on_the_roster(registry):
+    """Inviting the default agent has to make it addressable, not drop it.
+
+    Members arrive as the ids a caller may address an Agent by, and
+    ``"default"`` is one of them even when the agent's real id is not. Reading
+    it with ``get`` raises on the alias, so the entry fell out as unknown and
+    the conversation showed a team of one — with no error to explain why.
+    """
+    roster = roster_from_members("ops", ["default"])
+
+    assert [item["id"] for item in roster] == ["ops", "agent-abc"]
+    # Reachable by what a roster carries: the display name, or the real id.
+    assert addressed_agent_id("@CowAgent hi", roster) == "agent-abc"
+    assert addressed_agent_id("@agent-abc hi", roster) == "agent-abc"
+
+
+def test_the_same_teammate_named_by_alias_and_id_appears_once(registry):
+    """Both labels are the one agent, so dedupe on the resolved id.
+
+    Comparing the raw input against the stored entry cannot see that: the
+    string ``"default"`` never equals ``"agent-abc"``, so the roster would
+    carry two entries for a single agent and the matcher two labels for it.
+    """
+    roster = roster_from_members("ops", ["default", "agent-abc"])
+
+    assert [item["id"] for item in roster] == ["ops", "agent-abc"]
+
+
+def test_the_web_console_roster_resolves_the_default_alias_too(registry):
+    """The Web console keeps its own copy of this rule, and it has to match.
+
+    ``agent.team_addressing.roster_from_members`` and
+    ``channel.web.core._common._roster_from_members`` are two implementations
+    of one roster, so a fix in one that misses the other leaves the browser and
+    an IM group disagreeing about who is reachable.
+    """
+    from channel.web.core._common import _roster_from_members
+
+    roster = _roster_from_members("ops", ["default"])
+
+    assert [item["id"] for item in roster] == ["ops", "agent-abc"]

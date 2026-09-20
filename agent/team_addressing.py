@@ -17,6 +17,12 @@ from common.log import logger
 def roster_from_members(host_agent_id: str, members) -> List[dict]:
     """Everyone reachable in a conversation as ``{id, name}``, host first.
 
+    Members arrive as the ids a caller may address an Agent by, so the reserved
+    "default" alias is resolved here too. A member invited by alias is a member:
+    reading it with ``get`` instead would raise on the alias, drop the entry as
+    unknown, and leave an agent the user can see in the conversation
+    unaddressable — with no error to explain why ``@default`` did nothing.
+
     Empty when there is no team (no members): a solo conversation names nobody.
     Unknown/disabled ids are dropped so the roster only holds addressable Agents.
     """
@@ -26,13 +32,19 @@ def roster_from_members(host_agent_id: str, members) -> List[dict]:
 
     registry = get_agent_registry()
     roster: List[dict] = []
+    seen: set = set()
     for agent_id in [host_agent_id, *members]:
-        if not agent_id or any(item["id"] == agent_id for item in roster):
+        if not agent_id:
             continue
         try:
-            profile = registry.get(agent_id, require_enabled=False)
+            profile = registry.get_addressed(agent_id, require_enabled=False)
         except Exception:
             continue
+        # Keyed on the resolved id, not the input: an alias and the id it
+        # resolves to are one teammate and must not both reach the roster.
+        if profile.id in seen:
+            continue
+        seen.add(profile.id)
         roster.append({"id": profile.id, "name": profile.name or profile.id})
     return roster
 
