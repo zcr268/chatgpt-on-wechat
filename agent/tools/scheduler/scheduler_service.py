@@ -263,7 +263,7 @@ class SchedulerService:
                     logger.info(f"[Scheduler] Rescheduled task {task['id']} to {next_next_run}")
                 return False
 
-            return now >= next_run
+            return reference_now >= next_run
         except Exception as e:
             logger.error(
                 f"[Scheduler] Failed to evaluate due-state for task "

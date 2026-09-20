@@ -197,3 +197,28 @@ def test_run_task_now_checks_for_missing_task_before_migration():
 
     with pytest.raises(ValueError, match="Task 'missing' not found"):
         service.run_task_now("missing")
+
+
+def test_is_task_due_uses_reference_now_for_zoned_tasks():
+    """Future zoned task must not raise TypeError comparing naive now to aware next_run."""
+    task = _cron_task("0 11 * * 5", "Australia/Melbourne")
+    task["next_run_at"] = "2026-10-09T00:00:00+00:00"  # 11:00 AEDT Friday
+    store = SimpleNamespace(update_task=lambda *a, **kw: None, delete_task=lambda *a, **kw: None)
+    service = SchedulerService(store, lambda task: False)
+
+    naive_now = datetime(2026, 10, 3, 12, 0, 0)  # naive server time, well before
+    assert service._is_task_due(task, naive_now) is False
+
+    overdue_now = datetime(2026, 10, 9, 8, 5, 0)  # naive UTC+8 = 00:05Z, within catch-up
+    assert service._is_task_due(task, overdue_now) is True
+
+
+def test_next_cron_occurrence_always_returns_future_instant():
+    """During fall-back, the result must be strictly after the reference instant."""
+    zone = ZoneInfo("Australia/Melbourne")
+    # 2026-04-05 02:00 AEDT -> 01:00 AEST (fall-back); the 01:xx hour repeats.
+    # If `after` is inside the second fold, croniter for a daily "1 1 * * *"
+    # might return the first fold's 01:00 which is already past.
+    after = datetime(2026, 4, 5, 1, 30, 0).replace(tzinfo=zone).astimezone(timezone.utc)
+    result = time_utils.next_cron_occurrence("0 1 * * *", after, zone)
+    assert result > after
