@@ -209,7 +209,9 @@ def test_is_task_due_uses_reference_now_for_zoned_tasks():
     naive_now = datetime(2026, 10, 3, 12, 0, 0)  # naive server time, well before
     assert service._is_task_due(task, naive_now) is False
 
-    overdue_now = datetime(2026, 10, 9, 8, 5, 0)  # naive UTC+8 = 00:05Z, within catch-up
+    # Timezone-independent: build naive local wall clock that maps to 00:05Z on ANY host
+    ref_utc = datetime(2026, 10, 9, 0, 5, 0, tzinfo=timezone.utc)
+    overdue_now = ref_utc.astimezone().replace(tzinfo=None)
     assert service._is_task_due(task, overdue_now) is True
 
 
