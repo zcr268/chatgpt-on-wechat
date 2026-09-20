@@ -641,24 +641,36 @@ def _session_team_state(prefs: dict, agent_id: Optional[str]) -> dict:
 
     An archived member is reported but marked unavailable rather than dropped,
     so the roster the user set is what the roster page shows.
+
+    Ids are read the way the conversation reads them, reserved "default" alias
+    included: a member the chat can already address must not be shown here as
+    an unknown, unavailable row, and the agent behind it must not be offered
+    again as somebody left to invite.
     """
     from agent.registry import get_agent_registry
 
     registry = get_agent_registry()
-    owner_id = registry.get(agent_id or None, require_enabled=False).id
+    owner = registry.get_addressed(agent_id, require_enabled=False)
+    owner_id = owner.id
     members = []
+    seen = set()
     for member_id in prefs.get("members") or []:
         try:
-            profile = registry.get(member_id, require_enabled=False)
+            profile = registry.get_addressed(member_id, require_enabled=False)
         except Exception:
             members.append({"id": member_id, "name": member_id, "available": False})
             continue
+        # Keyed on the resolved id: an alias and the id it resolves to are one
+        # teammate, so the panel lists the row once like the roster does.
+        if profile.id in seen:
+            continue
+        seen.add(profile.id)
         members.append({
             **_agent_badge(profile),
             "available": profile.enabled and profile.id != owner_id,
         })
     return {
-        "owner": _agent_badge(registry.get(owner_id, require_enabled=False)),
+        "owner": _agent_badge(owner),
         "members": members,
         "candidates": [
             _agent_badge(profile)
