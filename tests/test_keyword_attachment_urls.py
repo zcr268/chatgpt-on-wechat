@@ -1,5 +1,6 @@
 """Regression tests for URL replies from the keyword plugin."""
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -45,13 +46,27 @@ def test_http_scheme_without_host_remains_text():
     assert reply.type is ReplyType.TEXT
 
 
-def test_xlsx_url_uses_path_filename_without_query_string(tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    response = SimpleNamespace(content=b"spreadsheet")
+def test_xlsx_url_uses_path_filename_without_query_string(tmp_path):
+    # The attachment goes to the agent's managed tmp dir, not a `tmp/` resolved
+    # against the process CWD: the packaged desktop app does not control its CWD
+    # and may not be able to write there. Pin an agent so the dir is knowable.
+    from agent.registry import AgentProfile, AgentRegistry, set_agent_registry
+    from common import state_dir
 
-    with patch("plugins.keyword.keyword.requests.get", return_value=response):
-        reply = _handle("https://cdn.example.com/report.XLSX?token=secret")
+    set_agent_registry(
+        AgentRegistry([AgentProfile(id="w1", name="W", workspace=str(tmp_path))], "w1")
+    )
+    try:
+        expected_dir = state_dir.tmp_dir()
+        response = SimpleNamespace(content=b"spreadsheet")
 
-    assert reply.type is ReplyType.FILE
-    assert reply.content == "tmp/report.XLSX"
-    assert (tmp_path / reply.content).read_bytes() == b"spreadsheet"
+        with patch("plugins.keyword.keyword.requests.get", return_value=response):
+            reply = _handle("https://cdn.example.com/report.XLSX?token=secret")
+
+        assert reply.type is ReplyType.FILE
+        # The query string must not leak into the saved name.
+        assert Path(reply.content).name == "report.XLSX"
+        assert Path(reply.content).parent == expected_dir
+        assert Path(reply.content).read_bytes() == b"spreadsheet"
+    finally:
+        set_agent_registry(None)
