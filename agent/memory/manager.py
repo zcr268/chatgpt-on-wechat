@@ -17,6 +17,15 @@ from agent.memory.embedding import EmbeddingProvider, EmbeddingCache
 from agent.memory.summarizer import MemoryFlushManager, create_memory_files_if_needed
 
 
+def _real(path: Path) -> Path:
+    """Symlink-resolved path, for prefix comparisons that must not care how a
+    directory was reached (``/var`` vs ``/private/var`` on macOS)."""
+    try:
+        return Path(os.path.realpath(path))
+    except OSError:
+        return Path(path)
+
+
 def _index_rel_path(file_path: Path, roots: Sequence[Tuple[Path, str]]) -> Optional[str]:
     """Index key for a scanned file, or None when no known root contains it.
 
@@ -30,14 +39,23 @@ def _index_rel_path(file_path: Path, roots: Sequence[Tuple[Path, str]]) -> Optio
     Each root carries the prefix its files are keyed under, so shared knowledge
     keeps the ``knowledge/note.md`` key it would have had inside the workspace:
     the index keeps its shape when an Agent gains or loses a private copy, and
-    nothing has to be reindexed.
+    nothing has to be reindexed. Keys are POSIX-style on every platform, which
+    is also the spelling ``add_memory`` writes — otherwise the same file is
+    indexed twice on Windows, once per separator.
+
+    Roots are matched as given first and only then symlink-resolved, so the
+    common case costs no extra stat calls while a workspace reached through a
+    symlink still matches instead of losing its files to the skip path.
     """
-    for root, prefix in roots:
-        try:
-            rel = file_path.relative_to(root)
-        except ValueError:
-            continue
-        return str(Path(prefix) / rel) if prefix else str(rel)
+    for resolve in (False, True):
+        target = _real(file_path) if resolve else file_path
+        for root, prefix in roots:
+            base = _real(root) if resolve else root
+            try:
+                rel = target.relative_to(base)
+            except ValueError:
+                continue
+            return (Path(prefix) / rel).as_posix() if prefix else rel.as_posix()
     return None
 
 
@@ -373,7 +391,9 @@ class MemoryManager:
         for file_path, source, scope, user_id in files_to_scan:
             try:
                 content = file_path.read_text(encoding='utf-8')
-            except Exception:
+            except Exception as e:
+                # Was silent, which made a half-indexed workspace look healthy.
+                logger.warning(f"[MemoryManager] Skipping {file_path}: cannot read it ({e})")
                 continue
             file_hash = MemoryStorage.compute_hash(content)
             rel_path = _index_rel_path(file_path, index_roots)
@@ -448,6 +468,12 @@ class MemoryManager:
 
             rel_path = entry["rel_path"]
             self.storage.delete_by_path(rel_path)
+            if os.sep != "/":
+                # Keys used to be spelled with the platform separator. Drop that
+                # row too, so a Windows index carried over from an older build
+                # does not keep a second copy of the same file under
+                # "knowledge\note.md" and return it twice.
+                self.storage.delete_by_path(rel_path.replace("/", os.sep))
             memory_chunks = []
             for chunk, embedding in zip(entry["chunks"], entry_embeddings):
                 chunk_id = self._generate_chunk_id(rel_path, chunk.start_line, chunk.end_line)
