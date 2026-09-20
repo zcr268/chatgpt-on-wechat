@@ -388,14 +388,9 @@ class MemoryManager:
             # still covers every file that is not a shared fallback.
             pass
 
+        scanned: Dict[str, set] = {}
+
         for file_path, source, scope, user_id in files_to_scan:
-            try:
-                content = file_path.read_text(encoding='utf-8')
-            except Exception as e:
-                # Was silent, which made a half-indexed workspace look healthy.
-                logger.warning(f"[MemoryManager] Skipping {file_path}: cannot read it ({e})")
-                continue
-            file_hash = MemoryStorage.compute_hash(content)
             rel_path = _index_rel_path(file_path, index_roots)
             if rel_path is None:
                 # Defensive: every scan target above resolves under one of the
@@ -406,6 +401,16 @@ class MemoryManager:
                     f"this Agent's roots, so it has no stable index key"
                 )
                 continue
+            # Recorded before the read, so a file that is present but unreadable
+            # still counts as scanned and keeps the rows it already has.
+            scanned.setdefault(source, set()).add(rel_path)
+            try:
+                content = file_path.read_text(encoding='utf-8')
+            except Exception as e:
+                # Was silent, which made a half-indexed workspace look healthy.
+                logger.warning(f"[MemoryManager] Skipping {file_path}: cannot read it ({e})")
+                continue
+            file_hash = MemoryStorage.compute_hash(content)
             if self.storage.get_file_hash(rel_path) == file_hash:
                 continue
             # Markdown files (memory + knowledge) get structure-aware chunking;
@@ -426,6 +431,41 @@ class MemoryManager:
                 "chunks": chunks,
                 "texts": [c.text for c in chunks],
             })
+
+        # Reconcile before the early return below: an index full of stale rows
+        # is exactly the case where nothing changed and `pending` is empty.
+        #
+        # sync() only ever added and overwrote. Anything that left a scanned
+        # root — a page the user deleted, or every shared page at once when an
+        # Agent is switched to its own knowledge/ — stayed in the index and kept
+        # being returned by memory_search long after no tool could open it.
+        #
+        # Only a source whose root resolved and exists is reconciled. An empty
+        # scan set then means the files are genuinely gone, rather than that the
+        # root was momentarily unresolvable, which must not cost a whole index.
+        reconcilable = []
+        if memory_dir.exists():
+            reconcilable.append("memory")
+        if knowledge_dir is not None and knowledge_dir.exists():
+            reconcilable.append("knowledge")
+        for source in reconcilable:
+            try:
+                stale = set(self.storage.list_paths(source)) - scanned.get(source, set())
+            except Exception as e:
+                logger.warning(f"[MemoryManager] Cannot reconcile {source} index: {e}")
+                continue
+            dropped = 0
+            for stale_path in stale:
+                try:
+                    self.storage.delete_by_path(stale_path)
+                    dropped += 1
+                except Exception as e:
+                    logger.warning(f"[MemoryManager] Cannot drop stale entry {stale_path}: {e}")
+            if dropped:
+                logger.info(
+                    f"[MemoryManager] Dropped {dropped} stale {source} "
+                    f"entries that are no longer on disk"
+                )
 
         if not pending:
             self._dirty = False

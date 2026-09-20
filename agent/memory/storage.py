@@ -967,6 +967,13 @@ class MemoryStorage:
         """, (path,)).fetchone()
         return row['hash'] if row else None
 
+    def list_paths(self, source: str) -> List[str]:
+        """Every path currently indexed under a source."""
+        rows = self.conn.execute(
+            "SELECT path FROM files WHERE source = ?", (source,)
+        ).fetchall()
+        return [row['path'] for row in rows]
+
     def update_file_metadata(self, path: str, source: str, file_hash: str, mtime: int, size: int):
         """Update file metadata"""
         with self._lock:
