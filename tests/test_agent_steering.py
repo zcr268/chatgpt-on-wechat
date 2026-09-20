@@ -162,6 +162,58 @@ def test_steer_aborts_in_flight_llm_stream():
     assert text
 
 
+def test_steer_in_tail_window_keeps_the_completed_turn():
+    """A steer landing in the last (sub-probe) chunks must not drop the turn.
+
+    The mid-stream probe only fires every 8 chunks, so a shorter stream can
+    finish with a steer already pending. That turn is complete — its text and
+    tool_calls must reach history so the drain checkpoint can close them.
+    """
+    inbox = SteerInbox()
+
+    class _Model:
+        model = "test-model"
+
+        def call_stream(self, request):
+            yield {"choices": [{"delta": {"content": "hello"}}]}
+            yield {"choices": [{"delta": {"tool_calls": [{
+                "index": 0,
+                "id": "call_1",
+                "function": {"name": "shell", "arguments": '{"cmd":"ls"}'},
+            }]}}]}
+            inbox.submit("turn left")
+
+    class _Exec(AgentStreamExecutor):
+        def _is_thinking_enabled(self):
+            return False
+
+        def _trim_messages(self):
+            return None
+
+        def _validate_and_fix_messages(self):
+            return None
+
+        def _catalog_max_output_tokens(self):
+            return 16
+
+        def _filter_think_tags(self, text):
+            return text
+
+    executor = _Exec(
+        agent=SimpleNamespace(),
+        model=_Model(),
+        system_prompt="",
+        tools=[],
+        max_turns=2,
+        messages=[],
+        steer_inbox=inbox,
+    )
+    text, tool_calls, _ = executor._call_llm_stream(retry_on_empty=True)
+    assert text == "hello"
+    assert [tc["name"] for tc in tool_calls] == ["shell"]
+    assert executor.messages and executor.messages[-1]["role"] == "assistant"
+
+
 def test_steer_arriving_during_model_skips_all_proposed_tools():
     inbox = SteerInbox()
     executor = _ScriptedExecutor([

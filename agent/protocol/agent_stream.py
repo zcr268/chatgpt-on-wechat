@@ -1469,7 +1469,8 @@ class AgentStreamExecutor:
                             "cancelled": True,
                         })
                         raise AgentCancelledError("cancelled during LLM streaming")
-                    if self.steer_inbox is not None and self.steer_inbox.has_pending():
+                    steer_inbox = getattr(self, "steer_inbox", None)
+                    if steer_inbox is not None and steer_inbox.has_pending():
                         logger.info("[Agent] steer detected mid-stream, aborting LLM call")
                         if full_content:
                             self.messages.append({
@@ -1854,12 +1855,12 @@ class AgentStreamExecutor:
                 "arguments": arguments
             })
 
-        if self.steer_inbox is not None and self.steer_inbox.has_pending():
-            logger.info("[Agent] steer pending after stream, skipping empty retry")
-            return full_content, [], "steered"
-
         # Check for empty response and retry once if enabled
         if retry_on_empty and not full_content and not tool_calls:
+            steer_inbox = getattr(self, "steer_inbox", None)
+            if steer_inbox is not None and steer_inbox.has_pending():
+                logger.info("[Agent] steer pending after stream, skipping empty retry")
+                return full_content, [], "steered"
             logger.warning(f"⚠️  LLM returned empty response (stop_reason: {stop_reason}), retrying once...")
             self._emit_event("message_end", {
                 "content": "",
