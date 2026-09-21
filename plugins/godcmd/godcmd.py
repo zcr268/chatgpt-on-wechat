@@ -198,8 +198,16 @@ class Godcmd(Plugin):
         # the documented defaults and write the repaired config out instead.
         if not isinstance(gconf, dict) or not all(k in gconf for k in DEFAULT_CONFIG):
             gconf = {**DEFAULT_CONFIG, **(gconf if isinstance(gconf, dict) else {})}
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(gconf, f, indent=4)
+            try:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(gconf, f, indent=4)
+            except OSError as e:
+                # Repairing the file on disk is a convenience; the defaults above
+                # are enough to run. Raising here would reach activate_plugins,
+                # which persists enabled=false — the very outcome this fallback
+                # exists to avoid — so a plugin directory that is read-only
+                # (packaged builds) or a full disk must not take the plugin down.
+                logger.warning(f"[Godcmd] cannot write {config_path}: {e}")
         if gconf["password"] == "":
             self.temp_password = "".join(random.sample(string.digits, 4))
             logger.info("[Godcmd] 因未设置口令，本次的临时口令为%s。" % self.temp_password)
