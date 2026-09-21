@@ -3,13 +3,22 @@
 Deleting an Agent used to leave its id in session_prefs.members. The shared
 path then reloaded history as plain text and dropped tool_use/tool_result
 pairs, so a solo WeChat chat lost its tool chain. The predicate resolves each
-id; only a member that still exists counts.
+id; only a member that still exists counts. An id with no local profile still
+counts when the installed transport lists it as a peer.
 """
 
 import pytest
 
+from agent.multiagent import InvokeResult, PeerAgent, PeerTransport
 from agent.registry import AgentProfile, AgentRegistry, set_agent_registry
 from bridge.agent_initializer import AgentInitializer
+
+
+class _DirectoryOnlyTransport(PeerTransport):
+    """Transport stub: directory lookups only, no hand-off."""
+
+    def invoke(self, request, on_event=None):
+        return InvokeResult.failed("directory only")
 
 
 @pytest.fixture
@@ -99,3 +108,34 @@ def test_unreadable_registry_does_not_downgrade_a_roster(monkeypatch):
     monkeypatch.setattr("agent.registry.get_agent_registry", unavailable)
     assert AgentInitializer._any_member_exists(["agent-ghost"]) is True
     assert AgentInitializer._is_shared_conversation("sess", "agent-real") is True
+
+
+def test_remote_only_peer_counts_as_a_member(roster, monkeypatch):
+    """A hosted teammate with no local profile is still a shared roster."""
+    from agent.multiagent import set_transport
+
+    transport = _DirectoryOnlyTransport()
+    transport.register_peers([PeerAgent("agent-remote", "Remote", "hosted")])
+    set_transport(transport)
+    try:
+        assert AgentInitializer._any_member_exists(["agent-remote"]) is True
+        # The same transport leaves an id it has never heard of as a ghost.
+        assert AgentInitializer._any_member_exists(["agent-ghost"]) is False
+        _stub_members(monkeypatch, ["agent-remote"])
+        assert AgentInitializer._is_shared_conversation("sess", "agent-real") is True
+    finally:
+        set_transport(None)
+
+
+def test_ghost_only_without_transport_is_not_shared(roster, monkeypatch):
+    """No installed transport: a deleted local id is still a solo conversation."""
+    from agent.multiagent import get_transport, set_transport
+
+    set_transport(None)
+    try:
+        assert get_transport() is None
+        assert AgentInitializer._any_member_exists(["agent-ghost"]) is False
+        _stub_members(monkeypatch, ["agent-ghost"])
+        assert AgentInitializer._is_shared_conversation("sess", "agent-real") is False
+    finally:
+        set_transport(None)

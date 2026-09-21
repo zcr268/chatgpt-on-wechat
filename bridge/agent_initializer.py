@@ -270,9 +270,11 @@ class AgentInitializer:
     def _is_shared_conversation(session_id: str, host_agent_id: str) -> bool:
         """Whether anyone besides the owner was invited into this conversation.
 
-        A stored id only counts when it still resolves to a configured Agent.
-        A roster made entirely of deleted Agents is not a team conversation:
-        treating it as one reloads history as plain text and drops the tool chain.
+        A stored id only counts when it still resolves to a configured Agent,
+        or to a teammate the installed transport can reach. A roster made
+        entirely of deleted Agents, with no such peer, is not a team
+        conversation: treating it as one reloads history as plain text and
+        drops the tool chain.
         """
         if not session_id:
             return False
@@ -288,7 +290,14 @@ class AgentInitializer:
 
     @staticmethod
     def _any_member_exists(members: list) -> bool:
-        """Whether at least one id in a roster maps to a configured Agent."""
+        """Whether at least one id names a local Agent or a transport peer.
+
+        Local lookup stays ``require_enabled=False`` so a disabled teammate
+        and the reserved ``"default"`` alias still count. ``resolve_teammate``
+        is not used: it looks up with ``require_enabled=True`` and would drop
+        a disabled local teammate. An id this process does not host counts
+        when ``peer`` knows it, the same rule as ``_clean_team_members``.
+        """
         try:
             from agent.registry import get_agent_registry
 
@@ -297,6 +306,8 @@ class AgentInitializer:
             # Cannot judge resolvability; fall back to the roster's own word
             # rather than turning every team conversation into a solo one.
             return True
+        from agent.multiagent import peer as peer_of
+
         for member in members:
             if not isinstance(member, str) or not member.strip():
                 continue
@@ -306,6 +317,10 @@ class AgentInitializer:
                 registry.get_addressed(member, require_enabled=False)
                 return True
             except Exception:
+                # Remote-only teammates are real. A single-agent deployment
+                # stores hosted peer ids and has no local profile for them.
+                if peer_of(member) is not None:
+                    return True
                 continue
         return False
 
