@@ -510,20 +510,26 @@ class CloudClient(LinkAIClient):
             self._handle_agent_delete(agent_id)
 
     def _handle_agent_update(self, agent_id: str, data: dict):
-        """Apply a rename / model change to a live agent."""
+        """Apply a profile / model change to a live agent."""
         fields = {}
         if data.get("name"):
             fields["name"] = str(data.get("name")).strip()
+        if data.get("description") is not None:
+            fields["description"] = str(data.get("description")).strip()
         if data.get("model"):
             fields["model"] = data.get("model")
         if not fields:
             return
         try:
             from agent.admin import get_agent_admin_service
+            from agent.registry import get_agent_registry
+            current = get_agent_registry().get_addressed(agent_id, require_enabled=False)
+            if all(getattr(current, k, None) == v for k, v in fields.items()):
+                return
             service = get_agent_admin_service()
-            service.update_agent(agent_id, **fields)
+            service.update_agent(current.id, **fields)
             self._reload_agents(service)
-            logger.info(f"[CloudClient] Agent '{agent_id}' updated: {list(fields)}")
+            logger.info(f"[CloudClient] Agent '{current.id}' updated: {list(fields)}")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to update agent '{agent_id}': {e}", exc_info=True)
 
@@ -544,6 +550,7 @@ class CloudClient(LinkAIClient):
         """Add a new agent and re-point the live runtime, so it can answer
         without a restart. A no-op when agent support is unavailable."""
         name = str(data.get("name") or agent_id).strip()
+        description = str(data.get("description") or "").strip()
         model = data.get("model")
         # Asset isolation for the new agent. Values are "own" (a private copy)
         # or "shared" (draw on the shared library); unset keeps the default
@@ -560,6 +567,7 @@ class CloudClient(LinkAIClient):
             service.create_agent(
                 agent_id=agent_id,
                 name=name,
+                description=description or None,
                 knowledge_mode=knowledge_mode,
                 skill_mode=skill_mode,
             )

@@ -1,5 +1,6 @@
-"""Serve a hand-off from another process: a delegated sub-task, or a turn the
-user addressed to a local teammate (``mode=speak``, answered as itself)."""
+"""Serve an incoming hand-off: a delegated sub-task, a turn the user addressed
+to a local teammate (``mode=speak``, answered as itself), or clearing that
+teammate's context (``mode=clear``)."""
 
 from __future__ import annotations
 
@@ -19,11 +20,11 @@ CHUNK_RESULT = "result"
 def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]) -> None:
     """Run one incoming hand-off, reporting through ``send_chunk``; never raises.
 
-    payload: request_id, mode ("delegate" | "speak"), source_agent_id,
+    payload: request_id, mode ("delegate" | "speak" | "clear"), source_agent_id,
     source_name, target_agent_id, target_aliases, task, root_session_id,
     trace, depth, members, peers, history (speak only), timeout.
     """
-    from agent.multiagent import MODE_SPEAK, get_transport
+    from agent.multiagent import MODE_CLEAR, MODE_SPEAK, get_transport
     from agent.tools.agent_delegate.agent_delegate import (
         TASK_SOURCE,
         AgentDelegateTool,
@@ -49,15 +50,23 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
             "agent_name": agent_name,
         })
 
+    mode = str(payload.get("mode") or "").strip()
+
     if agent_bridge is None:
         return fail("agent runtime not available")
-    if not addressed_id or not task:
+    if not addressed_id or (not task and mode != MODE_CLEAR):
         return fail("target_agent_id and task are required")
 
     try:
         target = agent_bridge.agent_registry.get_addressed(addressed_id, require_enabled=True)
     except Exception:
         return fail(f"Target Agent '{addressed_id}' is not available")
+
+    if mode == MODE_CLEAR:
+        # Not a turn: no policy, no roster, nothing to stream.
+        return _serve_clear(
+            payload, send_chunk, target=target, request_id=request_id
+        )
 
     try:
         from config import conf
@@ -112,7 +121,7 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
 
     root_session_id = str(payload.get("root_session_id") or uuid.uuid4())
 
-    if str(payload.get("mode") or "").strip() == MODE_SPEAK:
+    if mode == MODE_SPEAK:
         return _serve_speak(
             payload, agent_bridge, send_chunk, target=target, local=local,
             members=members, request_id=request_id, task=task,
@@ -260,6 +269,32 @@ def _serve_speak(
         "agent_name": target.name,
         "duration": round(time.monotonic() - started_at, 3),
     })
+
+
+def _serve_clear(payload: dict, send_chunk: Callable[[dict], None], *, target, request_id: str) -> None:
+    """Clear this Agent's context for a conversation kept elsewhere."""
+    from agent.chat.session_service import SessionService
+
+    root_session_id = str(payload.get("root_session_id") or "")
+    result = {
+        "chunk_type": CHUNK_RESULT,
+        "request_id": request_id,
+        "status": "done",
+        "agent_id": target.id,
+        "agent_name": target.name,
+    }
+    if not root_session_id:
+        send_chunk({**result, "status": "failed", "error": "root_session_id is required"})
+        return
+    try:
+        SessionService().clear_context(
+            _speak_session_id(root_session_id), agent_id=target.id, fanout=False
+        )
+        logger.info(f"[MultiAgent] cleared {target.id}'s context for conversation {root_session_id}")
+    except Exception as exc:
+        send_chunk({**result, "status": "failed", "error": str(exc)})
+        return
+    send_chunk(result)
 
 
 def _speak_session_id(root_session_id: str) -> str:

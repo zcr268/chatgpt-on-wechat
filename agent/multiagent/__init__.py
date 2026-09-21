@@ -11,6 +11,7 @@ learned about.
 """
 
 from agent.multiagent.transport import (
+    MODE_CLEAR,
     MODE_DELEGATE,
     MODE_SPEAK,
     InvokeRequest,
@@ -24,6 +25,7 @@ from agent.multiagent.transport import (
 )
 
 __all__ = [
+    "MODE_CLEAR",
     "MODE_DELEGATE",
     "MODE_SPEAK",
     "InvokeRequest",

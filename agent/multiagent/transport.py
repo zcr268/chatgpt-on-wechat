@@ -54,6 +54,7 @@ class PeerAgent:
 
 MODE_DELEGATE = "delegate"
 MODE_SPEAK = "speak"
+MODE_CLEAR = "clear"
 
 
 @dataclass(frozen=True)
@@ -68,7 +69,9 @@ class InvokeRequest:
     ``mode``: :data:`MODE_DELEGATE` runs a private sub-task whose result the
     caller folds into its reply; :data:`MODE_SPEAK` answers a turn the user
     addressed to the teammate, as itself, given the conversation so far in
-    ``history`` (``{"role", "text", "agent_id"}`` entries, oldest first).
+    ``history`` (``{"role", "text", "agent_id"}`` entries, oldest first);
+    :data:`MODE_CLEAR` runs no turn and drops the teammate's context for
+    ``root_session_id``.
     """
 
     request_id: str
