@@ -12,6 +12,7 @@
 """
 
 import json
+import hmac
 import logging
 import os
 import ssl
@@ -293,8 +294,13 @@ class FeiShuChanel(ChatChannel):
         # When this channel started serving. Set in startup(); 0 means "unknown",
         # which lets every message through rather than dropping it silently.
         self._startup_ts = 0.0
-        logger.debug("[FeiShu] app_id={}, app_secret={}, verification_token={}, event_mode={}".format(
-            self.feishu_app_id, self.feishu_app_secret, self.feishu_token, self.feishu_event_mode))
+        _secret = self.feishu_app_secret or ""
+        _token = self.feishu_token or ""
+        logger.debug("[FeiShu] app_id={}, app_secret_masked={}, verification_token_masked={}, event_mode={}".format(
+            self.feishu_app_id,
+            ("***" + _secret[-4:]) if len(_secret) > 4 else "***",
+            ("***" + _token[-4:]) if len(_token) > 4 else "***",
+            self.feishu_event_mode))
         # 无需群校验和前缀
         conf()["group_name_white_list"] = ["ALL_GROUP"]
         conf()["single_chat_prefix"] = [""]
@@ -2284,7 +2290,9 @@ class FeishuController:
                 or event.get("token")
                 or request.get("token")
             )
-            if callback_token != channel.feishu_token:
+            if not hmac.compare_digest(
+                callback_token or "", channel.feishu_token or ""
+            ):
                 return self.FAILED_MSG
 
             if event_type == self.CARD_ACTION_TYPE and event:

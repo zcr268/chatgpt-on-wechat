@@ -125,8 +125,10 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         # Consecutive reconnect failures, driving exponential backoff so a bad
         # proxy env or a rejecting gateway doesn't flood the log.
         self._reconnect_fails = 0
-        logger.debug("[DingTalk] client_id={}, client_secret={} ".format(
-            self.dingtalk_client_id, self.dingtalk_client_secret))
+        _secret = self.dingtalk_client_secret or ""
+        logger.debug("[DingTalk] client_id={}, client_secret_masked={}".format(
+            self.dingtalk_client_id,
+            ("***" + _secret[-4:]) if len(_secret) > 4 else "***"))
         # 无需群校验和前缀
         conf()["group_name_white_list"] = ["ALL_GROUP"]
         # 单聊无需前缀
