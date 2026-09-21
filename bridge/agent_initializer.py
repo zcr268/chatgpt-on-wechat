@@ -556,20 +556,17 @@ class AgentInitializer:
                         not isinstance(delegation, dict)
                         or delegation.get("enabled", True)
                     )
-                    enabled_agents = self.agent_bridge.agent_registry.list(
-                        include_disabled=False
-                    )
                     # Delegation only makes sense once a conversation actually has
-                    # teammates in it. A solo chat - even on an instance with many
-                    # Agents defined - should not carry the tool, so a lone Agent
-                    # never tries to hand work to someone who was not invited.
+                    # teammates in it, so it is the conversation's roster that
+                    # decides — not how many Agents this instance defines, which
+                    # says nothing about teammates reached over the transport.
                     shared = self._is_shared_conversation(
                         session_id or "", host_agent_id or ""
                     )
-                    if not enabled or len(enabled_agents) < 2 or not shared:
+                    if not enabled or not shared:
                         logger.debug(
                             "[AgentInitializer] agent_delegate skipped - "
-                            "needs a shared conversation with 2+ Agents"
+                            "needs a conversation with teammates"
                         )
                         continue
 
