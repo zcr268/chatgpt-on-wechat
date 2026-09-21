@@ -670,7 +670,7 @@ class AgentStreamExecutor:
         if len(self.tool_failure_history) > 50:
             self.tool_failure_history = self.tool_failure_history[-50:]
 
-    def run_stream(self, user_message: str) -> str:
+    def run_stream(self, user_message: str, session_id: str = "") -> str:
         """
         Execute streaming reasoning loop
         
@@ -730,6 +730,28 @@ class AgentStreamExecutor:
 
         final_response = ""
         turn = 0
+
+        # Detect a crashed predecessor run whose messages are still in the
+        # DB.  If found, restore them so this invocation continues where
+        # the previous attempt left off instead of starting from scratch.
+        resumed_run_id = ""
+        if session_id:
+            try:
+                from agent.memory import get_conversation_store
+                store = get_conversation_store(getattr(self.agent, "workspace_dir", None))
+                unfinished = store.get_unfinished_run(session_id)
+                if unfinished is not None:
+                    resumed_run_id = unfinished["run_id"]
+                    saved_msgs = store.load_run_messages(session_id, resumed_run_id)
+                    if saved_msgs:
+                        self.messages = saved_msgs
+                        turn = 1  # already produced at least one turn
+                        logger.info(
+                            f"[Agent] Resuming crashed run {resumed_run_id} "
+                            f"with {len(saved_msgs)} messages"
+                        )
+            except Exception as e:
+                logger.debug(f"[Agent] Resume check skipped: {e}")
 
         # Respect a run id an outer scope already set (a subagent spawn or a
         # delegated task passes one down); only mint a fresh one when this turn

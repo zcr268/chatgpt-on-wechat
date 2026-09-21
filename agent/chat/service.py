@@ -282,6 +282,22 @@ class ChatService:
                 # content that follows them.
                 flush_file_links()
 
+                # Persist new messages incrementally so a crash mid-run
+                # leaves recoverable rows in the DB (author-requested:
+                # per-turn write replaces the batch-at-end pattern).
+                try:
+                    with agent.messages_lock:
+                        new_msgs = list(executor.messages[_persisted_msg_count:])
+                    if new_msgs:
+                        ws = agent.workspace_dir
+                        self._persist_messages(
+                            session_id, new_msgs, channel_type, workspace_root=ws,
+                        )
+                        _persisted_msg_count = len(executor.messages)
+                        _incremental_persisted = True
+                except Exception as e:
+                    logger.debug(f"[ChatService] Incremental persist skipped: {e}")
+
         # Run the agent with our event callback ---------------------------
         logger.info(
             f"[ChatService] Starting agent run: agent={resolved_agent_id}, "
@@ -300,6 +316,9 @@ class ChatService:
             original_length = len(agent.messages)
 
         from agent.protocol.agent_stream import AgentStreamExecutor
+
+        _incremental_persisted = False
+        _persisted_msg_count = 0
 
         # Register a cancel token so /cancel can abort this in-flight run.
         # API calls can key by request; IM channels remain session scoped.
@@ -433,7 +452,9 @@ class ChatService:
         # Persist new messages to SQLite so they survive restarts and
         # can be queried via the HISTORY interface. The store is the owner's:
         # a guest speaker writes into the shared transcript, stamped as author.
-        if new_messages:
+        if new_messages and not _incremental_persisted:
+            # Incremental per-turn persistence already wrote these rows;
+            # a batch rewrite here would duplicate them.
             workspace_root = agent.workspace_dir
             if is_team:
                 new_messages = self.agent_bridge._attribute_to_speaker(

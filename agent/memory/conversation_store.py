@@ -545,10 +545,12 @@ class ConversationStore:
                 columns = "seq, role, content" + (", extras" if with_authors else "")
                 rows = conn.execute(
                     f"""
-                    SELECT {columns}
-                    FROM messages
-                    WHERE agent_id = ? AND session_id = ? AND seq >= ?
-                    ORDER BY seq DESC
+                    SELECT m.{columns}
+                    FROM messages m
+                    LEFT JOIN runs r ON m.run_id != '' AND m.run_id = r.run_id
+                    WHERE m.agent_id = ? AND m.session_id = ? AND m.seq >= ?
+                      AND (m.run_id = '' OR COALESCE(r.status, 'done') != 'running')
+                    ORDER BY m.seq DESC
                     """,
                     (aid, session_id, ctx_start),
                 ).fetchall()
@@ -592,6 +594,63 @@ class ConversationStore:
                 message["agent_id"] = authors[seq]
             result.append(message)
         return result
+
+
+    def load_run_messages(self, session_id: str, run_id: str) -> List[Dict[str, Any]]:
+        """Load all messages belonging to a specific run, keeping tool chains.
+
+        Unlike ``load_messages`` (which strips thinking blocks and is meant
+        for LLM history injection), this returns the raw stored form so a
+        resumed run sees exactly what the previous attempt produced.
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT role, content
+                    FROM messages
+                    WHERE agent_id = ? AND session_id = ? AND run_id = ?
+                    ORDER BY seq ASC
+                    """,
+                    (self._agent_id, session_id, run_id),
+                ).fetchall()
+            finally:
+                conn.close()
+        result = []
+        for role, raw_content in rows:
+            try:
+                content = json.loads(raw_content)
+            except Exception:
+                content = raw_content
+            result.append({"role": role, "content": content})
+        return result
+
+    def get_unfinished_run(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Return the most recent ``status='running'`` run for a session.
+
+        Used at ``run_stream()`` start to detect a crashed predecessor
+        whose messages are still in the DB and can be resumed.
+        """
+        if not self._runs_ready:
+            return None
+        with self._lock:
+            conn = self._connect()
+            try:
+                row = conn.execute(
+                    """
+                    SELECT run_id FROM runs
+                    WHERE session_id = ? AND status = 'running'
+                    ORDER BY started_at DESC
+                    LIMIT 1
+                    """,
+                    (session_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+        if row is None:
+            return None
+        return {"run_id": row[0]}
 
     @staticmethod
     def _author_of(raw_extras: Any) -> str:
