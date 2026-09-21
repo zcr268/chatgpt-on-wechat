@@ -11,6 +11,7 @@ The tests point each plugin at a config under ``tmp_path`` rather than the one
 in the repo: ``__file__`` is what the plugin uses for its own directory, and
 ``Plugin.path`` is what ``load_config`` uses, so both are redirected.
 """
+import builtins
 import importlib
 import json
 
@@ -106,3 +107,47 @@ def test_banwords_still_writes_the_default_when_the_file_is_missing(tmp_path, mo
 
     assert plugin.action == "ignore"
     assert json.loads(config_path.read_text(encoding="utf-8")) == {"action": "ignore"}
+
+
+def _reject_writes(monkeypatch):
+    """Make every write-mode ``open`` fail, the way a read-only dir does.
+
+    Packaged desktop builds can ship the plugin directory read-only, so writing
+    the repaired config back is best-effort. Raising there would reach
+    ``activate_plugins``, which persists ``enabled=false`` -- the outcome the
+    default-config fallback exists to avoid in the first place.
+    """
+    real_open = builtins.open
+
+    def guarded(file, mode="r", *args, **kwargs):
+        if "w" in mode or "a" in mode or "x" in mode:
+            raise PermissionError(13, "Read-only file system", str(file))
+        return real_open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", guarded)
+
+
+@pytest.mark.parametrize(
+    "module_name, plugin_dir, registry_name",
+    [
+        ("plugins.banwords.banwords", "./plugins/banwords", "BANWORDS"),
+        ("plugins.godcmd.godcmd", "./plugins/godcmd", "GODCMD"),
+    ],
+)
+def test_a_read_only_plugin_dir_does_not_take_the_plugin_down(
+    tmp_path, monkeypatch, module_name, plugin_dir, registry_name
+):
+    module, plugin_cls = _load(module_name, plugin_dir, registry_name)
+    config_path = _point_at(monkeypatch, module, plugin_cls, tmp_path)
+    config_path.write_text("{}", encoding="utf-8")
+    _reject_writes(monkeypatch)
+
+    plugin = plugin_cls()  # must not raise
+
+    # The in-memory defaults are enough to run; only the repair on disk is lost.
+    if registry_name == "BANWORDS":
+        assert plugin.action == "ignore"
+    else:
+        assert plugin.password == ""
+        assert plugin.admin_users == []
+    assert config_path.read_text(encoding="utf-8") == "{}"

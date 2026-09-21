@@ -286,6 +286,9 @@ available_setting = {
     "default_agent_id": "",
     # Optional display name for the built-in single agent.
     "default_agent_name": "",
+    # Optional description for the built-in single agent. Teammates see it on
+    # the roster of a shared conversation and use it to route work.
+    "default_agent_description": "",
     # Routes inbound conversations to an agent. Each entry needs channel_type
     # and agent_id; add conversation_id to bind one chat rather than the whole
     # channel. Unbound conversations go to default_agent_id.

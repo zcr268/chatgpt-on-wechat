@@ -40,8 +40,17 @@ class Banwords(Plugin):
             if not isinstance(conf, dict) or not conf.get("action"):
                 conf = {**DEFAULT_CONFIG, **(conf if isinstance(conf, dict) else {})}
                 config_path = os.path.join(curdir, "config.json")
-                with open(config_path, "w", encoding="utf-8") as f:
-                    json.dump(conf, f, indent=4)
+                try:
+                    with open(config_path, "w", encoding="utf-8") as f:
+                        json.dump(conf, f, indent=4)
+                except OSError as e:
+                    # Repairing the file on disk is a convenience; the defaults
+                    # above are enough to run. Raising here would reach
+                    # activate_plugins, which persists enabled=false — the very
+                    # outcome this fallback exists to avoid — so a plugin
+                    # directory that is read-only (packaged builds) or a full
+                    # disk must not take the plugin down.
+                    logger.warning(f"[Banwords] cannot write {config_path}: {e}")
 
             self.searchr = WordsSearch()
             self.action = conf["action"]

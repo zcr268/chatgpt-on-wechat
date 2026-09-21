@@ -63,6 +63,28 @@ Docker 部署时，官方 `docker-compose.yml` 已经把宿主机 `./cow` 挂载
 - **fetch**：通用网页抓取，返回页面文本内容，无需 API Key
 - **github**：访问 GitHub 仓库、Issue、PR 等，需要 Personal Access Token
 
+### Streamable HTTP + Bearer 密钥
+
+远程 server 若使用固定 API Key 认证，需显式指定 `type`（远程 URL 不指定时会按 `sse` 处理），并在 `headers` 中传入密钥：
+
+```json
+{
+  "mcpServers": {
+    "my-remote-tools": {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+- header 的值按字面量发送，`${API_KEY}` **不会**从环境变量展开
+- 密钥在 `mcp.json` 中是明文存储，注意不要提交到版本库
+- 配置了 `Authorization` 即视为静态认证，不会触发下方的 OAuth 流程，即使密钥是错的
+
 ## 让 Agent 帮你配置
 
 CowAgent 自带 `read` / `write` / `edit` 工具，**直接把要装的 MCP 配置发给 Agent，让它写到配置文件中：
