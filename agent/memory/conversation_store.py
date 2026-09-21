@@ -542,10 +542,10 @@ class ConversationStore:
                 ).fetchone()
                 ctx_start = ctx_row[0] if ctx_row else 0
 
-                columns = "seq, role, content" + (", extras" if with_authors else "")
+                columns = "m.seq, m.role, m.content" + (", m.extras" if with_authors else "")
                 rows = conn.execute(
                     f"""
-                    SELECT m.{columns}
+                    SELECT {columns}
                     FROM messages m
                     LEFT JOIN runs r ON m.run_id != '' AND m.run_id = r.run_id
                     WHERE m.agent_id = ? AND m.session_id = ? AND m.seq >= ?
@@ -2532,3 +2532,5 @@ def _merge_one_agent(conn: sqlite3.Connection, src_path: str, agent_id: str) -> 
         )
     finally:
         src_conn.close()
+
+

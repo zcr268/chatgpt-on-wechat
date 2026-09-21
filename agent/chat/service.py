@@ -139,9 +139,13 @@ class ChatService:
                 "segment_id": state.segment_id,
             })
 
+        _incremental_persisted = False
+        _persisted_msg_count = 0
+
         def on_event(event: dict):
             """Translate agent events into CHAT protocol chunks."""
             event_type = event.get("type")
+            nonlocal _persisted_msg_count, _incremental_persisted
             data = event.get("data", {})
 
             if event_type == "reasoning_update":
@@ -298,7 +302,6 @@ class ChatService:
                 except Exception as e:
                     logger.debug(f"[ChatService] Incremental persist skipped: {e}")
 
-        # Run the agent with our event callback ---------------------------
         logger.info(
             f"[ChatService] Starting agent run: agent={resolved_agent_id}, "
             f"session={session_id}, query={query[:80]}"
@@ -317,8 +320,6 @@ class ChatService:
 
         from agent.protocol.agent_stream import AgentStreamExecutor
 
-        _incremental_persisted = False
-        _persisted_msg_count = 0
 
         # Register a cancel token so /cancel can abort this in-flight run.
         # API calls can key by request; IM channels remain session scoped.
@@ -794,3 +795,4 @@ class _StreamState:
         # it would place content between a tool's start and its result, which no
         # other event does and which leaves clients unable to pair the two.
         self.pending_file_links: list = []
+

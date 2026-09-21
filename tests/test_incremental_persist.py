@@ -1,11 +1,5 @@
 """Tests for incremental DB persistence and crash-resume (#3179)."""
 
-import json
-import sqlite3
-from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
-
 import pytest
 
 from agent.memory.conversation_store import ConversationStore
