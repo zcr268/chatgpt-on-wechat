@@ -18,6 +18,7 @@ import ssl
 import threading
 import time
 # -*- coding=utf-8 -*-
+from urllib.parse import urlparse
 
 import requests
 import web
@@ -1956,10 +1957,14 @@ class FeiShuChanel(ChatChannel):
                     logger.error(f"[FeiShu] download video failed, status={response.status_code}")
                     return None
 
-                # Save to temp file
+                # Stage under the Agent's managed tmp dir. A bare name lands in
+                # the process CWD, which a packaged desktop build does not
+                # control and may not be able to write to. The duration probe
+                # below needs a real file, so this one cannot upload from memory
+                # the way the image and file paths do.
                 import uuid
-                file_name = os.path.basename(video_url) or "video.mp4"
-                temp_file = str(uuid.uuid4()) + "_" + file_name
+                file_name = os.path.basename(urlparse(video_url).path) or "video.mp4"
+                temp_file = str(state_dir.tmp_dir() / f"{uuid.uuid4()}_{file_name}")
 
                 with open(temp_file, "wb") as file:
                     file.write(response.content)
@@ -2143,22 +2148,19 @@ class FeiShuChanel(ChatChannel):
                 logger.error(f"[FeiShu] upload file exception: {e}")
                 return None
 
-        # For HTTP URLs, download first then upload
+        # For HTTP URLs, upload the downloaded bytes directly. Staging them in a
+        # file first wrote into the process CWD, and the cleanup ran inside the
+        # `with open(...)` body, so the handle was still held when os.remove ran
+        # — that raises on Windows, after the file had already been uploaded.
         try:
             response = requests.get(file_url, timeout=(5, 30))
             if response.status_code != 200:
                 logger.error(f"[FeiShu] download file failed, status={response.status_code}")
                 return None
 
-            # Save to temp file
-            import uuid
-            file_name = os.path.basename(file_url)
-            temp_name = str(uuid.uuid4()) + "_" + file_name
-
-            with open(temp_name, "wb") as file:
-                file.write(response.content)
-
-            # Upload
+            # Take the name off the URL path: a query string would otherwise end
+            # up in the suffix and drop file_type to 'stream'.
+            file_name = os.path.basename(urlparse(file_url).path) or "file"
             file_ext = os.path.splitext(file_name)[1].lower()
             file_type_map = {
                 '.opus': 'opus', '.mp4': 'mp4', '.pdf': 'pdf',
@@ -2172,18 +2174,20 @@ class FeiShuChanel(ChatChannel):
             data = {'file_type': file_type, 'file_name': file_name}
             headers = {'Authorization': f'Bearer {access_token}'}
 
-            with open(temp_name, "rb") as file:
-                upload_response = requests.post(upload_url, files={"file": file}, data=data, headers=headers)
-                logger.info(f"[FeiShu] upload file, res={upload_response.content}")
+            upload_response = requests.post(
+                upload_url,
+                files={"file": (file_name, response.content)},
+                data=data,
+                headers=headers,
+                timeout=(5, 30)
+            )
+            logger.info(f"[FeiShu] upload file, res={upload_response.content}")
 
-                response_data = upload_response.json()
-                os.remove(temp_name)  # Clean up temp file
-
-                if response_data.get("code") == 0:
-                    return response_data.get("data").get("file_key")
-                else:
-                    logger.error(f"[FeiShu] upload file failed: {response_data}")
-                    return None
+            response_data = upload_response.json()
+            if response_data.get("code") == 0:
+                return (response_data.get("data") or {}).get("file_key")
+            logger.error(f"[FeiShu] upload file failed: {response_data}")
+            return None
         except Exception as e:
             logger.error(f"[FeiShu] upload file from URL exception: {e}")
             return None
