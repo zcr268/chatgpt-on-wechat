@@ -22,6 +22,7 @@ from channel.weixin.weixin_api import (
     DEFAULT_BASE_URL, CDN_BASE_URL,
 )
 from channel.weixin.weixin_message import WeixinMessage
+from common import state_dir
 from common.expired_dict import ExpiredDict
 from common.log import logger
 from common.singleton import singleton
@@ -38,6 +39,19 @@ PENDING_MEDIA_WAIT_S = 3.0
 PENDING_MEDIA_POLL_S = 0.1
 QR_LOGIN_TIMEOUT_S = 480
 QR_MAX_REFRESHES = 10
+
+
+def _media_tmp_path(prefix: str, ext: str = "") -> str:
+    """Path for transient media this channel downloads or synthesizes.
+
+    Transient media belongs in the agent's managed tmp dir -- the convention
+    this channel already follows elsewhere through ``common.state_dir``. A bare
+    ``/tmp/...`` is not portable: on Windows it resolves against the *current
+    drive*, so the same process writes to a different disk depending on where it
+    was launched, and it sits outside the workspace the app manages (and cleans).
+    ``tmp_dir()`` also creates the directory, which ``/tmp`` does not guarantee.
+    """
+    return os.path.join(str(state_dir.tmp_dir()), f"{prefix}_{uuid.uuid4().hex[:8]}{ext}")
 
 
 def _load_credentials(cred_path: str) -> dict:
@@ -298,7 +312,7 @@ class WeixinChannel(ChatChannel):
                 print(buf.getvalue())
             except UnicodeEncodeError:
                 # Windows GBK terminals cannot render Unicode block characters
-                print(f"\n  (终端不支持显示二维码，请使用链接扫码)")
+                print("\n  (终端不支持显示二维码，请使用链接扫码)")
                 print(f"  二维码链接: {qrcode_url}\n")
         except ImportError:
             print(f"\n  二维码链接: {qrcode_url}")
@@ -888,7 +902,7 @@ class WeixinChannel(ChatChannel):
                 elif "pdf" in ct:
                     ext = ".pdf"
 
-                tmp_path = f"/tmp/wx_media_{uuid.uuid4().hex[:8]}{ext}"
+                tmp_path = _media_tmp_path("wx_media", ext)
                 with open(tmp_path, "wb") as f:
                     f.write(resp.content)
                 return tmp_path
