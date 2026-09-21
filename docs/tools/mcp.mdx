@@ -64,6 +64,31 @@ Fully compatible with the MCP community standard, identical to Claude Desktop / 
 - **fetch**: Generic web page fetcher that returns page text content. No API key required.
 - **github**: Access GitHub repos, issues, PRs, etc. Requires a Personal Access Token.
 
+### Streamable HTTP with a Bearer Key
+
+For a remote server that requires a static API key, merge an entry like this into the existing `mcpServers` object. Keep other server entries unchanged:
+
+```json
+{
+  "mcpServers": {
+    "my-remote-tools": {
+      "type": "streamable-http",
+      "url": "https://mcp.example.com/mcp",
+      "tool_name_prefix": "myremote_",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_YOUR_API_KEY"
+      }
+    }
+  }
+}
+```
+
+Replace the example URL with the service's endpoint. Set `type` explicitly: a remote URL without it defaults to the legacy SSE transport. The prefix only changes the names exposed to CowAgent; calls still use the server's original tool names.
+
+Edit the key locally in `mcp.json`, rather than sending it in a chat message. This file stores the value as plain text; restrict access to it and keep it out of version control. Header values are sent literally: `${API_KEY}` is not expanded from the environment. An `Authorization` header selects static authentication and does not trigger the OAuth flow below, even when the value is empty or invalid.
+
+After the connection loads, inspect the discovered tools and test a small request appropriate for that service. Tool arguments are sent to the remote service, and its account, billing, and data-handling terms apply. A `401` indicates an authentication problem. Check the returned content as well as the execution status: a failed MCP call can currently appear as an `Error:` result inside a successful tool wrapper.
+
 ## Let the Agent Configure It for You
 
 CowAgent ships with `read` / `write` / `edit` tools, so **you can simply send the MCP config to the Agent and ask it to write the file**:
