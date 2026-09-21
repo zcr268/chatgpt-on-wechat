@@ -1270,7 +1270,6 @@ class AgentBridge:
             Reply object
         """
         session_id = None
-        agent_id = None
         agent = None
         request_id = None
         cancel_event = None
@@ -1764,7 +1763,7 @@ class AgentBridge:
                     for key, value in sorted(existing_env_vars.items()):
                         f.write(f'{key}={value}\n')
 
-                logger.info(f"[AgentBridge] Synced API keys from config.json to .env")
+                logger.info("[AgentBridge] Synced API keys from config.json to .env")
             except Exception as e:
                 logger.warning(f"[AgentBridge] Failed to sync API keys: {e}")
     

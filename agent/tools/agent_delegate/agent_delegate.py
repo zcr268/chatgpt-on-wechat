@@ -384,7 +384,6 @@ class AgentDelegateTool(BaseTool):
             if peer_target is None or get_transport() is None:
                 return ToolResult.fail(f"Target Agent '{target_agent_id}' is not available")
         target_id = target.id if target is not None else peer_target.id
-        target_name = target.name if target is not None else peer_target.name
 
         raw_trace = context_values.get("delegation_trace") or (source.id,)
         if not isinstance(raw_trace, (list, tuple)) or not all(
