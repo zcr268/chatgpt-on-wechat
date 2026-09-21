@@ -13,7 +13,6 @@ import sys
 
 import web
 
-from agent.tools.utils.memory_path import indexes_rel_path
 from channel.web.core._common import (
     _build_preview_url,
     _is_path_allowed,
@@ -251,6 +250,7 @@ class WorkspaceWriteHandler:
         _require_auth()
         web.header('Content-Type', 'application/json; charset=utf-8')
         try:
+            from agent.tools.utils.memory_path import indexes_rel_path
             from agent.workspace.service import WorkspaceConflictError
 
             body = json.loads(web.data() or b'{}')
