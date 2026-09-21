@@ -6,7 +6,7 @@ Initializes the workspace, creates template files, and loads context files.
 
 from __future__ import annotations
 import os
-from typing import List, Optional, Dict
+from typing import List, Optional
 from dataclasses import dataclass
 
 from common.log import logger
@@ -60,10 +60,11 @@ def ensure_workspace(workspace_dir: str, create_templates: bool = True) -> Works
     # Create the memory subdirectory
     os.makedirs(memory_dir, exist_ok=True)
 
-    # Skills, websites and knowledge are shared across Agents, so they get
-    # scaffolded through state_dir rather than under this workspace: an Agent
-    # opts out of the shared copy by having its own directory, and creating one
-    # here would opt every new Agent out on its first boot.
+    # Skills and knowledge are shared across Agents, so they get scaffolded
+    # through state_dir rather than under this workspace: an Agent opts out of
+    # the shared copy by having its own directory, and creating one here would
+    # opt every new Agent out on its first boot. Published files are per Agent,
+    # so that one does land under this workspace.
     from common import state_dir
 
     state_dir.skills_dir(base=workspace_dir, ensure=True)
