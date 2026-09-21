@@ -18,7 +18,6 @@ import ssl
 import threading
 import time
 # -*- coding=utf-8 -*-
-import uuid
 
 import requests
 import web
@@ -363,7 +362,6 @@ class FeiShuChanel(ChatChannel):
     def stop(self):
         import ctypes
         logger.info("[FeiShu] stop() called")
-        ws_client = self._ws_client
         self._ws_client = None
         ws_thread = self._ws_thread
         self._ws_thread = None
@@ -986,7 +984,7 @@ class FeiShuChanel(ChatChannel):
             res = requests.post(url=url, headers=headers, params=params, json=data, timeout=(5, 10))
         res = res.json()
         if res.get("code") == 0:
-            logger.info(f"[FeiShu] send message success")
+            logger.info("[FeiShu] send message success")
         elif msg_type == "interactive" and reply.type == ReplyType.TEXT:
             logger.warning(
                 "[FeiShu] Markdown card failed, falling back to text, "
@@ -1844,26 +1842,33 @@ class FeiShuChanel(ChatChannel):
             headers = {'Authorization': f'Bearer {access_token}'}
 
             with open(local_path, "rb") as file:
-                upload_response = requests.post(upload_url, files={"image": file}, data=data, headers=headers)
+                upload_response = requests.post(
+                    upload_url, files={"image": file}, data=data, headers=headers,
+                    timeout=(5, 15),
+                )
                 logger.info(f"[FeiShu] upload file, res={upload_response.content}")
 
                 response_data = upload_response.json()
                 if response_data.get("code") == 0:
-                    return response_data.get("data").get("image_key")
+                    return (response_data.get("data") or {}).get("image_key")
                 else:
                     logger.error(f"[FeiShu] upload failed: {response_data}")
                     return None
 
-        # Original logic for HTTP URLs
-        response = requests.get(img_url)
-        suffix = utils.get_path_suffix(img_url)
-        temp_name = str(uuid.uuid4()) + "." + suffix
-        if response.status_code == 200:
-            # 将图片内容保存为临时文件
-            with open(temp_name, "wb") as file:
-                file.write(response.content)
+        # HTTP URL: upload the bytes that were just downloaded. Staging them in a
+        # file first wrote into the process CWD -- not where the packaged desktop
+        # build starts, and not necessarily writable there -- and that file was
+        # only removed after a successful upload, so a failed upload left it
+        # behind in the working directory.
+        response = requests.get(img_url, timeout=(5, 30))
+        if response.status_code != 200:
+            # Without this the staged file is never created and the `open` below
+            # raised FileNotFoundError, skipping the caller's
+            # `if not reply_content: logger.warning("upload image failed")` path.
+            logger.error(f"[FeiShu] download image failed, status={response.status_code}")
+            return None
 
-        # upload
+        suffix = utils.get_path_suffix(img_url)
         upload_url = "https://open.feishu.cn/open-apis/im/v1/images"
         data = {
             'image_type': 'message'
@@ -1871,11 +1876,19 @@ class FeiShuChanel(ChatChannel):
         headers = {
             'Authorization': f'Bearer {access_token}',
         }
-        with open(temp_name, "rb") as file:
-            upload_response = requests.post(upload_url, files={"image": file}, data=data, headers=headers)
-            logger.info(f"[FeiShu] upload file, res={upload_response.content}")
-            os.remove(temp_name)
-            return upload_response.json().get("data").get("image_key")
+        upload_response = requests.post(
+            upload_url,
+            files={"image": (f"image.{suffix or 'img'}", response.content)},
+            data=data,
+            headers=headers,
+            timeout=(5, 15),
+        )
+        logger.info(f"[FeiShu] upload file, res={upload_response.content}")
+        response_data = upload_response.json()
+        if response_data.get("code") == 0:
+            return (response_data.get("data") or {}).get("image_key")
+        logger.error(f"[FeiShu] upload failed: {response_data}")
+        return None
 
     def _get_video_duration(self, file_path: str) -> int:
         """
