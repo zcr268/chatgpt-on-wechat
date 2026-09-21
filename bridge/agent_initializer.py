@@ -268,15 +268,46 @@ class AgentInitializer:
 
     @staticmethod
     def _is_shared_conversation(session_id: str, host_agent_id: str) -> bool:
-        """Whether anyone besides the owner was invited into this conversation."""
+        """Whether anyone besides the owner was invited into this conversation.
+
+        A stored id only counts when it still resolves to a configured Agent.
+        A roster made entirely of deleted Agents is not a team conversation:
+        treating it as one reloads history as plain text and drops the tool chain.
+        """
         if not session_id:
             return False
         try:
             from agent.workspace import session_prefs
 
-            return bool(session_prefs.get_prefs(session_id, host_agent_id).get("members"))
+            members = session_prefs.get_prefs(session_id, host_agent_id).get("members")
+            if not members:
+                return False
+            return AgentInitializer._any_member_exists(members)
         except Exception:
             return False
+
+    @staticmethod
+    def _any_member_exists(members: list) -> bool:
+        """Whether at least one id in a roster maps to a configured Agent."""
+        try:
+            from agent.registry import get_agent_registry
+
+            registry = get_agent_registry()
+        except Exception:
+            # Cannot judge resolvability; fall back to the roster's own word
+            # rather than turning every team conversation into a solo one.
+            return True
+        for member in members:
+            if not isinstance(member, str) or not member.strip():
+                continue
+            try:
+                # "default" is a reserved alias, not a stored id. Disabled is
+                # not deleted: a teammate who is off still makes this a team.
+                registry.get_addressed(member, require_enabled=False)
+                return True
+            except Exception:
+                continue
+        return False
 
     @staticmethod
     def _attribute_history(messages: list, reader_agent_id: str) -> list:
