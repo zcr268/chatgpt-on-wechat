@@ -95,10 +95,10 @@ def _make_peer_transport(send):
 
         Outbound ``agent_invoke`` rides this connection with request_id,
         source_agent_id, source_name, target_agent_id, task, root_session_id,
-        trace, depth, members, peers, timeout. The console answers with
-        ``agent_invoke_event`` (request_id, event) for each tool step and one
-        ``agent_invoke_result`` (request_id, status, content, error, agent_id,
-        agent_name, duration).
+        trace, depth, members, peers, timeout, mode, history. The console
+        answers with ``agent_invoke_event`` (request_id, event) per event and
+        one ``agent_invoke_result`` (request_id, status, content, error,
+        agent_id, agent_name, duration).
         """
 
         def __init__(self, send_fn):
@@ -124,7 +124,10 @@ def _make_peer_transport(send):
                 "members": list(request.members),
                 "peers": [p.as_dict() for p in request.peers],
                 "timeout": request.timeout_seconds,
+                "mode": request.mode,
             }
+            if request.history:
+                body["history"] = list(request.history)
             try:
                 self._send(body)
             except Exception as exc:
@@ -1270,16 +1273,16 @@ class CloudClient(LinkAIClient):
         # single-agent installs keep working unchanged.
         agent_id = payload.get("agent_id") or payload.get("agentId")
         agent_id = self._resolve_chat_agent_id(agent_id)
-        # Shared conversation: the roster on it and the teammate addressed for
-        # this turn. Both optional; absent keeps the single-agent behaviour.
-        speaker_agent_id = self._resolve_optional_agent_id(
-            payload.get("speaker_agent_id") or payload.get("speakerAgentId")
-        )
         # Teammates hosted elsewhere come with profiles so they can be named on
         # the roster; their ids are kept as sent since only the console resolves them.
         peers = payload.get("peers")
         if isinstance(peers, list) and self._peer_transport is not None:
             self._peer_transport.register_peers(peers)
+        # Shared conversation: the roster on it and the teammate addressed for
+        # this turn. Both optional; absent keeps the single-agent behaviour.
+        speaker_agent_id = self._resolve_member_id(
+            payload.get("speaker_agent_id") or payload.get("speakerAgentId")
+        )
         members = payload.get("members")
         if isinstance(members, list):
             members = [m for m in (self._resolve_member_id(x) for x in members) if m]

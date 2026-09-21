@@ -52,6 +52,10 @@ class PeerAgent:
         return out
 
 
+MODE_DELEGATE = "delegate"
+MODE_SPEAK = "speak"
+
+
 @dataclass(frozen=True)
 class InvokeRequest:
     """One hand-off to a teammate in another process.
@@ -60,6 +64,11 @@ class InvokeRequest:
     run the very same kind of turn: who asked, the task, the conversation it
     belongs to, the chain so far (for the cycle guard), how deep we are, and
     the team the teammate may in turn hand work to.
+
+    ``mode``: :data:`MODE_DELEGATE` runs a private sub-task whose result the
+    caller folds into its reply; :data:`MODE_SPEAK` answers a turn the user
+    addressed to the teammate, as itself, given the conversation so far in
+    ``history`` (``{"role", "text", "agent_id"}`` entries, oldest first).
     """
 
     request_id: str
@@ -73,6 +82,8 @@ class InvokeRequest:
     members: Tuple[str, ...] = ()
     peers: Tuple[PeerAgent, ...] = ()
     timeout_seconds: float = 600.0
+    mode: str = MODE_DELEGATE
+    history: Tuple[dict, ...] = ()
 
 
 @dataclass
@@ -145,9 +156,9 @@ class PeerTransport(ABC):
     ) -> InvokeResult:
         """Run ``request`` on the teammate and wait for its answer.
 
-        ``on_event`` receives the teammate's tool steps as they happen, in the
-        same ``{"type": ..., "data": ...}`` shape a local Agent emits, so the
-        caller can show them under its delegation card. Must not raise for a
+        ``on_event`` receives ``{"type": ..., "data": ...}`` events as the
+        teammate runs: tool steps for a delegated turn, ``{"type": "chunk",
+        "data": <stream chunk>}`` for a speaking turn. Must not raise for a
         failed hand-off: return :meth:`InvokeResult.failed` instead.
         """
 

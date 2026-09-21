@@ -298,7 +298,10 @@ class AgentInitializer:
                 try:
                     name = registry.get(agent_id, require_enabled=False).name
                 except Exception:
-                    name = agent_id
+                    from agent.multiagent import peer as peer_of
+
+                    found = peer_of(agent_id)
+                    name = found.name if found is not None else agent_id
                 prefixes[agent_id] = f"{name}(@{agent_id})："
             return prefixes[agent_id]
 

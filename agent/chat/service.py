@@ -5,7 +5,8 @@ Translates agent events (message_update, message_end, tool_execution_end, etc.)
 into the CHAT socket protocol format (content chunks with segment_id, tool_calls chunks).
 """
 
-import time
+import re
+import uuid
 from typing import Callable, Optional
 
 from common.log import logger
@@ -37,6 +38,7 @@ class ChatService:
         request_id: str = None,  # noqa: RUF013
         speaker_agent_id: str = None,
         members: list = None,
+        transcript: list = None,
     ):
         """
         Run the agent for *query* and stream results back via *send_chunk_fn*.
@@ -54,6 +56,8 @@ class ChatService:
             the owner's conversation, so the transcript stays in one place
         :param members: roster of the conversation (teammate ids). When given it
             is authoritative and reconciled onto the session, like a team channel
+        :param transcript: attributed messages to run against instead of the
+            restored history (conversation kept elsewhere)
         """
         # The conversation belongs to ``resolved_agent_id`` (its owner); only the
         # voice answering this turn may differ. Same model as agent_reply.
@@ -74,6 +78,13 @@ class ChatService:
             if speaker_agent_id:
                 context["speaker_agent_id"] = speaker_agent_id
             self.agent_bridge._seed_team_members(session_id, resolved_agent_id, context)
+            peer_speaker = self._peer_speaker(speaker_agent_id, resolved_agent_id)
+            if peer_speaker is not None:
+                self._run_on_peer(
+                    query, session_id, channel_type, resolved_agent_id,
+                    peer_speaker, send_chunk_fn,
+                )
+                return
             speaker_id = self.agent_bridge._resolve_speaker(resolved_agent_id, context)
             is_team = speaker_id != resolved_agent_id or self._has_team(session_id, resolved_agent_id)
             if speaker_agent_id:
@@ -97,6 +108,9 @@ class ChatService:
             # so this speaker sees the turns others spoke since it last ran.
             self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
             self._send_speaker(send_chunk_fn, speaker_id)
+        if transcript is not None:
+            with agent.messages_lock:
+                agent.messages = list(transcript)
 
         # Pass context metadata to model for downstream API requests
         if hasattr(agent, 'model'):
@@ -341,7 +355,7 @@ class ChatService:
                     f"session={session_id}"
                 )
                 return
-            response = executor.run_stream(model_query)
+            executor.run_stream(model_query)
         except Exception:
             # If executor cleared messages (context overflow), sync back
             if len(executor.messages) == 0:
@@ -498,6 +512,180 @@ class ChatService:
             })
         except Exception as e:
             logger.debug(f"[ChatService] speaker chunk skipped: {e}")
+
+    # ---- peer speaker --------------------------------------------------------
+
+    def _peer_speaker(self, addressed_id: str, owner_agent_id: str):
+        """The addressed peer, or None when the id is empty, the owner, a local
+        agent, or unknown to the transport."""
+        addressed_id = str(addressed_id or "").strip()
+        if not addressed_id or addressed_id == owner_agent_id:
+            return None
+        try:
+            self.agent_bridge.agent_registry.get_addressed(addressed_id, require_enabled=False)
+            return None
+        except Exception:
+            pass
+        try:
+            from agent.multiagent import get_transport, peer as peer_of
+        except Exception:
+            return None
+        if get_transport() is None:
+            return None
+        return peer_of(addressed_id)
+
+    def _run_on_peer(
+        self,
+        query: str,
+        session_id: str,
+        channel_type: str,
+        owner_agent_id: str,
+        peer,
+        send_chunk_fn: Callable[[dict], None],
+    ) -> None:
+        """The addressed peer answers this turn; its reply streams under its
+        name and is stored in the owner's transcript, like a local guest."""
+        from agent.multiagent import MODE_SPEAK, InvokeRequest, get_transport
+
+        transport = get_transport()
+        owner = self.agent_bridge.agent_registry.get(owner_agent_id, require_enabled=False)
+        roster = self._roster(session_id, owner_agent_id)
+
+        members = [owner.id, *(m for m in roster if m not in (owner.id, peer.id))]
+        peers = []
+        for member_id in members:
+            profile = self._teammate_profile(member_id)
+            if profile is not None:
+                peers.append(profile)
+
+        request = InvokeRequest(
+            request_id=uuid.uuid4().hex,
+            target_id=peer.id,
+            task=self._strip_peer_address(query, peer),
+            source_id=owner.id,
+            source_name=owner.name,
+            root_session_id=session_id,
+            trace=(owner.id,),
+            depth=0,
+            members=tuple(members),
+            peers=tuple(peers),
+            timeout_seconds=self._speak_timeout(),
+            mode=MODE_SPEAK,
+            history=tuple(self._shared_history(session_id, owner)),
+        )
+
+        send_chunk_fn({
+            "chunk_type": "speaker",
+            "agent_id": peer.id,
+            "name": peer.name,
+            "avatar": "",
+        })
+        logger.info(
+            f"[ChatService] Turn addressed to peer {peer.id}; "
+            f"answering in {owner.id}'s conversation, session={session_id}"
+        )
+
+        spoken = []
+
+        def forward(event) -> None:
+            if not isinstance(event, dict) or event.get("type") != "chunk":
+                return
+            chunk = event.get("data")
+            if not isinstance(chunk, dict):
+                return
+            kind = chunk.get("chunk_type")
+            if kind == "speaker":
+                return
+            if kind == "content":
+                spoken.append(str(chunk.get("delta") or ""))
+            send_chunk_fn(chunk)
+
+        result = transport.invoke(request, on_event=forward)
+        if not result.ok:
+            raise RuntimeError(f"{peer.name} could not answer: {result.error}")
+
+        content = result.content or "".join(spoken)
+        if content and not spoken:
+            # nothing was streamed: deliver the reply in one piece
+            send_chunk_fn({"chunk_type": "content", "delta": content, "segment_id": 0})
+        turn = [
+            {"role": "user", "content": [{"type": "text", "text": query}]},
+            {"role": "assistant", "content": [{"type": "text", "text": content}]},
+        ]
+        self._persist_messages(
+            session_id,
+            self.agent_bridge._attribute_to_speaker(turn, peer.id),
+            channel_type,
+            workspace_root=owner.workspace,
+        )
+
+    def _roster(self, session_id: str, owner_agent_id: str) -> list:
+        """Teammate ids on the session, as stored."""
+        if not session_id:
+            return []
+        try:
+            from agent.workspace import session_prefs
+            return list(session_prefs.get_prefs(session_id, owner_agent_id).get("members") or [])
+        except Exception:
+            return []
+
+    @staticmethod
+    def _teammate_profile(agent_id: str):
+        """A PeerAgent for anyone on the team, local or not; None if unknown."""
+        from agent.multiagent import PeerAgent, resolve_teammate
+
+        found = resolve_teammate(agent_id)
+        return PeerAgent.from_any(found) if found else None
+
+    @staticmethod
+    def _strip_peer_address(query: str, peer) -> str:
+        """Drop the leading "@name" aimed at ``peer``; see AgentBridge._strip_address."""
+        if not query:
+            return query
+        labels = [label for label in (peer.name, peer.id) if label]
+        pattern = (
+            r"^\s*@(?:"
+            + "|".join(re.escape(label) for label in sorted(labels, key=len, reverse=True))
+            + r")[\s,，:：、]*"
+        )
+        stripped = re.sub(pattern, "", query, count=1, flags=re.IGNORECASE)
+        return stripped if stripped.strip() else query
+
+    @staticmethod
+    def _speak_timeout() -> float:
+        try:
+            from config import conf
+            return float((conf().get("agent_delegation") or {}).get("timeout_seconds") or 600)
+        except Exception:
+            return 600.0
+
+    def _shared_history(self, session_id: str, owner) -> list:
+        """Text-only history with authors, oldest first."""
+        try:
+            from config import conf
+            if not conf().get("conversation_persistence", True):
+                return []
+            from agent.memory import get_conversation_store
+            from bridge.agent_initializer import AgentInitializer
+
+            max_turns = conf().get("agent_max_context_turns", 20)
+            saved = get_conversation_store(owner.workspace).load_messages(
+                session_id, max_turns=max(3, max_turns // 2), with_authors=True
+            )
+        except Exception as e:
+            logger.warning(f"[ChatService] shared history unavailable for {session_id}: {e}")
+            return []
+        history = []
+        for message in AgentInitializer._filter_text_only_messages(saved or []):
+            blocks = message.get("content") or []
+            text = blocks[0].get("text", "") if blocks and isinstance(blocks[0], dict) else ""
+            if not text:
+                continue
+            entry = {"role": message["role"], "text": text}
+            if message["role"] == "assistant":
+                entry["agent_id"] = message.get("agent_id") or owner.id
+            history.append(entry)
+        return history
 
     def _owner_workspace(self, owner_agent_id: str, agent) -> str:
         """Workspace whose store holds the conversation: the owner's."""
