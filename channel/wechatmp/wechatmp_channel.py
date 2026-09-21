@@ -179,7 +179,7 @@ class WechatMPChannel(ChatChannel):
                     with open(local_path, "rb") as f:
                         image_storage.write(f.read())
                 else:
-                    pic_res = requests.get(img_url, stream=True)
+                    pic_res = requests.get(img_url, stream=True, timeout=60)
                     for block in pic_res.iter_content(1024):
                         image_storage.write(block)
                 image_storage.seek(0)
@@ -212,7 +212,7 @@ class WechatMPChannel(ChatChannel):
                 self.cache_dict[receiver].append(("image", media_id))
             elif reply.type == ReplyType.VIDEO_URL:  # 从网络下载视频
                 video_url = reply.content
-                video_res = requests.get(video_url, stream=True)
+                video_res = requests.get(video_url, stream=True, timeout=60)
                 video_storage = io.BytesIO()
                 for block in video_res.iter_content(1024):
                     video_storage.write(block)
@@ -309,7 +309,7 @@ class WechatMPChannel(ChatChannel):
                     with open(local_path, "rb") as f:
                         image_storage.write(f.read())
                 else:
-                    pic_res = requests.get(img_url, stream=True)
+                    pic_res = requests.get(img_url, stream=True, timeout=60)
                     for block in pic_res.iter_content(1024):
                         image_storage.write(block)
                 image_storage.seek(0)
@@ -340,7 +340,7 @@ class WechatMPChannel(ChatChannel):
                 logger.info("[wechatmp] Do send image to {}".format(receiver))
             elif reply.type == ReplyType.VIDEO_URL:  # 从网络下载视频
                 video_url = reply.content
-                video_res = requests.get(video_url, stream=True)
+                video_res = requests.get(video_url, stream=True, timeout=60)
                 video_storage = io.BytesIO()
                 for block in video_res.iter_content(1024):
                     video_storage.write(block)

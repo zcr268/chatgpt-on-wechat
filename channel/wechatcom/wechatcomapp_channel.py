@@ -1,12 +1,11 @@
 # -*- coding=utf-8 -*-
 import io
 import os
-import sys
 import time
 
 import requests
 import web
-from wechatpy.enterprise import create_reply, parse_message
+from wechatpy.enterprise import parse_message
 from wechatpy.enterprise.crypto import WeChatCrypto
 from wechatpy.enterprise.exceptions import InvalidCorpIdException
 from wechatpy.exceptions import InvalidSignatureException, WeChatClientException
@@ -19,7 +18,7 @@ from channel.wechatcom.wechatcomapp_message import WechatComAppMessage
 from common.log import logger
 from common.singleton import singleton
 from common.utils import compress_imgfile, fsize, split_string_by_utf8_length, convert_webp_to_png, remove_markdown_symbol
-from config import conf, subscribe_msg
+from config import conf
 from voice.audio_convert import any_to_amr, split_audio
 
 MAX_UTF8_LEN = 2048
@@ -134,7 +133,7 @@ class WechatComAppChannel(ChatChannel):
             logger.info("[wechatcom] sendVoice={}, receiver={}".format(reply.content, receiver))
         elif reply.type == ReplyType.IMAGE_URL:  # 从网络下载图片
             img_url = reply.content
-            pic_res = requests.get(img_url, stream=True)
+            pic_res = requests.get(img_url, stream=True, timeout=60)
             image_storage = io.BytesIO()
             for block in pic_res.iter_content(1024):
                 image_storage.write(block)
