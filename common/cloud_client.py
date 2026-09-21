@@ -43,6 +43,144 @@ CHANNEL_ACTIONS = {"channel_create", "channel_update", "channel_delete", "channe
 AGENT_ACTIONS = {"agent_create", "agent_update", "agent_delete"}
 
 
+# Message type for hand-offs between Agents hosted by different deployments
+# of the same console. Sent outbound with the invoke; the console answers over
+# the CONFIG channel with the actions CloudPeerTransport reads.
+PEER_MSG_TYPE = "AGENT"
+
+# The CHAT action under which a hand-off addressed to an Agent here arrives.
+PEER_INVOKE_ACTION = "agent_invoke"
+PEER_EVENT_ACTION = "agent_invoke_event"
+PEER_RESULT_ACTION = "agent_invoke_result"
+
+# How much longer than the teammate's own budget to wait, so its timeout
+# report normally arrives before we give up on our side.
+_PEER_GRACE_SECONDS = 15.0
+
+
+class _PendingHandoff:
+    __slots__ = ("done", "result", "on_event")
+
+    def __init__(self, on_event):
+        self.done = threading.Event()
+        self.result = None
+        self.on_event = on_event
+
+    def emit(self, event) -> None:
+        if self.on_event is None or not isinstance(event, dict):
+            return
+        try:
+            self.on_event(event)
+        except Exception as exc:
+            logger.debug(f"[CloudClient] hand-off event callback failed: {exc}")
+
+    def complete(self, result) -> None:
+        if self.result is None:
+            self.result = result
+        self.done.set()
+
+
+def _make_peer_transport(send):
+    """Build the console-backed PeerTransport, or None when the kernel's
+    multi-agent contract is unavailable. Defined lazily so this module still
+    imports on kernels without ``agent.multiagent``."""
+    try:
+        from agent.multiagent import InvokeResult, PeerTransport
+    except Exception as e:
+        logger.warning(f"[CloudClient] peer transport unavailable: {e}")
+        return None
+
+    class CloudPeerTransport(PeerTransport):
+        """Hand-offs to teammates in other deployments, via the console.
+
+        Outbound ``agent_invoke`` rides this connection with request_id,
+        source_agent_id, source_name, target_agent_id, task, root_session_id,
+        trace, depth, members, peers, timeout. The console answers with
+        ``agent_invoke_event`` (request_id, event) for each tool step and one
+        ``agent_invoke_result`` (request_id, status, content, error, agent_id,
+        agent_name, duration).
+        """
+
+        def __init__(self, send_fn):
+            super().__init__()
+            self._send = send_fn
+            self._pending = {}
+            self._lock = threading.Lock()
+
+        def invoke(self, request, on_event=None):
+            pending = _PendingHandoff(on_event)
+            with self._lock:
+                self._pending[request.request_id] = pending
+            body = {
+                "action": PEER_INVOKE_ACTION,
+                "request_id": request.request_id,
+                "source_agent_id": request.source_id,
+                "source_name": request.source_name,
+                "target_agent_id": request.target_id,
+                "task": request.task,
+                "root_session_id": request.root_session_id,
+                "trace": list(request.trace),
+                "depth": request.depth,
+                "members": list(request.members),
+                "peers": [p.as_dict() for p in request.peers],
+                "timeout": request.timeout_seconds,
+            }
+            try:
+                self._send(body)
+            except Exception as exc:
+                self._forget(request.request_id)
+                return InvokeResult.failed(f"console unreachable: {exc}", agent_id=request.target_id)
+            logger.info(
+                f"[CloudClient] hand-off {request.request_id} sent: "
+                f"{request.source_id} -> {request.target_id}, depth={request.depth}"
+            )
+            if not pending.done.wait(request.timeout_seconds + _PEER_GRACE_SECONDS):
+                self._forget(request.request_id)
+                return InvokeResult.failed(
+                    "timed out waiting for the teammate's answer", agent_id=request.target_id
+                )
+            self._forget(request.request_id)
+            return pending.result or InvokeResult.failed("no result received", agent_id=request.target_id)
+
+        def handle_message(self, message) -> bool:
+            """Consume a console message if it answers one of our hand-offs.
+            Returns False for anything else so on_config keeps dispatching."""
+            if not isinstance(message, dict):
+                return False
+            action = message.get("action")
+            if action not in (PEER_EVENT_ACTION, PEER_RESULT_ACTION):
+                return False
+            body = message.get("data") if isinstance(message.get("data"), dict) else message
+            request_id = str(body.get("request_id") or "")
+            with self._lock:
+                pending = self._pending.get(request_id)
+            if pending is None:
+                logger.debug(f"[CloudClient] {action} for unknown hand-off {request_id or '?'}, ignored")
+                return True
+            if action == PEER_EVENT_ACTION:
+                pending.emit(body.get("event"))
+                return True
+            try:
+                duration = float(body.get("duration") or 0)
+            except (TypeError, ValueError):
+                duration = 0.0
+            pending.complete(InvokeResult(
+                status=str(body.get("status") or "failed"),
+                content=str(body.get("content") or ""),
+                error=str(body.get("error") or ""),
+                agent_id=str(body.get("agent_id") or ""),
+                agent_name=str(body.get("agent_name") or ""),
+                duration_seconds=duration,
+            ))
+            return True
+
+        def _forget(self, request_id: str) -> None:
+            with self._lock:
+                self._pending.pop(request_id, None)
+
+    return CloudPeerTransport(send)
+
+
 # channelType -> config key mapping for app credentials.
 # secret_key may be "" for single-token channels (e.g. telegram/discord).
 # For slack, appId carries bot_token and appSecret carries app_token.
@@ -98,6 +236,33 @@ class CloudClient(LinkAIClient):
         self._chat_service = None
         self._session_service = None
         self._workspace_service = None
+        # Teammates in other deployments are reached through this same
+        # connection. Installed only here, so a process without this client
+        # never has a peer transport at all.
+        self._peer_transport = _make_peer_transport(self._send_peer_message)
+        if self._peer_transport is not None:
+            try:
+                from agent.multiagent import set_transport
+                set_transport(self._peer_transport)
+            except Exception as e:
+                logger.warning(f"[CloudClient] peer transport not installed: {e}")
+                self._peer_transport = None
+
+    def _send_peer_message(self, body: dict) -> None:
+        """Post one hand-off message to the console, in this connection's envelope."""
+        if not self.client_id:
+            raise RuntimeError("not connected")
+        data = {
+            "apiKey": self.api_key,
+            "clientType": self.client_type,
+            "clientId": self.client_id,
+            **body,
+        }
+        # Whoever started the root turn is still the one acting on the far side.
+        user_id = current_user_id()
+        if user_id:
+            data["user_id"] = user_id
+        self._send_package({"type": PEER_MSG_TYPE, "data": data})
 
     @property
     def skill_service(self):
@@ -197,6 +362,10 @@ class CloudClient(LinkAIClient):
     # ------------------------------------------------------------------
     def on_config(self, config: dict):
         if not self.client_id:
+            return
+        # A teammate's tool steps / final answer for a hand-off we sent; not
+        # config, and potentially long, so it is not echoed to the log.
+        if self._peer_transport is not None and self._peer_transport.handle_message(config):
             return
         logger.info(f"[CloudClient] Loading remote config: {config}")
 
@@ -1080,6 +1249,17 @@ class CloudClient(LinkAIClient):
         :param send_chunk_fn: callable(chunk_data: dict) to send one streaming chunk
         """
         payload = data.get("payload", {})
+        # A hand-off from a teammate in another deployment, addressed to an
+        # Agent here. It runs as a delegated turn and answers in chunks.
+        if data.get("action") == PEER_INVOKE_ACTION:
+            from agent.multiagent.inbound import serve_invoke
+
+            user_id = payload.get("user_id") or data.get("user_id")
+            target_id = self._resolve_optional_agent_id(payload.get("target_agent_id"))
+            with _acting_user(user_id), self._chat_identity(target_id, user_id, None):
+                serve_invoke(payload, self._agent_bridge(), send_chunk_fn)
+            return
+
         query = payload.get("query", "")
         session_id = payload.get("session_id", "cloud_console")
         channel_type = payload.get("channel_type", "")
@@ -1095,9 +1275,14 @@ class CloudClient(LinkAIClient):
         speaker_agent_id = self._resolve_optional_agent_id(
             payload.get("speaker_agent_id") or payload.get("speakerAgentId")
         )
+        # Teammates hosted elsewhere come with profiles so they can be named on
+        # the roster; their ids are kept as sent since only the console resolves them.
+        peers = payload.get("peers")
+        if isinstance(peers, list) and self._peer_transport is not None:
+            self._peer_transport.register_peers(peers)
         members = payload.get("members")
         if isinstance(members, list):
-            members = [m for m in (self._resolve_optional_agent_id(x) for x in members) if m]
+            members = [m for m in (self._resolve_member_id(x) for x in members) if m]
         else:
             members = None
         if not session_id.startswith("session_"):
@@ -1182,6 +1367,23 @@ class CloudClient(LinkAIClient):
         except Exception:
             logger.warning(f"[CloudClient] unknown agent id ignored: {agent_id}")
             return None
+
+    def _resolve_member_id(self, agent_id):
+        """A roster member: a local agent (resolved like any addressed id) or
+        a teammate the peer transport knows, kept under the id it was sent as.
+        Anything else is dropped, as before."""
+        raw = str(agent_id).strip() if agent_id is not None else ""
+        if not raw:
+            return None
+        try:
+            from agent.registry import get_agent_registry
+            return get_agent_registry().get_addressed(raw, require_enabled=False).id
+        except Exception:
+            pass
+        if self._peer_transport is not None and self._peer_transport.get_peer(raw) is not None:
+            return raw
+        logger.warning(f"[CloudClient] unknown agent id ignored: {raw}")
+        return None
 
     def _resolve_chat_agent_id(self, agent_id):
         """Validate a requested agent id, or fall back to the default agent

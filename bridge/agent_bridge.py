@@ -764,7 +764,13 @@ class AgentBridge:
         Members arrive as ids a caller may address an Agent by, so the reserved
         "default" alias is resolved here too; storing the resolved id keeps the
         roster comparable with the owner and with an id sent the other way.
+
+        A member hosted in another process is kept under the id the installed
+        transport knows it by; without a transport such ids are unknown here
+        and dropped like any other stranger.
         """
+        from agent.multiagent import peer as peer_of
+
         cleaned = []
         for mid in members or []:
             mid = str(mid or "").strip()
@@ -773,7 +779,10 @@ class AgentBridge:
             try:
                 resolved = self.agent_registry.get_addressed(mid, require_enabled=True).id
             except Exception:
-                continue  # skip unknown/disabled teammates
+                found = peer_of(mid)
+                if found is None:
+                    continue  # skip unknown/disabled teammates
+                resolved = found.id
             if resolved == host_agent_id or resolved in cleaned:
                 continue
             cleaned.append(resolved)

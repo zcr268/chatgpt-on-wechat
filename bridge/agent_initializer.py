@@ -735,6 +735,8 @@ class AgentInitializer:
                 members = session_prefs.get_prefs(session_id, host_id).get("members")
                 if not members:
                     return []
+                from agent.multiagent import resolve_teammate
+
                 registry = get_agent_registry()
                 roster = []
                 for member_id in [host_id, *members]:
@@ -742,19 +744,12 @@ class AgentInitializer:
                         item["id"] == member_id for item in roster
                     ):
                         continue
-                    try:
-                        profile = registry.get(member_id)
-                    except Exception:
-                        # A member that was archived since is simply no longer
-                        # on the team; naming it would invite a failed handover.
-                        continue
-                    roster.append(
-                        {
-                            "id": profile.id,
-                            "name": profile.name,
-                            "description": profile.description or "",
-                        }
-                    )
+                    # Local Agent or one reached over the installed transport;
+                    # a member that was archived since is simply no longer on
+                    # the team, and naming it would invite a failed handover.
+                    entry = resolve_teammate(member_id, registry)
+                    if entry is not None:
+                        roster.append(entry)
                 return roster
             except Exception as e:
                 logger.warning(f"[AgentInitializer] Failed to resolve teammates: {e}")
