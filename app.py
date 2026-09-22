@@ -192,6 +192,7 @@ class ChannelManager:
                     "bound_agent_id": entry.agent_id,
                     "credentials": entry.credentials or None,
                     "members": entry.members or None,
+                    "peers": entry.peers or None,
                 },
             )
         return (entry, entry, {})

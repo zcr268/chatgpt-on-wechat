@@ -634,6 +634,21 @@ class CloudClient(LinkAIClient):
                 return [str(m).strip() for m in value if str(m or "").strip()]
         return None
 
+    @staticmethod
+    def _instance_peers(data: dict):
+        """How to reach members that are not in this process, or None to leave
+        the directory as-is.
+
+        Same authoritative-list rule as the members above: ``[]`` clears it, an
+        absent key keeps whatever the record had. Entries are
+        ``{id, name, description}``; anything without an id is dropped later.
+        """
+        for key in ("peers", "peerAgents", "peer_agents"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [p for p in value if isinstance(p, dict)]
+        return None
+
     def _instance_signature(self, inst):
         """What decides whether a running instance must restart.
 
@@ -655,6 +670,9 @@ class CloudClient(LinkAIClient):
             owner,
             tuple(sorted((inst.credentials or {}).items())),
             tuple(sorted(inst.members or [])),
+            # A teammate that moved to another process, or back, changes how it is
+            # reached even when the roster itself reads the same.
+            tuple(sorted(str(p.get("id") or "") for p in (inst.peers or []))),
         )
 
     @staticmethod
@@ -698,6 +716,7 @@ class CloudClient(LinkAIClient):
             agent_id=self._instance_agent_id(data),
             credentials=self._instance_credentials_from(channel_type, data),
             members=self._instance_members(data),
+            peers=self._instance_peers(data),
             name=(str(data.get("channelName") or "").strip() or None),
         )
         if not self.channel_mgr:

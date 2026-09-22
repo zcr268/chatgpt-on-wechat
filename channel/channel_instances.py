@@ -160,6 +160,12 @@ class ChannelInstance:
     #: exactly like a Web team conversation. Empty means a solo bot. Owner is
     #: never listed here.
     members: List[str] = field(default_factory=list)
+    #: Connection profiles for teammates that do not live in this process, as
+    #: ``{id, name, description}``. A member id that also appears here is reached
+    #: through the transport rather than the local registry, so the owner can
+    #: delegate to it exactly like a local teammate. Empty when every member is
+    #: local, which is the only shape a stand-alone install ever produces.
+    peers: List[dict] = field(default_factory=list)
     #: True when synthesized from legacy channel_type rather than an explicit
     #: channel_instances record. Legacy instances carry no credential override.
     legacy: bool = True
@@ -226,6 +232,12 @@ def _explicit_instances(raw_list: list) -> List[ChannelInstance]:
                 if mid and mid != agent_id and mid not in members:
                     members.append(mid)
 
+        # Teammates reached through the transport rather than the local registry.
+        # Absent on a solo bot and on any all-local team, so the old shape is
+        # unchanged; present only when the control plane names off-process ones.
+        raw_peers = raw.get("peers")
+        peers = _clean_peers(raw_peers, agent_id) if isinstance(raw_peers, list) else []
+
         # Credentials may be given inline under "credentials", or as flat keys
         # on the record itself; only the known keys for this type are kept.
         raw_creds = raw.get("credentials")
@@ -249,6 +261,7 @@ def _explicit_instances(raw_list: list) -> List[ChannelInstance]:
                 name=name,
                 credentials=creds,
                 members=members,
+                peers=peers,
                 legacy=False,
             )
         )
@@ -402,6 +415,27 @@ def _clean_members(members, owner_id: str) -> list:
     return out
 
 
+def _clean_peers(peers, owner_id: str) -> list:
+    """Normalize a peers list: ``{id, name, description}`` dicts, de-duped by id,
+    no owner, order preserved. Anything without an id is dropped."""
+    out: list = []
+    seen = set()
+    owner = (owner_id or "").strip()
+    for p in peers or []:
+        if not isinstance(p, Mapping):
+            continue
+        pid = str(p.get("id") or p.get("agent_id") or "").strip()
+        if not pid or pid == owner or pid in seen:
+            continue
+        seen.add(pid)
+        entry = {"id": pid, "name": str(p.get("name") or pid).strip() or pid}
+        desc = str(p.get("description") or "").strip()
+        if desc:
+            entry["description"] = desc
+        out.append(entry)
+    return out
+
+
 def default_instance_name(channel_type: str, records: Iterable[Mapping[str, Any]]) -> str:
     """A friendly default label for a freshly created instance of *channel_type*.
 
@@ -426,17 +460,19 @@ def upsert_instance(
     agent_id: Optional[str] = None,
     credentials: Optional[Mapping[str, Any]] = None,
     members: Optional[list] = None,
+    peers: Optional[list] = None,
     name: Optional[str] = None,
 ) -> ChannelInstance:
     """Create or update one channel instance record and persist it.
 
     Matching is by ``instance_id``. When it is empty a new stable id is
-    generated. ``agent_id``, ``credentials``, ``members`` and ``name`` are merged
-    onto any existing record so a partial update (e.g. credentials only) does not
-    drop the binding, the team or the label. Pass ``members=None`` to leave the
-    team untouched, or ``members=[]`` to clear it. Pass ``name=None`` to leave the
-    label untouched; a brand-new record with no name is seeded with a friendly
-    default. Returns the resulting :class:`ChannelInstance`.
+    generated. ``agent_id``, ``credentials``, ``members``, ``peers`` and ``name``
+    are merged onto any existing record so a partial update (e.g. credentials
+    only) does not drop the binding, the team or the label. Pass ``members=None``
+    (``peers=None``) to leave the team (peer directory) untouched, or ``[]`` to
+    clear it. Pass ``name=None`` to leave the label untouched; a brand-new record
+    with no name is seeded with a friendly default. Returns the resulting
+    :class:`ChannelInstance`.
     """
     from agent import team
 
@@ -473,6 +509,12 @@ def upsert_instance(
                 record["members"] = cleaned
             else:
                 record.pop("members", None)
+        if peers is not None:
+            cleaned_peers = _clean_peers(peers, record.get("agent_id") or "")
+            if cleaned_peers:
+                record["peers"] = cleaned_peers
+            else:
+                record.pop("peers", None)
         updated = True
         result_record = record
         break
@@ -494,6 +536,9 @@ def upsert_instance(
         cleaned = _clean_members(members, result_record["agent_id"])
         if cleaned:
             result_record["members"] = cleaned
+        cleaned_peers = _clean_peers(peers, result_record["agent_id"])
+        if cleaned_peers:
+            result_record["peers"] = cleaned_peers
         records.append(result_record)
 
     roster = team.read(settings)
@@ -507,6 +552,7 @@ def upsert_instance(
         name=str(result_record.get("name") or ""),
         credentials=dict(result_record.get("credentials") or {}),
         members=list(result_record.get("members") or []),
+        peers=[dict(p) for p in (result_record.get("peers") or [])],
         legacy=False,
     )
 
