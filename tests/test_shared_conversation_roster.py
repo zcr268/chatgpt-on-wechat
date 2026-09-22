@@ -110,6 +110,22 @@ def test_unreadable_registry_does_not_downgrade_a_roster(monkeypatch):
     assert AgentInitializer._is_shared_conversation("sess", "agent-real") is True
 
 
+def test_unreachable_peer_lookup_does_not_downgrade_a_roster(monkeypatch):
+    """The peer half of the lookup must fail open the same way the registry does.
+
+    ``_is_shared_conversation`` turns anything raised out of
+    ``_any_member_exists`` into "not shared", so an import that blows up here
+    would silently produce the very downgrade this guard exists to prevent.
+    """
+    import sys
+
+    _stub_members(monkeypatch, ["agent-ghost"])
+    monkeypatch.setitem(sys.modules, "agent.multiagent", None)
+
+    assert AgentInitializer._any_member_exists(["agent-ghost"]) is True
+    assert AgentInitializer._is_shared_conversation("sess", "agent-real") is True
+
+
 def test_remote_only_peer_counts_as_a_member(roster, monkeypatch):
     """A hosted teammate with no local profile is still a shared roster."""
     from agent.multiagent import set_transport

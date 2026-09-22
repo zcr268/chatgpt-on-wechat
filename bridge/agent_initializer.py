@@ -306,14 +306,18 @@ class AgentInitializer:
         when ``peer`` knows it, the same rule as ``_clean_team_members``.
         """
         try:
+            from agent.multiagent import peer as peer_of
             from agent.registry import get_agent_registry
 
             registry = get_agent_registry()
         except Exception:
             # Cannot judge resolvability; fall back to the roster's own word
             # rather than turning every team conversation into a solo one.
+            # Both lookups are needed to call an id a ghost, so a failure to
+            # reach either one has to fail open here: _is_shared_conversation
+            # turns anything raised out of this into "not shared", which is
+            # the downgrade this guard exists to avoid.
             return True
-        from agent.multiagent import peer as peer_of
 
         for member in members:
             if not isinstance(member, str) or not member.strip():
