@@ -5,6 +5,7 @@ several instances run in one process each must get its own file so their tokens
 do not overwrite one another.
 """
 
+import json
 import os
 
 import config
@@ -43,3 +44,60 @@ def test_explicit_configured_path_is_suffixed_per_instance(monkeypatch, tmp_path
     assert get_weixin_credentials_path("weixin-xyz") == str(
         tmp_path / "creds.weixin-xyz.json"
     )
+
+
+class TestAdoptingAnExistingLogin:
+    """A login written before this instance had an id must survive.
+
+    A channel that ran without an instance id left its login in the default
+    file. Once the same channel comes back carrying an id, refusing that file
+    means a working bot drops to a QR screen on restart. Adopting it is only
+    safe while no other instance runs on it.
+    """
+
+    @staticmethod
+    def _channel(tmp_path, instance_id, monkeypatch):
+        import channel.weixin.weixin_channel as wc
+
+        base = str(tmp_path / "creds.json")
+        monkeypatch.setattr(
+            wc, "get_weixin_credentials_path",
+            lambda iid="": base if not iid else str(tmp_path / f"creds.{iid}.json"),
+        )
+        cls = wc.WeixinChannel.__wrapped__
+        ch = cls.__new__(cls)
+        ch.instance_id = instance_id
+        ch._credentials_path = str(tmp_path / f"creds.{instance_id}.json")
+        return ch, base
+
+    def _write(self, path, token):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"token": token, "base_url": "https://example.test"}, f)
+
+    def test_an_id_from_outside_may_adopt_an_unclaimed_login(self, tmp_path, monkeypatch):
+        ch, base = self._channel(tmp_path, "d87bc864-d79e-4cb6", monkeypatch)
+        self._write(base, "tok-legacy")
+
+        assert ch._login_unclaimed("tok-legacy") is True
+
+    def test_a_login_another_instance_runs_on_is_not_adopted(self, tmp_path, monkeypatch):
+        ch, base = self._channel(tmp_path, "second", monkeypatch)
+        self._write(base, "tok-legacy")
+        # The first instance already copied that login into its own file.
+        self._write(str(tmp_path / "creds.first.json"), "tok-legacy")
+
+        assert ch._login_unclaimed("tok-legacy") is False
+
+    def test_an_instance_does_not_count_as_claiming_against_itself(self, tmp_path, monkeypatch):
+        ch, base = self._channel(tmp_path, "only", monkeypatch)
+        self._write(base, "tok-legacy")
+        self._write(ch._credentials_path, "tok-legacy")
+
+        assert ch._login_unclaimed("tok-legacy") is True
+
+    def test_a_different_login_next_door_leaves_this_one_free(self, tmp_path, monkeypatch):
+        ch, base = self._channel(tmp_path, "second", monkeypatch)
+        self._write(base, "tok-legacy")
+        self._write(str(tmp_path / "creds.first.json"), "tok-other")
+
+        assert ch._login_unclaimed("tok-legacy") is True

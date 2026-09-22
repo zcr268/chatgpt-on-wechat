@@ -5,6 +5,7 @@ Uses HTTP long-poll (getUpdates) to receive messages and sendMessage to reply.
 Login via QR code scan through the ilink bot API.
 """
 
+import glob
 import json
 import os
 import threading
@@ -16,7 +17,6 @@ import requests
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
-from channel.channel_instances import is_local_instance_id
 from channel.weixin.weixin_api import (
     WeixinApi, upload_media_to_cdn,
     DEFAULT_BASE_URL, CDN_BASE_URL,
@@ -39,6 +39,8 @@ PENDING_MEDIA_WAIT_S = 3.0
 PENDING_MEDIA_POLL_S = 0.1
 QR_LOGIN_TIMEOUT_S = 480
 QR_MAX_REFRESHES = 10
+# Serializes the "is this login free / take it" pair across instances.
+_ADOPT_LOCK = threading.Lock()
 
 
 def _media_tmp_path(prefix: str, ext: str = "") -> str:
@@ -136,25 +138,28 @@ class WeixinChannel(ChatChannel):
             if creds.get("base_url"):
                 base_url = creds["base_url"]
 
-        # The console's scan flow writes to the default (id-less) credentials
-        # file, so an instance created on this machine may find its freshly
-        # scanned token there rather than in its own file. Adopt it once and
-        # copy it into this instance's file: the next start reads it locally and
-        # the default file is free for the next scan, so two instances never end
-        # up sharing one login. Ids provided from outside are never bootstrapped
-        # this way — they stand for a distinct bot and go through their own scan.
+        # A login can predate this instance's own file: the scan flow writes to
+        # the default (id-less) file, and a channel that used to run without an
+        # instance id left its login there too. Adopt it once and copy it into
+        # this instance's file, but only while no other instance has claimed it
+        # — that claim is what stops a second instance from ending up on the
+        # first one's account instead of scanning for its own.
+        # Claiming is checked and recorded under one lock: instances start on
+        # their own threads, and two of them reading "unclaimed" before either
+        # has written would put both on the same account.
         instance_id = getattr(self, "instance_id", "") or ""
-        if not token and is_local_instance_id(instance_id, "weixin"):
-            legacy = _load_credentials(get_weixin_credentials_path())
-            if legacy.get("token"):
-                token = legacy["token"]
-                if legacy.get("base_url"):
-                    base_url = legacy["base_url"]
-                creds = self._adopt_credentials(legacy, creds)
-                logger.info(
-                    f"[Weixin] instance '{instance_id}' adopted the token from the "
-                    f"default credentials file"
-                )
+        if not token and instance_id:
+            with _ADOPT_LOCK:
+                legacy = _load_credentials(get_weixin_credentials_path())
+                if legacy.get("token") and self._login_unclaimed(legacy["token"]):
+                    token = legacy["token"]
+                    if legacy.get("base_url"):
+                        base_url = legacy["base_url"]
+                    creds = self._adopt_credentials(legacy, creds)
+                    logger.info(
+                        f"[Weixin] instance '{instance_id}' adopted the token from the "
+                        f"default credentials file"
+                    )
 
         # Restore persisted context_tokens so scheduler can deliver pushes
         # immediately after restart, without waiting for the user to ping
@@ -229,6 +234,28 @@ class WeixinChannel(ChatChannel):
     # credentials JSON so scheduled pushes survive process restarts.
     # All mutation + disk IO is serialized via _context_tokens_lock so that
     # concurrent updates can never lose each other's writes.
+
+    def _login_unclaimed(self, token: str) -> bool:
+        """Whether no other instance already runs on *token*.
+
+        An instance claims a login by copying it into its own credentials
+        file, so the files of the other instances are the record of what is
+        taken. Unreadable surroundings count as claimed: sharing one account
+        between two instances costs a silent misroute of every message, while
+        the alternative is a scan the user can repeat.
+        """
+        base = get_weixin_credentials_path()
+        root, ext = os.path.splitext(base)
+        try:
+            siblings = glob.glob(f"{root}.*{ext or '.json'}")
+        except Exception:
+            return False
+        for path in siblings:
+            if os.path.abspath(path) == os.path.abspath(self._credentials_path):
+                continue
+            if _load_credentials(path).get("token") == token:
+                return False
+        return True
 
     def _adopt_credentials(self, source: dict, own: dict) -> dict:
         """Copy a login adopted from *source* into this instance's own file.
