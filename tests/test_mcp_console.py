@@ -141,7 +141,6 @@ def test_test_endpoint_does_not_persist(tmp_path, monkeypatch):
 
 
 def _get(handler_cls, params):
-    from channel.web import web_channel
     from channel.web.api import skills as skills_api
 
     with patch.object(skills_api, "_require_auth"), \
