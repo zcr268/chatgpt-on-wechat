@@ -313,6 +313,84 @@ class TestSeedTeamMembersFromChannelInstance:
         assert seeded == []
 
 
+class TestARosterChangeReachesAConversationAlreadyRunning:
+    """Gaining a teammate has to gain the tool that reaches them.
+
+    A runtime fixes its tool list when it is built, and ``agent_delegate`` is
+    only offered to a conversation that has teammates. A channel whose team is
+    edited while a conversation is live would otherwise keep answering without
+    the tool -- describing the teammate from the prompt, yet unable to hand
+    anything over -- until the process restarted.
+    """
+
+    @staticmethod
+    def _ctx(**kw):
+        c = _Ctx(kw)
+        c.kwargs = {}
+        return c
+
+    @staticmethod
+    def _live(bridge, session_id):
+        agent = SimpleNamespace(agent_id="primary")
+        bridge._agent_instances[("primary", session_id)] = agent
+        bridge.agents[session_id] = agent
+
+    def test_the_runtime_built_before_the_teammate_is_retired(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        monkeypatch.setattr(session_prefs, "set_prefs", lambda *a, **kw: None)
+        bridge = _bridge(tmp_path)
+        self._live(bridge, "chat")
+
+        bridge._seed_team_members("chat", "primary", self._ctx(members=["ops"]))
+
+        assert ("primary", "chat") not in bridge._agent_instances
+        assert "chat" not in bridge.agents
+
+    def test_losing_the_last_teammate_retires_it_too(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        monkeypatch.setattr(
+            session_prefs, "get_prefs", lambda sid, aid: {"members": ["ops"]}
+        )
+        monkeypatch.setattr(session_prefs, "set_prefs", lambda *a, **kw: None)
+        bridge = _bridge(tmp_path)
+        self._live(bridge, "chat")
+
+        bridge._seed_team_members("chat", "primary", self._ctx(members=[]))
+
+        assert ("primary", "chat") not in bridge._agent_instances
+
+    def test_an_unchanged_roster_leaves_the_conversation_alone(self, tmp_path, monkeypatch):
+        # Retiring on every message would rebuild the runtime each turn.
+        from agent.workspace import session_prefs
+
+        monkeypatch.setattr(
+            session_prefs, "get_prefs", lambda sid, aid: {"members": ["ops"]}
+        )
+        monkeypatch.setattr(session_prefs, "set_prefs", lambda *a, **kw: None)
+        bridge = _bridge(tmp_path)
+        self._live(bridge, "chat")
+
+        bridge._seed_team_members("chat", "primary", self._ctx(members=["ops"]))
+
+        assert ("primary", "chat") in bridge._agent_instances
+
+    def test_only_the_edited_conversation_is_retired(self, tmp_path, monkeypatch):
+        from agent.workspace import session_prefs
+
+        monkeypatch.setattr(session_prefs, "get_prefs", lambda sid, aid: {})
+        monkeypatch.setattr(session_prefs, "set_prefs", lambda *a, **kw: None)
+        bridge = _bridge(tmp_path)
+        self._live(bridge, "chat")
+        self._live(bridge, "elsewhere")
+
+        bridge._seed_team_members("chat", "primary", self._ctx(members=["ops"]))
+
+        assert ("primary", "elsewhere") in bridge._agent_instances
+
+
 class TestTheAddressComesOffBeforeTheModelSeesIt:
     """Routing has already answered what the mention was asking, so the Agent
     should be handed the question, not the envelope. Left in, it reads its own

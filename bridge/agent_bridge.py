@@ -758,6 +758,7 @@ class AgentBridge:
                         f"[AgentBridge] Cleared stale team roster from session "
                         f"'{session_id}' owned by {host_agent_id} (instance is single-Agent)"
                     )
+                self._retire_session_runtimes(session_id)
                 return
 
             # Delegation path: seed once, never clobber an existing roster.
@@ -770,8 +771,31 @@ class AgentBridge:
                     f"[AgentBridge] Seeded team roster {cleaned} onto session "
                     f"'{session_id}' owned by {host_agent_id}"
                 )
+                self._retire_session_runtimes(session_id)
         except Exception as e:
             logger.debug(f"[AgentBridge] _seed_team_members failed: {e}")
+
+    def _retire_session_runtimes(self, session_id: str) -> None:
+        """Drop the runtimes of *session_id* so the next turn rebuilds them.
+
+        A runtime fixes its tool list when it is built, and delegation is only
+        offered to a conversation that has teammates. A roster that changes
+        while the conversation is already live therefore has to retire what was
+        built under the old one: otherwise the team gains a member and the tool
+        to reach them only appears after a restart. Retiring costs a rebuild on
+        the next turn; the transcript is reloaded from the store either way.
+        """
+        with self._agents_lock:
+            retired = [key for key in self._agent_instances if key[1] == session_id]
+            for key in retired:
+                self._agent_instances.pop(key, None)
+            if retired:
+                self.agents.pop(session_id, None)
+        if retired:
+            logger.info(
+                f"[AgentBridge] Retired {len(retired)} runtime(s) of session "
+                f"'{session_id}' after its roster changed"
+            )
 
     def _clean_team_members(self, members, host_agent_id: str) -> list:
         """Normalize a roster: drop the owner, blanks, dupes and unknown/disabled
