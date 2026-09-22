@@ -317,6 +317,8 @@ export type StreamEventType =
   | 'tool_progress'
   | 'tool_end'
   | 'subagent_step'
+  | 'peer_start'
+  | 'peer_end'
   | 'message_end'
   | 'phase'
   | 'file_to_send'
@@ -360,6 +362,9 @@ export interface StreamEvent {
   card_id?: string
   step_id?: string
   phase?: 'start' | 'end'
+  /** `peer_start` / `peer_end`: the teammate whose turn this is. */
+  agent_id?: string
+  agent_name?: string
   error?: string
   path?: string
   abs_path?: string

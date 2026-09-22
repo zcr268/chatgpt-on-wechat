@@ -351,7 +351,10 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                 <MessageBubble
                   key={msg.id}
                   message={msg}
-                  onRegenerate={handleRegenerate}
+                  // A teammate's bubble is part of the asking Agent's turn, not
+                  // a turn of its own: regenerating it would re-run the whole
+                  // turn, which the asking Agent's own bubble already offers.
+                  onRegenerate={msg.extras?.peer ? undefined : handleRegenerate}
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                   onMediaLoad={handleMediaLoad}
