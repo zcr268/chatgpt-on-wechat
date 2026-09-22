@@ -990,7 +990,10 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
             "Use agent_delegate for work that belongs to a teammate, passing "
             "their id above as agent_id (without the @), and say who you handed "
             "it to and what you asked for. Refer to teammates by name to the "
-            "user, without the @id — the id is internal.",
+            "user and keep the @id out of your reply — the id is internal. "
+            "Never answer in a teammate's place: hand any question or task "
+            "that is theirs straight over, and do not report their words or "
+            "actions without a hand-off.",
             "",
         ]
     return [
@@ -1008,7 +1011,8 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
         "",
         "该由某位同事做的事，用 agent_delegate 交出去：把那位同事上面的 id "
         "作为 agent_id 传入 (不含@符号)，并说明交给了谁、交办了什么。对用户提到同事时只用名字，"
-        "不要带 @id，id 只用于内部。",
+        "回复内容不要带 @id，id 只用于内部。不要替同事回答：该由某位成员回答的问题或执行的任务直接转交，"
+        "未经转交不得转述其言行。",
         "",
     ]
 
