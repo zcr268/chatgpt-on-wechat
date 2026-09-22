@@ -5,6 +5,7 @@ Agent Initializer - Handles agent initialization logic
 import os
 import asyncio
 import datetime
+import json
 import threading
 import time
 from typing import Dict, List, Optional
@@ -24,6 +25,12 @@ _memory_sync_lock = threading.Lock()
 # request for the same workspace is dropped instead of forking another thread,
 # so a burst of messages can't stack up dozens of embedding HTTP calls.
 _memory_sync_inflight: set = set()
+
+# How much of a teammate's delegated reply is replayed in later turns. The
+# whole exchange is already summarised by the Agent that handed the work out,
+# so the reply only has to show who actually said it; a long report would cost
+# more context than that is worth.
+_DELEGATED_REPLY_MAX_CHARS = 1200
 
 
 class AgentInitializer:
@@ -337,9 +344,17 @@ class AgentInitializer:
         then keeps only:
         - The first user text in each turn (the actual user input)
         - The last assistant text in each turn (the final answer)
+        - Any teammate turn inside it (see below)
 
         All tool_use, tool_result, intermediate assistant thoughts, and
         internal hint messages injected by the agent loop are discarded.
+
+        Work handed to a teammate is the exception. It arrives as an
+        ``agent_delegate`` result, and dropping it with the rest of the tool
+        chain leaves the teammate's answer looking like something the speaker
+        knew by itself — which is what teaches it to answer in a teammate's
+        place instead of asking. So the reply is lifted back out as a turn of
+        its own, attributed to whoever wrote it.
         """
 
         def _extract_text(content) -> str:
@@ -369,20 +384,67 @@ class AgentInitializer:
             text = _extract_text(content)
             return bool(text)
 
+        def _delegated_turn(block: dict):
+            """The teammate's reply carried by an ``agent_delegate`` result."""
+            raw = block.get("content")
+            if isinstance(raw, list):
+                raw = _extract_text(raw)
+            if not isinstance(raw, str) or not raw.strip():
+                return None
+            try:
+                payload = json.loads(raw)
+            except ValueError:
+                return None
+            if not isinstance(payload, dict):
+                return None
+            author = payload.get("agent_id") or ""
+            said = payload.get("content")
+            if not author or not isinstance(said, str) or not said.strip():
+                return None
+            said = said.strip()
+            if len(said) > _DELEGATED_REPLY_MAX_CHARS:
+                said = said[:_DELEGATED_REPLY_MAX_CHARS] + "…"
+            return said, author, True
+
         # Group into turns: each turn starts with a real user message
         turns = []
         current_turn = None
+        handed_off = set()
         for msg in messages:
             if _is_real_user_msg(msg):
                 if current_turn is not None:
                     turns.append(current_turn)
                 current_turn = {"user": msg, "assistants": []}
-            elif current_turn is not None and msg.get("role") == "assistant":
-                text = _extract_text(msg.get("content"))
+                continue
+            if current_turn is None:
+                continue
+            content = msg.get("content")
+            blocks = content if isinstance(content, list) else []
+            if msg.get("role") == "assistant":
+                for block in blocks:
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") == "tool_use"
+                        and block.get("name") == "agent_delegate"
+                    ):
+                        handed_off.add(block.get("id"))
+                text = _extract_text(content)
                 if text:
                     current_turn["assistants"].append(
-                        (text, msg.get("agent_id") or "")
+                        (text, msg.get("agent_id") or "", False)
                     )
+                continue
+            # A tool_result rides on a ``user`` message. Only a hand-off is
+            # lifted out of one; every other result stays discarded.
+            for block in blocks:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_result"
+                    and block.get("tool_use_id") in handed_off
+                ):
+                    spoke = _delegated_turn(block)
+                    if spoke:
+                        current_turn["assistants"].append(spoke)
         if current_turn is not None:
             turns.append(current_turn)
 
@@ -396,11 +458,17 @@ class AgentInitializer:
                 "role": "user",
                 "content": [{"type": "text", "text": user_text}]
             })
-            if turn["assistants"]:
-                final_reply, author = turn["assistants"][-1]
+            if not turn["assistants"]:
+                continue
+            # The speaker's intermediate thoughts are still dropped — only its
+            # last text is the answer. A teammate's turn is another voice, so
+            # it is kept where it happened rather than folded into that answer.
+            spoken = [said for said in turn["assistants"][:-1] if said[2]]
+            spoken.append(turn["assistants"][-1])
+            for text, author, _handed_off in spoken:
                 reply = {
                     "role": "assistant",
-                    "content": [{"type": "text", "text": final_reply}],
+                    "content": [{"type": "text", "text": text}],
                 }
                 if author:
                     reply["agent_id"] = author

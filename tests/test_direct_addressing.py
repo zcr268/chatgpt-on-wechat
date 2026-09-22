@@ -7,6 +7,7 @@ one invariant it must not break: the conversation stays a single transcript
 owned by one Agent, whoever happens to be speaking.
 """
 
+import json
 import threading
 from types import SimpleNamespace
 
@@ -699,6 +700,184 @@ class TestStripCopiedSpeakerPrefix:
             == "浓缩一版"
         )
         assert bridge._strip_speaker_prefix("正常回复", labels) == "正常回复"
+
+
+class TestReplayingWorkHandedToATeammate:
+    """A hand-off is the one tool result worth replaying.
+
+    Everything else a tool returned is already summarised in the reply, but a
+    teammate's answer is somebody else's words. Dropped with the rest of the
+    tool chain it reads, one turn later, as something the speaker knew by
+    itself -- and an Agent that reads its own history that way starts
+    answering in a teammate's place instead of handing the work over.
+    """
+
+    @staticmethod
+    def _handoff(agent_id, said, call_id="call_1"):
+        return [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "let me ask"},
+                    {
+                        "type": "tool_use",
+                        "id": call_id,
+                        "name": "agent_delegate",
+                        "input": {"agent_id": agent_id},
+                    },
+                ],
+                "agent_id": "default",
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": call_id,
+                        "content": json.dumps(
+                            {
+                                "agent_id": agent_id,
+                                "agent_name": "运营助手",
+                                "status": "done",
+                                "content": said,
+                            }
+                        ),
+                    }
+                ],
+            },
+        ]
+
+    def _restored(self, messages):
+        from bridge.agent_initializer import AgentInitializer
+
+        return AgentInitializer._filter_text_only_messages(messages)
+
+    def test_the_teammates_answer_comes_back_as_its_own_turn(self):
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "ask ops"}]},
+                *self._handoff("ops", "shipped at noon"),
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ops says noon"}],
+                    "agent_id": "default",
+                },
+            ]
+        )
+        assert [(m["role"], m.get("agent_id")) for m in restored] == [
+            ("user", None),
+            ("assistant", "ops"),
+            ("assistant", "default"),
+        ]
+        assert restored[1]["content"][0]["text"] == "shipped at noon"
+
+    def test_the_speaker_still_owns_the_answer_it_wrote(self):
+        """The relay is kept too: dropping it would lose the speaker's voice."""
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "ask ops"}]},
+                *self._handoff("ops", "shipped at noon"),
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ops says noon"}],
+                    "agent_id": "default",
+                },
+            ]
+        )
+        assert restored[-1]["content"][0]["text"] == "ops says noon"
+
+    def test_the_teammate_is_named_when_the_transcript_is_attributed(self, tmp_path):
+        from agent.registry import set_agent_registry
+        from bridge.agent_initializer import AgentInitializer
+
+        set_agent_registry(_bridge(tmp_path).agent_registry)
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "ask ops"}]},
+                *self._handoff("ops", "shipped at noon"),
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "ops says noon"}],
+                    "agent_id": "default",
+                },
+            ]
+        )
+        spoke = AgentInitializer._attribute_history(restored, "default")[1]
+        assert spoke["role"] == "user"
+        assert spoke["content"][0]["text"] == "运营助手(@ops)：shipped at noon"
+
+    def test_every_other_tool_result_is_still_discarded(self):
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "the weather?"}]},
+                {
+                    "role": "assistant",
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "call_2",
+                            "name": "web_search",
+                            "input": {},
+                        }
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": "call_2",
+                            "content": json.dumps({"agent_id": "ops", "content": "raining"}),
+                        }
+                    ],
+                },
+                {"role": "assistant", "content": [{"type": "text", "text": "rain"}]},
+            ]
+        )
+        assert [m["content"][0]["text"] for m in restored] == ["the weather?", "rain"]
+
+    def test_a_hand_off_that_came_back_empty_says_nothing(self):
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "ask ops"}]},
+                *self._handoff("ops", "   "),
+                {"role": "assistant", "content": [{"type": "text", "text": "no word"}]},
+            ]
+        )
+        assert [m["content"][0]["text"] for m in restored] == ["ask ops", "no word"]
+
+    def test_a_long_report_is_trimmed_to_its_context_budget(self):
+        from bridge.agent_initializer import _DELEGATED_REPLY_MAX_CHARS
+
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "ask ops"}]},
+                *self._handoff("ops", "x" * (_DELEGATED_REPLY_MAX_CHARS + 500)),
+                {"role": "assistant", "content": [{"type": "text", "text": "summary"}]},
+            ]
+        )
+        said = restored[1]["content"][0]["text"]
+        assert said == "x" * _DELEGATED_REPLY_MAX_CHARS + "…"
+
+    def test_each_teammate_in_a_turn_keeps_its_own_voice(self):
+        """Two hand-offs in one turn are two turns, in the order they happened."""
+        restored = self._restored(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "ask them both"}]},
+                *self._handoff("ops", "ops here", call_id="call_a"),
+                *self._handoff("dev", "dev here", call_id="call_b"),
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "both replied"}],
+                    "agent_id": "default",
+                },
+            ]
+        )
+        assert [(m.get("agent_id"), m["content"][0]["text"]) for m in restored[1:]] == [
+            ("ops", "ops here"),
+            ("dev", "dev here"),
+            ("default", "both replied"),
+        ]
 
 
 def test_a_pinned_registry_does_not_outlive_its_test(tmp_path, monkeypatch):
