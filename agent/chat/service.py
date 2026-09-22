@@ -237,6 +237,21 @@ class ChatService:
                     "id": tool_call_id,
                 }
 
+                # A call settles when its own tool finishes, not when the round
+                # does. A delegated turn holds the round open for as long as the
+                # teammate works, so every call made inside one - the hand-off
+                # included - would otherwise sit unfinished until it returns.
+                send_chunk_fn({
+                    "chunk_type": "tool_end",
+                    "tool_id": tool_call_id,
+                    "tool": tool_name,
+                    "status": status,
+                    "result": result,
+                    "elapsed": elapsed_str,
+                })
+
+                # Still collected for the closing batch: a client that predates
+                # the chunk above learns the outcome there, as it always did.
                 if state.pending_tool_results is not None:
                     state.pending_tool_results.append(tool_info)
 
