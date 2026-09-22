@@ -259,6 +259,25 @@ class ChatService:
                     "error": data.get("error"),
                 })
 
+            elif event_type == "peer_message_start":
+                # A teammate takes over for a stretch of this turn. What follows
+                # is its reply, in the same chunks as any other, until the
+                # matching end marker hands the floor back.
+                send_chunk_fn({
+                    "chunk_type": "peer_start",
+                    "card_id": data.get("card_id"),
+                    "agent_id": data.get("agent_id"),
+                    "agent_name": data.get("agent_name"),
+                })
+
+            elif event_type == "peer_message_end":
+                send_chunk_fn({
+                    "chunk_type": "peer_end",
+                    "card_id": data.get("card_id"),
+                    "agent_id": data.get("agent_id"),
+                    "status": data.get("status", "done"),
+                })
+
             elif event_type == "artifact":
                 # A file a (sub) agent wrote. Forward live so it can be previewed
                 # as soon as it exists rather than only after the turn settles.

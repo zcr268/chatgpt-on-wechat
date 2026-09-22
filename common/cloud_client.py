@@ -1344,11 +1344,14 @@ class CloudClient(LinkAIClient):
                     send_chunk_fn=self._aliasing_sender(send_chunk_fn), agent_id=agent_id,
                     speaker_agent_id=speaker_agent_id, members=members)
 
+    #: Chunks that name a speaker, so the caller can attribute what follows.
+    _SPEAKER_CHUNKS = ("speaker", "peer_start", "peer_end")
+
     def _aliasing_sender(self, send_chunk_fn):
         """Report the default agent to remote callers by its reserved alias,
         matching how they address it (see AgentRegistry.get_addressed)."""
         def send(chunk):
-            if isinstance(chunk, dict) and chunk.get("chunk_type") == "speaker":
+            if isinstance(chunk, dict) and chunk.get("chunk_type") in self._SPEAKER_CHUNKS:
                 chunk = {**chunk, "agent_id": self._alias_agent_id(chunk.get("agent_id"))}
             send_chunk_fn(chunk)
         return send

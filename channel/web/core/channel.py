@@ -366,6 +366,27 @@ class WebChannel(ChatChannel):
                 if delta:
                     publish({"type": "delta", "content": delta})
 
+            elif event_type == "peer_message_start":
+                # A teammate takes over for a stretch of this turn. What follows
+                # is its reply, in the same event types as any other, until the
+                # matching end marker hands the floor back.
+                publish({
+                    "type": "peer_start",
+                    "card_id": data.get("card_id"),
+                    "agent_id": data.get("agent_id"),
+                    "agent_name": data.get("agent_name"),
+                    "source_id": data.get("source_id"),
+                    "source_name": data.get("source_name"),
+                })
+
+            elif event_type == "peer_message_end":
+                publish({
+                    "type": "peer_end",
+                    "card_id": data.get("card_id"),
+                    "agent_id": data.get("agent_id"),
+                    "status": data.get("status", "done"),
+                })
+
             elif event_type == "tool_retrieval":
                 # Additive MCP retrieval diagnostics. Forward only the
                 # allowlisted, already-sanitized fields (query text/vectors are
@@ -728,7 +749,6 @@ class WebChannel(ChatChannel):
             params = _raw_web_input()
             file_obj = params.get("file")
             file_objs = params.get("files")
-            session_id = params.get("session_id", "")
             relative_path = params.get("relative_path", "")
             relative_paths = params.get("relative_paths")
             upload_id = params.get("upload_id", "")
