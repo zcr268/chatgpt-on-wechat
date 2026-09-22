@@ -2254,6 +2254,22 @@ class FeiShuChanel(ChatChannel):
         return context
 
 
+def _redact_request_tokens(request: dict) -> dict:
+    """Mask the verification token in a webhook payload before logging it.
+
+    Feishu carries the token in header.token (message events), event.token
+    (card callbacks), and the top-level token on url_verification.
+    """
+    safe = dict(request)
+    if isinstance(safe.get("token"), str):
+        safe["token"] = "***"
+    for key in ("header", "event"):
+        value = safe.get(key)
+        if isinstance(value, dict) and isinstance(value.get("token"), str):
+            safe[key] = {**value, "token": "***"}
+    return safe
+
+
 class FeishuController:
     """
     HTTP服务器控制器，用于webhook模式
@@ -2273,7 +2289,7 @@ class FeishuController:
             channel = FeiShuChanel()
 
             request = json.loads(web.data().decode("utf-8"))
-            logger.debug(f"[FeiShu] receive request: {request}")
+            logger.debug(f"[FeiShu] receive request: {_redact_request_tokens(request)}")
 
             # 1.事件订阅回调验证
             if request.get("type") == URL_VERIFICATION:
