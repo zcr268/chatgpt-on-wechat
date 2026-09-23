@@ -564,8 +564,8 @@ def _build_memory_section(
 # Past _INDEX_FULL_CHARS only the entry titles are injected, and past
 # _INDEX_MAX_CHARS the list is cut; the pages stay reachable through read and
 # memory_search, and the prompt says so.
-_INDEX_FULL_CHARS = 20000
-_INDEX_MAX_CHARS = 30000
+_INDEX_FULL_CHARS = 8000
+_INDEX_MAX_CHARS = 20000
 _INDEX_ENTRY_RE = re.compile(r"^\s*[-*]\s+\[[^\]]*\]\([^)]*\)")
 
 
