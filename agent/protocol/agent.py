@@ -293,7 +293,7 @@ class Agent:
             from agent.prompt import load_context_files, PromptBuilder
 
             if self.skill_manager:
-                self.skill_manager.refresh_skills()
+                self.skill_manager.refresh_skills(use_cache=True)
 
             context_files = None
             if self.workspace_dir and not self.skip_context_files:
