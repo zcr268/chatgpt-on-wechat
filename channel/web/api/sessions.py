@@ -946,7 +946,7 @@ class HistoryHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Access-Control-Allow-Origin', '*')
         try:
-            params = web.input(session_id='', page='1', page_size='20', agent_id='')
+            params = web.input(session_id='', page='1', page_size='20', agent_id='', until_seq='')
             session_id = params.session_id.strip()
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
@@ -956,10 +956,12 @@ class HistoryHandler:
             store = get_conversation_store(
                 _get_workspace_root(agent_id=agent_id)
             )
+            until_seq = params.until_seq.strip()
             result = store.load_history_page(
                 session_id=session_id,
                 page=int(params.page),
                 page_size=int(params.page_size),
+                until_seq=int(until_seq) if until_seq.lstrip('-').isdigit() else None,
             )
             # Same workspace-relative media rewrite the live SSE path applies,
             # so images/videos survive a page reload for non-default agents.
@@ -986,6 +988,36 @@ class HistoryHandler:
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] History API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class UserMessagesHandler:
+    """Lightweight index of a session's user messages for the nav timeline.
+
+    Returns only ``{seq, preview, created_at}`` per user turn, so the whole
+    conversation's user-message list can be fetched at once regardless of how
+    many messages there are; the main history stays paginated.
+    """
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Access-Control-Allow-Origin', '*')
+        try:
+            params = web.input(session_id='', agent_id='')
+            session_id = params.session_id.strip()
+            if not session_id:
+                return json.dumps({"status": "error", "message": "session_id required"})
+
+            agent_id = _request_agent_id(params)
+            from agent.memory import get_conversation_store
+            store = get_conversation_store(
+                _get_workspace_root(agent_id=agent_id)
+            )
+            result = store.list_user_messages(session_id=session_id)
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] User messages API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 

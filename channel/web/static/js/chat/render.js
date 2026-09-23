@@ -652,8 +652,10 @@ function addBotMessage(content, timestamp, requestId) {
 
 // Load conversation history from the server (page 1 = most recent messages).
 // Subsequent pages prepend older messages when the user scrolls to the top.
-function loadHistory(page) {
-    if (historyLoading) return;
+// With untilSeq, every page from `page` back to the one holding that message
+// arrives in a single request (the message navigator's long jumps).
+function loadHistory(page, untilSeq) {
+    if (historyLoading) return Promise.resolve();
     historyLoading = true;
     const historySessionId = sessionId;
 
@@ -664,7 +666,8 @@ function loadHistory(page) {
     // before rendering so a reload looks exactly like the live conversation.
     const ready = _sessCfg ? Promise.resolve() : refreshSessionSettings().catch(() => {});
 
-    ready.then(() => fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
+    const until = untilSeq != null ? `&until_seq=${encodeURIComponent(untilSeq)}` : '';
+    return ready.then(() => fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20${until}`)
         .then(r => r.json())
         .then(data => {
             // A response from a session we have since left must never render
@@ -673,6 +676,7 @@ function loadHistory(page) {
             if (data.status !== 'success' || data.messages.length === 0) return;
 
             const prevScrollHeight = messagesDiv.scrollHeight;
+            const prevScrollTop = messagesDiv.scrollTop;
             const isFirstLoad = page === 1;
 
             // On first load, remove the welcome screen if history exists
@@ -776,7 +780,13 @@ function loadHistory(page) {
             }
 
             historyHasMore = data.has_more;
-            historyPage = page;
+            historyPage = data.page || page;
+
+            // Rebuild the navigation rail from the full user-message index on
+            // the first load of a session (later pages don't change the index).
+            if (isFirstLoad && typeof refreshTimeline === 'function') {
+                refreshTimeline();
+            }
 
             if (isFirstLoad) {
                 // Scroll to the very bottom after the DOM settles. A single
@@ -786,8 +796,10 @@ function loadHistory(page) {
                 requestAnimationFrame(() => scrollChatToBottom(true));
                 [120, 350, 700].forEach(d => setTimeout(() => scrollChatToBottom(true), d));
             } else {
-                // Restore scroll position so loading older messages doesn't jump the view
-                messagesDiv.scrollTop = messagesDiv.scrollHeight - prevScrollHeight;
+                // Restore scroll position so loading older messages doesn't jump the
+                // view. Offset from where the reader was, not from the top: a page
+                // can also be pulled in from mid-list (the message navigator).
+                messagesDiv.scrollTop = prevScrollTop + (messagesDiv.scrollHeight - prevScrollHeight);
             }
         })
         .catch(() => {})

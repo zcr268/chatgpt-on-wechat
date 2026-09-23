@@ -491,6 +491,18 @@ export interface HistoryPage {
   context_start_seq?: number
 }
 
+/** One entry in the navigation timeline: a user message, by its stored seq. */
+export interface UserMessageIndexEntry {
+  seq: number
+  preview: string
+  created_at: number
+}
+
+export interface UserMessageIndex {
+  messages: UserMessageIndexEntry[]
+  total: number
+}
+
 /** Heuristic breakdown of what is occupying the session's context window.
  *  `available` is false when the session has no live agent yet (fresh session,
  *  or one just cleared) — the other fields are then absent. */

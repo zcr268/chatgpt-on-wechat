@@ -554,6 +554,8 @@ messagesDiv.addEventListener('click', (e) => {
                     body: JSON.stringify({ session_id: sessionId, user_seq: parseInt(userSeq) })
                 }).then(r => r.json()).then(data => {
                     if (data.status === 'success') console.log(`Deleted ${data.deleted} messages`);
+                    // Drop the removed question from the navigation rail.
+                    if (typeof refreshTimeline === 'function') refreshTimeline();
                 }).catch(err => console.error('Failed to delete:', err));
             }
         });

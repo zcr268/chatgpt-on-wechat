@@ -744,6 +744,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                         }
                     }
                 }
+                // The turn is persisted: refresh the navigation rail so the new
+                // question gets its own dot (only for the foreground session).
+                if (isActive() && typeof refreshTimeline === 'function') {
+                    refreshTimeline();
+                }
                 renderBotSpeakerButton(botEl, finalText);
                 scrollChatToBottom();
 

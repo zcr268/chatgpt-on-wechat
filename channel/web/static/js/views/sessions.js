@@ -102,6 +102,7 @@ function _applyInputTooltips() {
     set('steer-btn', 'steer_active');
     set('session-toggle-btn', 'session_history', 'bottom');
     set('workspace-toggle-btn', 'ws_toggle', 'bottom');
+    set('timeline-toggle-btn', 'timeline_nav', 'bottom');
     // Optimize / mic buttons carry state-dependent tooltips managed in their
     // own setup, but on language switch we reset them to the idle label so the
     // tooltip follows the current locale.
@@ -660,6 +661,7 @@ function switchSession(newSessionId, agentId) {
     historyLoading = false;
 
     messagesDiv.innerHTML = '';
+    if (typeof resetTimeline === 'function') resetTimeline();
     loadHistory(1);
     startPolling();
 

@@ -47,7 +47,9 @@ interface ChatState {
   editUserMessage: (sid: string, messageId: string) => { text: string; attachments: Attachment[] } | null
   deleteMessage: (sid: string, userSeq: number, cascade: boolean) => Promise<void>
 
-  loadHistory: (sid: string, page?: number) => Promise<void>
+  /** With untilSeq, loads every page from `page` back to the one holding that
+   *  message in a single request. */
+  loadHistory: (sid: string, page?: number, untilSeq?: number) => Promise<void>
   clearContext: (sid: string) => Promise<boolean>
   // Synchronous context compaction. On success a divider is appended to the
   // thread; the raw result is returned so the caller can refresh the pie and
@@ -800,9 +802,9 @@ export const useChatStore = create<ChatState>((set, get) => {
       await get().loadHistory(sid, 1)
     },
 
-    loadHistory: async (sid, page = 1) => {
+    loadHistory: async (sid, page = 1, untilSeq) => {
       try {
-        const res = await apiClient.getHistory(sid, page, 20, sessionOwner(sid) || undefined)
+        const res = await apiClient.getHistory(sid, page, 20, sessionOwner(sid) || undefined, untilSeq)
         const uiMsgs = res.messages.flatMap(historyToMessages)
         patchSession(sid, {
           historyPage: res.page,
