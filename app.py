@@ -603,6 +603,13 @@ def _migrate_team_roster():
     except Exception as e:
         # Never a reason not to start: read() still falls back to config.json.
         logger.warning(f"[App] Could not move the roster into its own file: {e}")
+    try:
+        from agent import team
+        from config import conf
+
+        team.adopt_legacy_channels(conf())
+    except Exception as e:
+        logger.warning(f"[App] Could not add legacy channels to the roster: {e}")
 
 
 def _migrate_conversations():
