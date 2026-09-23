@@ -432,6 +432,11 @@ class AgentLLMModel(LLMModel):
                 session_id = getattr(self, 'session_id', None)
                 if session_id:
                     kwargs['session_id'] = session_id
+                # Only bots that declare it get the agent id: others may pass
+                # unknown kwargs straight through to their provider.
+                agent_id = getattr(self, 'agent_id', None)
+                if agent_id and getattr(self.bot, 'accepts_agent_id', False):
+                    kwargs['agent_id'] = agent_id
 
                 # Thinking mode is a global toggle independent of the channel.
                 # IM channels (WeChat/WeCom/DingTalk/Feishu) won't render the
@@ -499,6 +504,11 @@ class AgentLLMModel(LLMModel):
                 session_id = getattr(self, 'session_id', None)
                 if session_id:
                     kwargs['session_id'] = session_id
+                # Only bots that declare it get the agent id: others may pass
+                # unknown kwargs straight through to their provider.
+                agent_id = getattr(self, 'agent_id', None)
+                if agent_id and getattr(self.bot, 'accepts_agent_id', False):
+                    kwargs['agent_id'] = agent_id
 
                 # Thinking mode is a global toggle independent of the channel.
                 # IM channels (WeChat/WeCom/DingTalk/Feishu) won't render the

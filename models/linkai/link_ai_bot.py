@@ -62,6 +62,8 @@ class LinkAIBot(Bot, OpenAICompatibleBot):
     # authentication failed
     AUTH_FAILED_CODE = 401
     NO_QUOTA_CODE = 406
+    # call_with_tools takes the calling agent's id, sent only alongside client_id.
+    accepts_agent_id = True
 
     def __init__(self):
         super().__init__()
@@ -599,6 +601,9 @@ def _linkai_call_with_tools(self, messages, tools=None, stream=False, **kwargs):
             client_id = LinkAIClient.fetch_client_id()
             if client_id:
                 body["client_id"] = client_id
+                # Several agents can share one client; this names the one calling.
+                if kwargs.get("agent_id"):
+                    body["agent_id"] = kwargs["agent_id"]
         except Exception:
             pass
 
