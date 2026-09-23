@@ -1205,6 +1205,14 @@ class AgentBridge:
         """Keep legacy token keys for the default agent, namespace the rest."""
         return token if agent_id == default_agent_id else f"{agent_id}::{token}"
 
+    def _has_runtime(self, agent_id: str, session_id: str) -> bool:
+        """Whether ``get_agent`` would return a cached runtime rather than build one."""
+        if not session_id:
+            return False
+        with self._agents_lock:
+            key = self._runtime_key(self._resolve_agent_id(agent_id), session_id)
+            return key in self._agent_instances
+
     def get_agent(
         self,
         session_id: str = None,
@@ -1273,9 +1281,9 @@ class AgentBridge:
         """Reload the host's transcript so every teammate sees the same history.
 
         Solo conversations keep their live in-memory list (including tool
-        chains). A team conversation is reread from the host store, with
-        colleagues' replies replayed as ``Name：`` user turns so ``assistant``
-        stays this speaker's own voice.
+        chains). A team conversation is reread from the host store: this
+        speaker's own turns keep their tool chains, and colleagues' replies are
+        replayed as ``Name：`` user turns so ``assistant`` stays its own voice.
         """
         if not session_id or not AgentInitializer._is_shared_conversation(
             session_id, host_agent_id
@@ -1564,6 +1572,7 @@ class AgentBridge:
                 )
 
             # Get agent for this session (will auto-initialize if needed)
+            cached = self._has_runtime(speaker_agent_id, session_id)
             agent = self.get_agent(
                 session_id=session_id,
                 agent_id=speaker_agent_id,
@@ -1576,8 +1585,10 @@ class AgentBridge:
             # in-memory list and only restores it on first init, so a teammate
             # that already joined would miss later turns spoken by someone else
             # (and the host would miss guest replies). Reload the shared
-            # transcript with author labels before this turn is appended.
-            self._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            # transcript with author labels before this turn is appended; a
+            # runtime built for this turn has only just restored it.
+            if cached:
+                self._sync_shared_transcript(agent, session_id, resolved_agent_id)
             
             # Create event handler for logging and channel communication
             event_handler = AgentEventHandler(context=context, original_callback=on_event)

@@ -72,6 +72,7 @@ class ChatService:
         speaker_id = resolved_agent_id
         model_query = query
         is_team = False
+        cached = False
         if speaker_agent_id or members is not None:
             if members is not None:
                 context["members"] = list(members)
@@ -92,6 +93,7 @@ class ChatService:
                 # (also when the owner itself was named); the transcript keeps
                 # the verbatim query.
                 model_query = self.agent_bridge._strip_address(query, speaker_id)
+            cached = self.agent_bridge._has_runtime(speaker_id, session_id)
             agent = self.agent_bridge.get_agent(
                 session_id=session_id,
                 agent_id=speaker_id,
@@ -105,8 +107,10 @@ class ChatService:
             raise RuntimeError("Failed to initialise agent for the session")
         if is_team:
             # One transcript per team conversation: reload it with author labels
-            # so this speaker sees the turns others spoke since it last ran.
-            self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            # so this speaker sees the turns others spoke since it last ran. A
+            # runtime built for this turn has only just restored it.
+            if cached:
+                self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
             self._send_speaker(send_chunk_fn, speaker_id)
         if transcript is not None:
             with agent.messages_lock:

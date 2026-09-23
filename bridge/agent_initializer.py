@@ -227,6 +227,9 @@ class AgentInitializer:
         3. Different models have incompatible tool message formats, so
            restoring tool chains across model switches causes 400 errors.
         4. Eliminates the entire class of tool_use/tool_result pairing bugs.
+
+        A shared conversation is the exception: it is reread before every turn,
+        so the reader's own turns keep their tool chains (see _shared_history).
         """
         from config import conf
         if not conf().get("conversation_persistence", True):
@@ -256,14 +259,15 @@ class AgentInitializer:
                 session_id, max_turns=restore_turns, with_authors=shared
             )
             if saved:
-                filtered = self._filter_text_only_messages(saved)
                 if shared:
-                    filtered = self._attribute_history(filtered, reader)
+                    filtered = self._shared_history(saved, reader)
+                else:
+                    filtered = self._filter_text_only_messages(saved)
                 if filtered:
                     with agent.messages_lock:
                         agent.messages = filtered
                     logger.debug(
-                        f"[AgentInitializer] Restored {len(filtered)} text messages "
+                        f"[AgentInitializer] Restored {len(filtered)} messages "
                         f"(from {len(saved)} total, {restore_turns} turns cap) "
                         f"for session={session_id}"
                     )
@@ -280,8 +284,8 @@ class AgentInitializer:
         A stored id only counts when it still resolves to a configured Agent,
         or to a teammate the installed transport can reach. A roster made
         entirely of deleted Agents, with no such peer, is not a team
-        conversation: treating it as one reloads history as plain text and
-        drops the tool chain.
+        conversation: treating it as one rereads history from the store on
+        every turn and flattens each turn the reader did not answer to text.
         """
         if not session_id:
             return False
@@ -384,6 +388,46 @@ class AgentInitializer:
                     }
             attributed.append(plain)
         return attributed
+
+    @staticmethod
+    def _shared_history(messages: list, reader_agent_id: str) -> list:
+        """Rebuild a shared transcript for the Agent about to speak.
+
+        A turn every reply of which the reader wrote keeps its tool calls and
+        results. Flattened to its final text, the reader's own history shows it
+        announcing work with no trace of doing it, and it goes on to announce
+        the next piece of work without doing that either. Every other turn is
+        reduced to text and attributed.
+        """
+        from agent.protocol.message_utils import identify_complete_turns
+
+        rebuilt: list = []
+        others: list = []
+
+        def flush_others() -> None:
+            if others:
+                rebuilt.extend(AgentInitializer._attribute_history(
+                    AgentInitializer._filter_text_only_messages(others),
+                    reader_agent_id,
+                ))
+                others.clear()
+
+        for turn in identify_complete_turns(messages):
+            turn_messages = turn["messages"]
+            replies = turn_messages[1:]
+            own = bool(reader_agent_id) and bool(replies) and all(
+                message.get("agent_id") == reader_agent_id for message in replies
+            )
+            if not own:
+                others.extend(turn_messages)
+                continue
+            flush_others()
+            rebuilt.extend(
+                {"role": message["role"], "content": message["content"]}
+                for message in turn_messages
+            )
+        flush_others()
+        return rebuilt
 
     @staticmethod
     def _filter_text_only_messages(messages: list) -> list:

@@ -750,6 +750,16 @@ class TestSharedTranscriptStaysCurrent:
             t.startswith("Primary(@primary)：") and "located the repo" in t for t in texts
         )
 
+    def test_only_a_runtime_built_earlier_counts_as_cached(self, tmp_path):
+        """A runtime built for this turn restored the transcript while
+        initialising; reloading it again straight away is wasted work."""
+        bridge = _bridge(tmp_path)
+        assert not bridge._has_runtime("ops", "chat")
+        bridge.get_agent(session_id="chat", agent_id="ops", host_agent_id="primary")
+        assert bridge._has_runtime("ops", "chat")
+        assert not bridge._has_runtime("primary", "chat")
+        assert not bridge._has_runtime("ops", None)
+
     def test_solo_conversation_does_not_reload(self, tmp_path, monkeypatch):
         from agent.workspace import session_prefs
 
@@ -762,6 +772,120 @@ class TestSharedTranscriptStaysCurrent:
         )
         bridge._sync_shared_transcript(guest, "chat", "primary")
         assert guest.messages == [{"keep": True}]
+
+
+class TestOwnToolChainsSurviveTheReload:
+    """A team conversation is reread before every turn. Flattening the
+    speaker's own turns to text leaves it a history of claimed work with no
+    trace of the tool calls behind it, and it goes on claiming work it skips."""
+
+    @staticmethod
+    def _tool_turn(author, question, call_id, answer):
+        stamp = {"agent_id": author} if author else {}
+        return [
+            {"role": "user", "content": [{"type": "text", "text": question}], **stamp},
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "checking"},
+                    {"type": "tool_use", "id": call_id, "name": "read", "input": {"path": "a.py"}},
+                ],
+                **stamp,
+            },
+            {
+                "role": "user",
+                "content": [{"type": "tool_result", "tool_use_id": call_id, "content": "print(1)"}],
+                **stamp,
+            },
+            {"role": "assistant", "content": [{"type": "text", "text": answer}], **stamp},
+        ]
+
+    def _history(self, tmp_path, reader):
+        from agent.registry import set_agent_registry
+
+        set_agent_registry(_bridge(tmp_path).agent_registry)
+        return AgentInitializer._shared_history(
+            [
+                *self._tool_turn("primary", "fix a.py", "call_p", "fixed a.py"),
+                *self._tool_turn("ops", "check a.py", "call_o", "a.py looks fine"),
+            ],
+            reader,
+        )
+
+    @staticmethod
+    def _blocks(history, kind):
+        return [
+            block
+            for message in history
+            if isinstance(message["content"], list)
+            for block in message["content"]
+            if block.get("type") == kind
+        ]
+
+    def test_the_speaker_keeps_its_own_tool_calls(self, tmp_path):
+        history = self._history(tmp_path, "primary")
+        assert [b["id"] for b in self._blocks(history, "tool_use")] == ["call_p"]
+        assert [b["tool_use_id"] for b in self._blocks(history, "tool_result")] == ["call_p"]
+        assert history[3] == {"role": "assistant", "content": [{"type": "text", "text": "fixed a.py"}]}
+
+    def test_a_colleagues_turn_is_still_flattened_and_named(self, tmp_path):
+        history = self._history(tmp_path, "primary")
+        assert history[4:] == [
+            {"role": "user", "content": [{"type": "text", "text": "check a.py"}]},
+            {"role": "user", "content": [{"type": "text", "text": "运营助手(@ops)：a.py looks fine"}]},
+        ]
+
+    def test_each_speaker_keeps_only_its_own(self, tmp_path):
+        history = self._history(tmp_path, "ops")
+        assert [b["id"] for b in self._blocks(history, "tool_use")] == ["call_o"]
+        assert history[1]["content"][0]["text"] == "Primary(@primary)：fixed a.py"
+
+    def test_an_unstamped_turn_stays_text_only(self, tmp_path):
+        history = AgentInitializer._shared_history(
+            self._tool_turn("", "fix a.py", "call_x", "fixed a.py"), "primary"
+        )
+        assert self._blocks(history, "tool_use") == []
+        assert [m["content"][0]["text"] for m in history] == ["fix a.py", "fixed a.py"]
+
+    def test_nothing_of_ours_reaches_the_model(self, tmp_path):
+        for message in self._history(tmp_path, "primary"):
+            assert set(message) == {"role", "content"}
+
+    def test_the_reload_keeps_them_end_to_end(self, tmp_path, monkeypatch):
+        from agent.memory import clear_conversation_store_cache, get_conversation_store
+        from agent.registry import set_agent_registry
+        from agent.workspace import session_prefs
+        from config import conf
+
+        bridge = _bridge(tmp_path)
+        set_agent_registry(bridge.agent_registry)
+        bridge.initializer = AgentInitializer(bridge=None, agent_bridge=bridge)
+        monkeypatch.setitem(conf(), "conversation_persistence", True)
+        monkeypatch.setattr(
+            session_prefs,
+            "get_prefs",
+            lambda sid, aid: {"members": ["ops"]} if sid == "chat" else {},
+        )
+        clear_conversation_store_cache()
+
+        stored = [
+            {**{k: v for k, v in m.items() if k != "agent_id"}, "extras": {"agent_id": m["agent_id"]}}
+            for m in [
+                *self._tool_turn("primary", "fix a.py", "call_p", "fixed a.py"),
+                *self._tool_turn("ops", "check a.py", "call_o", "a.py looks fine"),
+            ]
+        ]
+        get_conversation_store(str(tmp_path / "primary")).append_messages("chat", stored)
+
+        host = SimpleNamespace(
+            agent_id="primary",
+            workspace_dir=str(tmp_path / "primary"),
+            messages=[],
+            messages_lock=threading.RLock(),
+        )
+        bridge._sync_shared_transcript(host, "chat", "primary")
+        assert [b["id"] for b in self._blocks(host.messages, "tool_use")] == ["call_p"]
+        assert host.messages[-1]["content"][0]["text"] == "运营助手(@ops)：a.py looks fine"
 
 
 class TestStripCopiedSpeakerPrefix:
