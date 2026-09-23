@@ -28,6 +28,9 @@ class _ScriptedExecutor:
             self.on_event({"type": event_type, "data": data})
         return "done"
 
+    def run_start_index(self):
+        return None
+
 
 def _service():
     agent = SimpleNamespace(

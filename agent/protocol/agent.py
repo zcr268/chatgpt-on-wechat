@@ -87,9 +87,9 @@ def resolve_family_spec(model_name: str):
             return spec.get("fallback_window", 128000), None
         return spec["window"], spec.get("max_output")
     return None, None
-from agent.protocol.models import LLMRequest, LLMModel
+from agent.protocol.models import LLMModel
 from agent.protocol.agent_stream import AgentStreamExecutor
-from agent.protocol.result import AgentAction, AgentActionType, ToolResult, AgentResult
+from agent.protocol.result import AgentAction, AgentActionType, ToolResult
 from agent.tools.base_tool import BaseTool, ToolStage, is_tool_available
 
 
@@ -831,8 +831,11 @@ class Agent:
             # so slicing at original_length yields an empty list and the assistant reply
             # would never be persisted. Instead, locate this run's user query (always the
             # first message of the last turn) by scanning from the tail.
+            run_start = executor.run_start_index()
             trimmed = len(executor.messages) < original_length
-            if trimmed:
+            if run_start is not None:
+                self._last_run_new_messages = list(executor.messages[run_start:])
+            elif trimmed:
                 new_start = original_length  # fallback
                 for idx in range(len(executor.messages) - 1, -1, -1):
                     msg = executor.messages[idx]

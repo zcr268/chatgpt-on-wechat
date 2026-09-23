@@ -419,8 +419,11 @@ class ChatService:
         # appending would leave stale pre-trim messages in agent.messages
         # and cause the same trim to fire on every subsequent request.
         with agent.messages_lock:
+            run_start = executor.run_start_index()
             trimmed = len(executor.messages) < original_length
-            if trimmed:
+            if run_start is not None:
+                new_messages = list(executor.messages[run_start:])
+            elif trimmed:
                 # Context was trimmed: the executor appended the new user
                 # query *before* trimming, so the new messages (user +
                 # assistant + tools) sit at the tail of the trimmed list.
