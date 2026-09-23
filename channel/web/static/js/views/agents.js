@@ -1412,5 +1412,3 @@ function selectMemoryAgent(agentId) {
     loadMemoryView(1);
 }
 
-loadAgentCatalog();
-

@@ -1209,7 +1209,13 @@ class WebChannel(ChatChannel):
         with self._sse_streams_lock:
             state = self.sse_streams.get(request_id)
         if state is None:
-            yield b"data: {\"type\": \"error\", \"message\": \"invalid request_id\"}\n\n"
+            # Logs live in memory only, so a restart forgets every request the
+            # previous process was streaming. The reason lets the client say so
+            # instead of reporting a generic send failure.
+            yield (
+                b"data: {\"type\": \"error\", \"message\": \"invalid request_id\", "
+                b"\"reason\": \"unknown_request\"}\n\n"
+            )
             return
         try:
             cursor = max(0, int(after_seq))

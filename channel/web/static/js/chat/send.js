@@ -800,9 +800,15 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 delete activeStreams[requestId];
                 clearOwnerRequest();
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
+                if (contentEl) contentEl.classList.remove('sse-streaming');
                 // After a stop the stream is expected to end; the bubble is
                 // already tagged "已中止", so don't stack a failure on top.
-                if (!cancelled) addBotMessage(t('error_send'), new Date());
+                // An unknown request after "done" only means its log was
+                // reclaimed: the reply is persisted and already on screen.
+                const unknown = item.reason === 'unknown_request';
+                if (!cancelled && !(unknown && mainDone)) {
+                    addBotMessage(t(unknown ? 'error_reply_interrupted' : 'error_send'), new Date());
+                }
                 resetSendBtnSendMode();
             }
     }
@@ -854,7 +860,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     notifyTaskFinished(ownerSession, 'done', item.content, ownerAgent);
                 }
             } else if (item.type === 'error') {
-                if (!cancelled && !isSchedulerRequest(requestId)) notifyTaskFinished(ownerSession, 'error', '', ownerAgent);
+                if (!cancelled && !mainDone && !isSchedulerRequest(requestId)) notifyTaskFinished(ownerSession, 'error', '', ownerAgent);
             } else if (
                 item.type === 'voice_attach'
                 && item.url
@@ -925,13 +931,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             settlePendingTools();
             if (!isActive()) return;
             if (loadingEl) { loadingEl.remove(); loadingEl = null; }
-            if (!botEl) {
-                addBotMessage(t('error_send'), new Date());
-            } else if (accumulatedText) {
+            if (botEl && contentEl) {
                 contentEl.classList.remove('sse-streaming');
-                contentEl.innerHTML = renderMarkdown(accumulatedText);
+                if (accumulatedText) contentEl.innerHTML = renderMarkdown(accumulatedText);
                 applyHighlighting(botEl);
             }
+            // The message itself was accepted; only the live view dropped, and
+            // the server may still finish and persist the reply.
+            if (!mainDone) addBotMessage(t('error_connection_lost'), new Date());
             resetSendBtnSendMode();
         };
     }
