@@ -548,7 +548,16 @@ class CloudClient(LinkAIClient):
 
     def _handle_agent_create(self, agent_id: str, data: dict):
         """Add a new agent and re-point the live runtime, so it can answer
-        without a restart. A no-op when agent support is unavailable."""
+        without a restart. A no-op when agent support is unavailable.
+
+        The console may send the same registration again, e.g. after a
+        reconnect to make sure an agent it created while this instance was
+        offline exists; an agent that already exists takes it as an update,
+        and its asset modes are left as they are."""
+        if self._agent_exists(agent_id):
+            logger.info(f"[CloudClient] Agent '{agent_id}' already exists, applying as update")
+            self._handle_agent_update(agent_id, data)
+            return
         name = str(data.get("name") or agent_id).strip()
         description = str(data.get("description") or "").strip()
         model = data.get("model")
@@ -580,6 +589,17 @@ class CloudClient(LinkAIClient):
             logger.info(f"[CloudClient] Agent '{agent_id}' created")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to create agent '{agent_id}': {e}", exc_info=True)
+
+    @staticmethod
+    def _agent_exists(agent_id: str) -> bool:
+        # Addressed lookup, so the reserved default alias names the existing
+        # default agent rather than a new agent to create.
+        try:
+            from agent.registry import get_agent_registry
+            get_agent_registry().get_addressed(agent_id, require_enabled=False)
+            return True
+        except Exception:
+            return False
 
     @staticmethod
     def _reload_agents(service):
@@ -1137,14 +1157,34 @@ class CloudClient(LinkAIClient):
         :return: response dict
         """
         action = data.get("action", "")
-        payload = data.get("payload")
+        payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_skill: action={action}")
 
-        svc = self.skill_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._skill_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "SkillService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _skill_service_for(self, agent_id):
+        """A SkillService over the requested agent's skills: its own set when it
+        has one, else the shared set. Falls back to the process-wide service when
+        no agent is requested, so single-agent installs are unaffected."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.skill_service
+        try:
+            from agent.skills.manager import SkillManager
+            from agent.skills.service import SkillService
+            from common.state_dir import skills_dir
+            return SkillService(SkillManager(custom_dir=str(skills_dir(base=workspace))))
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build SkillService for agent: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # memory callback
