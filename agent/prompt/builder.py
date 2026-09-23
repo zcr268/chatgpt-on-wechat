@@ -6,7 +6,8 @@ System Prompt Builder - 系统提示词构建器
 
 from __future__ import annotations
 import os
-from typing import List, Dict, Optional, Any
+import re
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
 
 from common.log import logger
@@ -559,6 +560,40 @@ def _build_memory_section(
     return lines
 
 
+# index.md grows by a line per knowledge page and is re-sent on every turn.
+# Past _INDEX_FULL_CHARS only the entry titles are injected, and past
+# _INDEX_MAX_CHARS the list is cut; the pages stay reachable through read and
+# memory_search, and the prompt says so.
+_INDEX_FULL_CHARS = 20000
+_INDEX_MAX_CHARS = 30000
+_INDEX_ENTRY_RE = re.compile(r"^\s*[-*]\s+\[[^\]]*\]\([^)]*\)")
+
+
+def _compact_knowledge_index(content: str) -> Tuple[str, int, bool]:
+    """Return (index text to inject, entries left out, whether it was compacted)."""
+    if len(content) <= _INDEX_FULL_CHARS:
+        return content, 0, False
+
+    kept: List[str] = []
+    size = 0
+    omitted = 0
+    full = False
+    for line in content.split("\n"):
+        entry = _INDEX_ENTRY_RE.match(line)
+        if entry:
+            line = entry.group(0).strip()
+        elif not line.lstrip().startswith("#"):
+            continue
+        if full or size + len(line) + 1 > _INDEX_MAX_CHARS:
+            full = True
+            if entry:
+                omitted += 1
+            continue
+        kept.append(line)
+        size += len(line) + 1
+    return "\n".join(kept), omitted, True
+
+
 def _build_knowledge_section(
     workspace_dir: str, language: str, project_dir: Optional[str] = None
 ) -> List[str]:
@@ -629,12 +664,22 @@ def _build_knowledge_section(
         ]
 
     if index_content:
+        index_text, omitted, compacted = _compact_knowledge_index(index_content)
         lines.extend([
             ("### Current knowledge index" if language == "en" else "### 当前知识索引"),
             "",
-            index_content,
-            "",
         ])
+        if compacted:
+            if language == "en":
+                more = f", {omitted} more entries are not listed" if omitted else ""
+                note = (f"The index is large, so only titles are listed here{more}. "
+                        f"`read` `{kb}/index.md` for the full index, or use `memory_search`.")
+            else:
+                more = f"，另有 {omitted} 条未列出" if omitted else ""
+                note = (f"索引较大，此处只列出标题{more}。"
+                        f"完整索引请 `read` `{kb}/index.md` 查看，或用 `memory_search` 检索。")
+            lines.extend([note, ""])
+        lines.extend([index_text, ""])
 
     lines.extend([
         ("**How to query**: use `read` to open a knowledge page, or `memory_search` (knowledge is in the vector index)."

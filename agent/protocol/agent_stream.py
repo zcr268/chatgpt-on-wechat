@@ -2578,6 +2578,18 @@ class AgentStreamExecutor:
         # turns needed, not a blind "remove half").
         kept_turns, discarded_turns = self._token_budget_trim(turns, budget)
 
+        # The system prompt alone fills the budget, so every earlier turn would
+        # be dropped on every request and the Agent would forget each exchange.
+        # Keep the previous one; the few-turn fallback below reduces it to text.
+        if budget <= 0:
+            logger.warning(
+                f"[Agent] System prompt (~{system_tokens} tok) alone exceeds the "
+                f"context budget ({max_tokens} tok); keeping only the previous turn. "
+                f"Shrink the injected workspace files or raise agent_max_context_tokens."
+            )
+            if len(turns) > 1 and len(kept_turns) < 2:
+                kept_turns, discarded_turns = turns[-2:], turns[:-2]
+
         # Secondary: turn-count cap acts as an explicit cost safety net. Even
         # when the kept turns fit the token budget, never keep more than
         # max_context_turns of them.
@@ -2586,7 +2598,7 @@ class AgentStreamExecutor:
             discarded_turns = extra + discarded_turns
             kept_turns = kept_turns[-self.max_context_turns:]
 
-        if not discarded_turns:
+        if not discarded_turns and (budget > 0 or len(turns) < 2):
             # Nothing needed discarding (a single oversized newest turn is kept
             # as-is and handled by the reactive _smart_compact_to_budget path).
             return
