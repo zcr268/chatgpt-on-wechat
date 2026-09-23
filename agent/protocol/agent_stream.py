@@ -804,12 +804,12 @@ class AgentStreamExecutor:
                 if not tool_calls:
                     # 检查是否返回了空响应
                     if not assistant_msg:
-                        logger.warning(f"[Agent] LLM returned empty response after retry (no content and no tool calls)")
-                        logger.info(f"[Agent] This usually happens when LLM thinks the task is complete after tool execution")
+                        logger.warning("[Agent] LLM returned empty response after retry (no content and no tool calls)")
+                        logger.info("[Agent] This usually happens when LLM thinks the task is complete after tool execution")
                         
                         # 如果之前有工具调用，强制要求 LLM 生成文本回复
                         if turn > 1:
-                            logger.info(f"[Agent] Requesting explicit response from LLM...")
+                            logger.info("[Agent] Requesting explicit response from LLM...")
                             
                             # Remember position so we can remove the injected prompt later
                             prompt_insert_idx = len(self.messages)
@@ -840,12 +840,12 @@ class AgentStreamExecutor:
                             # to the tool execution path below (don't break the loop).
                             if tool_calls:
                                 logger.info(
-                                    f"[Agent] LLM returned tool_calls in explicit-response retry, "
-                                    f"continuing to execute tools instead of breaking"
+                                    "[Agent] LLM returned tool_calls in explicit-response retry, "
+                                    "continuing to execute tools instead of breaking"
                                 )
                             elif not assistant_msg:
                                 # Still empty (no text and no tool_calls): use fallback
-                                logger.warning(f"[Agent] Still empty after explicit request")
+                                logger.warning("[Agent] Still empty after explicit request")
                                 final_response = self._empty_response_fallback()
                         else:
                             # First-turn empty reply, fall back directly
@@ -951,7 +951,7 @@ class AgentStreamExecutor:
                         
                         # Check for critical error - abort entire conversation
                         if result.get("status") == "critical_error":
-                            logger.error(f"💥 Fatal error detected, aborting conversation")
+                            logger.error("💥 Fatal error detected, aborting conversation")
                             final_response = result.get('result') or _t("任务执行失败", "Task execution failed")
                             return final_response
                         
@@ -1068,7 +1068,7 @@ class AgentStreamExecutor:
                 self._drain_and_close_steering()
                 
                 # Force model to summarize without tool calls
-                logger.info(f"[Agent] Requesting summary from LLM after reaching max steps...")
+                logger.info("[Agent] Requesting summary from LLM after reaching max steps...")
                 
                 # Remember position before injecting the prompt so we can remove it later
                 prompt_insert_idx = len(self.messages)
@@ -1500,7 +1500,7 @@ class AgentStreamExecutor:
                     status_code = chunk.get("status_code", "N/A")
                     
                     # Log error with all available information
-                    logger.error(f"🔴 Stream API Error:")
+                    logger.error("🔴 Stream API Error:")
                     logger.error(f"   Message: {error_msg}")
                     logger.error(f"   Status Code: {status_code}")
                     logger.error(f"   Error Code: {error_code}")
