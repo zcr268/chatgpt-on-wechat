@@ -109,8 +109,26 @@ def test_registering_a_new_agent_does_not_take_the_update_path(two_agents, monke
             created.append(kwargs["agent_id"])
 
     monkeypatch.setattr("agent.admin.get_agent_admin_service", lambda: _Admin())
-    monkeypatch.setattr(CloudClient, "_reload_agents", staticmethod(lambda service: None))
+    monkeypatch.setattr(CloudClient, "_reload_agents", staticmethod(lambda service, changed_agent_ids=None: None))
 
     client._handle_agent_create("writer", {"id": "writer", "name": "Writer"})
 
     assert created == ["writer"]
+
+
+def test_changing_an_agents_model_drops_its_cached_runtime(two_agents, monkeypatch):
+    client = _client()
+    updated, reloaded = [], []
+
+    class _Admin:
+        def update_agent(self, agent_id, **fields):
+            updated.append((agent_id, fields))
+
+    monkeypatch.setattr("agent.admin.get_agent_admin_service", lambda: _Admin())
+    monkeypatch.setattr(CloudClient, "_reload_agents",
+                        staticmethod(lambda service, changed_agent_ids=None: reloaded.append(changed_agent_ids)))
+
+    client._handle_agent_update("research", {"id": "research", "model": "m2"})
+
+    assert updated == [("research", {"model": "m2"})]
+    assert reloaded == [["research"]]

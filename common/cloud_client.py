@@ -528,7 +528,7 @@ class CloudClient(LinkAIClient):
                 return
             service = get_agent_admin_service()
             service.update_agent(current.id, **fields)
-            self._reload_agents(service)
+            self._reload_agents(service, changed_agent_ids=[current.id])
             logger.info(f"[CloudClient] Agent '{current.id}' updated: {list(fields)}")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to update agent '{agent_id}': {e}", exc_info=True)
@@ -541,7 +541,7 @@ class CloudClient(LinkAIClient):
             from agent.admin import get_agent_admin_service
             service = get_agent_admin_service()
             service.delete_agent(agent_id)
-            self._reload_agents(service)
+            self._reload_agents(service, changed_agent_ids=[agent_id])
             logger.info(f"[CloudClient] Agent '{agent_id}' deleted")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to delete agent '{agent_id}': {e}", exc_info=True)
@@ -602,11 +602,15 @@ class CloudClient(LinkAIClient):
             return False
 
     @staticmethod
-    def _reload_agents(service):
-        """Re-point the running runtime at the updated roster."""
+    def _reload_agents(service, changed_agent_ids=None):
+        """Re-point the running runtime at the updated roster.
+
+        ``changed_agent_ids`` are the agents whose cached runtimes are dropped:
+        a runtime keeps the model it was built with, so an edited agent would
+        otherwise answer on its old model until the process restarts."""
         try:
             from channel.web.api.agents import _reload_agent_runtime
-            _reload_agent_runtime(service)
+            _reload_agent_runtime(service, changed_agent_ids=changed_agent_ids)
         except Exception as e:
             logger.warning(f"[CloudClient] agent runtime reload skipped: {e}")
 
