@@ -17,6 +17,7 @@ import requests
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel, check_prefix
+from channel.channel_instances import is_local_instance_id
 from channel.weixin.weixin_api import (
     WeixinApi, upload_media_to_cdn,
     DEFAULT_BASE_URL, CDN_BASE_URL,
@@ -26,6 +27,7 @@ from common import state_dir
 from common.expired_dict import ExpiredDict
 from common.log import logger
 from common.singleton import singleton
+from common.utils import is_cloud_deployment
 from config import conf, get_weixin_credentials_path
 
 MAX_CONSECUTIVE_FAILURES = 3
@@ -41,6 +43,9 @@ QR_LOGIN_TIMEOUT_S = 480
 QR_MAX_REFRESHES = 10
 # Serializes the "is this login free / take it" pair across instances.
 _ADOPT_LOCK = threading.Lock()
+# token -> instance of every Weixin channel logged in in this process. Guarded
+# by _ADOPT_LOCK.
+_ACTIVE_LOGINS = {}
 
 
 def _media_tmp_path(prefix: str, ext: str = "") -> str:
@@ -148,7 +153,7 @@ class WeixinChannel(ChatChannel):
         # their own threads, and two of them reading "unclaimed" before either
         # has written would put both on the same account.
         instance_id = getattr(self, "instance_id", "") or ""
-        if not token and instance_id:
+        if not token and instance_id and self._may_adopt_default_login(instance_id):
             with _ADOPT_LOCK:
                 legacy = _load_credentials(get_weixin_credentials_path())
                 if legacy.get("token") and self._login_unclaimed(legacy["token"]):
@@ -172,6 +177,7 @@ class WeixinChannel(ChatChannel):
                 return
 
         self.api = WeixinApi(base_url=base_url, token=token, cdn_base_url=cdn_base_url)
+        self._hold_login(token)
         self.login_status = self.LOGIN_STATUS_OK
 
         logger.info(f"[Weixin] 微信通道已启动，凭证保存在 {self._credentials_path}，"
@@ -201,6 +207,7 @@ class WeixinChannel(ChatChannel):
     def stop(self):
         logger.info("[Weixin] stop() called")
         self._stop_event.set()
+        self._hold_login("")
 
     def _relogin(self) -> bool:
         """Re-login after session expiry. Returns True on success."""
@@ -225,6 +232,7 @@ class WeixinChannel(ChatChannel):
             token=result["token"],
             cdn_base_url=self.api.cdn_base_url if self.api else CDN_BASE_URL,
         )
+        self._hold_login(result["token"])
         self.login_status = self.LOGIN_STATUS_OK
         return True
 
@@ -235,15 +243,67 @@ class WeixinChannel(ChatChannel):
     # All mutation + disk IO is serialized via _context_tokens_lock so that
     # concurrent updates can never lose each other's writes.
 
+    @staticmethod
+    def _may_adopt_default_login(instance_id: str) -> bool:
+        """Whether this instance may take over the login in the default file.
+
+        An id minted on this machine is the channel the local scan flow was
+        for. An id provided from outside stands for a separately provisioned
+        bot, which scans for its own account — except on a cloud deployment,
+        where it is the same channel that used to run without an id.
+        """
+        return is_local_instance_id(instance_id, "weixin") or is_cloud_deployment()
+
+    def _login_key(self) -> str:
+        return getattr(self, "instance_id", "") or "weixin"
+
+    def _hold_login(self, token: str) -> None:
+        """Record *token* as this instance's login in this process ("" to release)."""
+        key = self._login_key()
+        with _ADOPT_LOCK:
+            for held, owner in list(_ACTIVE_LOGINS.items()):
+                if owner == key:
+                    del _ACTIVE_LOGINS[held]
+            if token:
+                _ACTIVE_LOGINS[token] = key
+
+    def _configured_logins(self) -> set:
+        """Tokens other Weixin instances carry in their configured credentials.
+
+        A login scanned from the console lives there rather than in the
+        instance's own credentials file, so the files alone miss it.
+        """
+        from agent import team
+        from channel.channel_instances import resolve_channel_instances
+
+        own = self._login_key()
+        tokens = set()
+        for inst in resolve_channel_instances(team.resolve(conf())):
+            if inst.channel_type != "weixin" or inst.instance_id == own:
+                continue
+            token = (inst.credentials or {}).get("weixin_token")
+            if token:
+                tokens.add(token)
+        return tokens
+
     def _login_unclaimed(self, token: str) -> bool:
         """Whether no other instance already runs on *token*.
 
-        An instance claims a login by copying it into its own credentials
-        file, so the files of the other instances are the record of what is
-        taken. Unreadable surroundings count as claimed: sharing one account
-        between two instances costs a silent misroute of every message, while
-        the alternative is a scan the user can repeat.
+        Caller holds _ADOPT_LOCK. A login is taken when another instance runs
+        on it in this process, carries it in its configured credentials, or has
+        copied it into its own credentials file. Unreadable surroundings count
+        as claimed: sharing one account between two instances costs a silent
+        misroute of every message, while the alternative is a scan the user can
+        repeat.
         """
+        owner = _ACTIVE_LOGINS.get(token)
+        if owner and owner != self._login_key():
+            return False
+        try:
+            if token in self._configured_logins():
+                return False
+        except Exception:
+            return False
         base = get_weixin_credentials_path()
         root, ext = os.path.splitext(base)
         try:

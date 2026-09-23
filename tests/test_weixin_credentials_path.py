@@ -64,10 +64,12 @@ class TestAdoptingAnExistingLogin:
             wc, "get_weixin_credentials_path",
             lambda iid="": base if not iid else str(tmp_path / f"creds.{iid}.json"),
         )
+        monkeypatch.setattr(wc, "_ACTIVE_LOGINS", {})
         cls = wc.WeixinChannel.__wrapped__
         ch = cls.__new__(cls)
         ch.instance_id = instance_id
         ch._credentials_path = str(tmp_path / f"creds.{instance_id}.json")
+        ch._configured_logins = lambda: set()
         return ch, base
 
     def _write(self, path, token):
@@ -79,6 +81,53 @@ class TestAdoptingAnExistingLogin:
         self._write(base, "tok-legacy")
 
         assert ch._login_unclaimed("tok-legacy") is True
+
+    def test_an_id_from_outside_adopts_only_on_a_cloud_deployment(self, monkeypatch):
+        """Off the cloud, an id from outside is a separately provisioned bot:
+        taking the local login would move the user's own WeChat onto it."""
+        import channel.weixin.weixin_channel as wc
+
+        cls = wc.WeixinChannel.__wrapped__
+        monkeypatch.setattr(wc, "is_cloud_deployment", lambda: False)
+        assert cls._may_adopt_default_login("d87bc864-d79e-4cb6") is False
+        assert cls._may_adopt_default_login("weixin-0123456789") is True
+
+        monkeypatch.setattr(wc, "is_cloud_deployment", lambda: True)
+        assert cls._may_adopt_default_login("d87bc864-d79e-4cb6") is True
+
+    def test_a_login_held_in_configured_credentials_is_not_adopted(self, tmp_path, monkeypatch):
+        """The console's scan hands the token to the new instance's configured
+        credentials, not to a credentials file of its own."""
+        ch, base = self._channel(tmp_path, "second", monkeypatch)
+        self._write(base, "tok-scanned")
+        ch._configured_logins = lambda: {"tok-scanned"}
+
+        assert ch._login_unclaimed("tok-scanned") is False
+
+    def test_a_login_running_in_this_process_is_not_adopted(self, tmp_path, monkeypatch):
+        import channel.weixin.weixin_channel as wc
+
+        first, base = self._channel(tmp_path, "first", monkeypatch)
+        second, _ = self._channel(tmp_path, "second", monkeypatch)
+        self._write(base, "tok-live")
+        first._hold_login("tok-live")
+
+        assert second._login_unclaimed("tok-live") is False
+        assert first._login_unclaimed("tok-live") is True
+
+        first._hold_login("")
+        assert "tok-live" not in wc._ACTIVE_LOGINS
+        assert second._login_unclaimed("tok-live") is True
+
+    def test_unreadable_configuration_counts_as_claimed(self, tmp_path, monkeypatch):
+        ch, base = self._channel(tmp_path, "second", monkeypatch)
+        self._write(base, "tok-legacy")
+
+        def broken():
+            raise RuntimeError("team.json unreadable")
+
+        ch._configured_logins = broken
+        assert ch._login_unclaimed("tok-legacy") is False
 
     def test_a_login_another_instance_runs_on_is_not_adopted(self, tmp_path, monkeypatch):
         ch, base = self._channel(tmp_path, "second", monkeypatch)
