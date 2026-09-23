@@ -32,6 +32,7 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
         _DelegateView,
         _relay_lock,
         delegated_prompt,
+        delegated_result_text,
     )
 
     request_id = str(payload.get("request_id") or "")
@@ -190,7 +191,7 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
         "chunk_type": CHUNK_RESULT,
         "request_id": request_id,
         "status": "done",
-        "content": reply.content if reply is not None else "",
+        "content": delegated_result_text(reply),
         "agent_id": target.id,
         "agent_name": target.name,
         "duration": round(duration, 3),

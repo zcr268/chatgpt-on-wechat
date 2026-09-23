@@ -122,6 +122,30 @@ def test_delegate_runs_target_with_source_attribution_and_private_relay_session(
     assert "delegated result" in result.display
 
 
+def test_delegate_keeps_the_answer_when_the_teammate_sent_a_file():
+    class FileBridge(FakeBridge):
+        def agent_reply(self, query, context=None, on_event=None):
+            reply = Reply(ReplyType.IMAGE_URL, "https://example.com/chart.png")
+            reply.text_content = "Refund rate doubled to 2.63%."
+            return reply
+
+    result = _tool(bridge=FileBridge()).execute({"agent_id": "research", "task": "Check"})
+
+    content = result.result["content"]
+    assert content.startswith("Refund rate doubled to 2.63%.")
+    assert "![](https://example.com/chart.png)" in content
+
+
+def test_delegate_leaves_an_unpublished_file_as_a_plain_path():
+    class LocalFileBridge(FakeBridge):
+        def agent_reply(self, query, context=None, on_event=None):
+            return Reply(ReplyType.IMAGE_URL, "file:///tmp/chart.png")
+
+    result = _tool(bridge=LocalFileBridge()).execute({"agent_id": "research", "task": "Check"})
+
+    assert result.result["content"] == "file:///tmp/chart.png"
+
+
 def test_delegate_rejects_targets_outside_the_conversation_and_lists_the_real_ones(
     _team_members,
 ):
