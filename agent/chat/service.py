@@ -480,6 +480,10 @@ class ChatService:
                     new_messages
                 )
                 workspace_root = self._owner_workspace(resolved_agent_id, agent)
+            if model_query != query:
+                new_messages = self._restore_verbatim_query(
+                    new_messages, model_query, query
+                )
             self._persist_messages(
                 session_id,
                 list(new_messages),
@@ -687,6 +691,32 @@ class ChatService:
         )
         stripped = re.sub(pattern, "", query, count=1, flags=re.IGNORECASE)
         return stripped if stripped.strip() else query
+
+    @staticmethod
+    def _restore_verbatim_query(messages: list, model_query: str, query: str) -> list:
+        """Put the verbatim query back into the turn's user message.
+
+        The model is asked ``model_query`` (the "@name" already acted on), but
+        the transcript must keep what was typed, or replay loses the address.
+        Copies are returned; the in-memory context keeps what the model saw.
+        """
+        restored = list(messages)
+        for i, msg in enumerate(restored):
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and model_query in content:
+                restored[i] = {**msg, "content": content.replace(model_query, query, 1)}
+                return restored
+            if isinstance(content, list):
+                for j, block in enumerate(content):
+                    text = block.get("text") if isinstance(block, dict) and block.get("type") == "text" else None
+                    if text and model_query in text:
+                        blocks = list(content)
+                        blocks[j] = {**block, "text": text.replace(model_query, query, 1)}
+                        restored[i] = {**msg, "content": blocks}
+                        return restored
+        return restored
 
     @staticmethod
     def _speak_timeout() -> float:

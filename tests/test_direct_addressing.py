@@ -958,6 +958,21 @@ class TestReplayingWorkHandedToATeammate:
         ]
 
 
+def test_transcript_keeps_the_address_the_model_was_spared():
+    from agent.chat.service import ChatService
+
+    sent = {"role": "user", "content": [{"type": "text", "text": "last week's GMV"}]}
+    reply = {"role": "assistant", "content": [{"type": "text", "text": "GMV rose"}]}
+
+    stored = ChatService._restore_verbatim_query(
+        [sent, reply], "last week's GMV", "@analyst last week's GMV"
+    )
+
+    assert stored[0]["content"][0]["text"] == "@analyst last week's GMV"
+    assert stored[1] is reply
+    assert sent["content"][0]["text"] == "last week's GMV"
+
+
 def test_a_pinned_registry_does_not_outlive_its_test(tmp_path, monkeypatch):
     """The classes above pin one, so the registry must follow configuration again.
 
