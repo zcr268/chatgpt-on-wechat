@@ -125,66 +125,80 @@ def test_max_seq_shows_the_reply_as_of_a_stored_point(store):
 
 def _restore(messages, **kwargs):
     from bridge.agent_initializer import AgentInitializer
-    return AgentInitializer._filter_text_only_messages(messages, **kwargs)
+    return AgentInitializer._restored_history(messages, **kwargs)
 
 
 def _text_of(message):
-    return message["content"][0]["text"]
+    content = message["content"]
+    return content if isinstance(content, str) else content[0]["text"]
 
 
 def test_restored_cut_off_turn_keeps_its_steps():
     restored = _restore([
         _user("old"), _tool_use("t0"), _tool_result("t0"), _answer("old answer"),
         _user("q"), _tool_use("t1"), _tool_result("t1"), _tool_use("t2"), _tool_result("t2"),
-    ], mark_unfinished=True)
+    ], cut_off=True)
 
-    assert [m["role"] for m in restored] == [
-        "user", "assistant", "user", "assistant", "user", "assistant", "user", "assistant",
+    assert [m["role"] for m in restored] == ["user", "assistant", "user", "assistant"] * 2 + [
+        "user", "assistant",
     ]
-    assert _text_of(restored[1]) == "old answer"
-    assert restored[3] == _tool_use("t1")
-    assert restored[6] == _tool_result("t2")
+    assert _text_of(restored[3]) == "old answer"
+    assert restored[5] == _tool_use("t1")
+    assert restored[-2] == _tool_result("t2")
     note = _text_of(restored[-1])
     assert note.startswith("_(Interrupted")
     assert note.count("- browser(") == 2
-    assert "build on their results" in note
+    assert "really ran" in note
 
 
 def test_restored_cut_off_turn_drops_a_call_left_without_its_result():
     restored = _restore([
         _user("q"), _tool_use("t1"), _tool_result("t1"), _tool_use("t2"),
-    ], mark_unfinished=True)
+    ], cut_off=True)
 
     assert [m["role"] for m in restored] == ["user", "assistant", "user", "assistant"]
     assert restored[1] == _tool_use("t1")
+    assert _text_of(restored[-1]).count("- browser(") == 1
 
 
 def test_restored_cut_off_turn_with_unpaired_steps_falls_back_to_the_note():
     restored = _restore([
         _user("q"), _tool_use("t1"), _tool_result("other"),
-    ], mark_unfinished=True)
+    ], cut_off=True)
 
     assert [m["role"] for m in restored] == ["user", "assistant"]
     note = _text_of(restored[-1])
     assert note.startswith("_(Interrupted") and "- browser(" in note
-    assert "build on their results" not in note
 
 
-def test_only_the_latest_cut_off_turn_keeps_its_steps():
+def test_every_cut_off_turn_is_closed_with_a_note():
     restored = _restore([
         _user("a"), _tool_use("t1"), _tool_result("t1"),
         _user("b"), _tool_use("t2"), _tool_result("t2"),
-    ], mark_unfinished=True)
+    ], cut_off=True)
 
-    assert [m["role"] for m in restored] == [
-        "user", "assistant", "user", "assistant", "user", "assistant",
-    ]
-    assert _text_of(restored[1]).startswith("checking t1\n\n_(Interrupted")
-    assert restored[3] == _tool_use("t2")
+    assert [m["role"] for m in restored] == ["user", "assistant", "user", "assistant"] * 2
+    assert restored[1] == _tool_use("t1")
+    assert _text_of(restored[3]).startswith("_(Interrupted")
+    assert restored[5] == _tool_use("t2")
+    assert _text_of(restored[7]).startswith("_(Interrupted")
+
+
+def test_an_old_cut_off_turn_flattens_to_its_note():
+    from bridge.agent_initializer import _RESTORE_TOOL_TURNS
+
+    finished = []
+    for i in range(_RESTORE_TOOL_TURNS):
+        finished += [_user(f"q{i}"), _answer(f"a{i}")]
+    restored = _restore([_user("a"), _tool_use("t1"), _tool_result("t1")] + finished, cut_off=True)
+
+    assert restored[0]["role"] == "user"
+    assert _text_of(restored[1]).startswith("_(Interrupted") and "- browser(" in _text_of(restored[1])
+    assert "tool_use" not in str(restored)
 
 
 def test_restored_turn_cut_off_before_any_step_still_gets_a_reply():
-    restored = _restore([_user("q")], mark_unfinished=True)
+    restored = _restore([_user("q")], cut_off=True)
 
     assert [m["role"] for m in restored] == ["user", "assistant"]
     assert _text_of(restored[-1]).startswith("_(Interrupted")
@@ -194,15 +208,15 @@ def test_finished_and_stopped_turns_get_no_note():
     restored = _restore([
         _user("a"), _tool_use("t1"), _tool_result("t1"), _answer("done"),
         _user("b"), _tool_use("t2"), _tool_result("t2"), _answer("_(Cancelled by user)_"),
-    ], mark_unfinished=True)
+    ], cut_off=True)
 
-    assert "Interrupted" not in "".join(_text_of(m) for m in restored)
+    assert "Interrupted" not in str(restored)
 
 
 def test_turn_still_running_is_not_marked_by_default():
     restored = _restore([_user("q"), _tool_use("t1"), _tool_result("t1")])
 
-    assert "Interrupted" not in _text_of(restored[-1])
+    assert "Interrupted" not in str(restored)
 
 
 # ------------------------------------------------------------ stored point

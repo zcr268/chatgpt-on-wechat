@@ -1313,7 +1313,7 @@ class ConversationStore:
         error: str = "",
         extras: Optional[Dict[str, Any]] = None,
     ) -> bool:
-        """        Mark a run finished (or failed). Sets ended_at and, when given,
+        """Mark a run finished (or failed). Sets ended_at and, when given,
         merges ``extras`` into the stored sidecar. Returns True if the run
         existed.
         """
