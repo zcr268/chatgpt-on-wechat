@@ -62,15 +62,11 @@ def test_backup_output_on_another_filesystem(tmp_path, monkeypatch):
     (source_workspace / "MEMORY.md").write_bytes(b"portable\n")
     output_dir = source_workspace / "backups"
     archive = output_dir / "cow-backup.zip"
-    real_replace = os.replace
+    def rename_raising_exdev(source, destination):
+        # Simulate the output directory living on a separate filesystem.
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
 
-    def replace_on_same_filesystem(source, destination):
-        # Treat the output directory as a separate mounted filesystem.
-        if output_dir.resolve() not in Path(source).resolve().parents:
-            raise OSError(errno.EXDEV, "Invalid cross-device link")
-        return real_replace(source, destination)
-
-    monkeypatch.setattr(backup.os, "replace", replace_on_same_filesystem)
+    monkeypatch.setattr(backup.shutil.os, "rename", rename_raising_exdev)
     summary = create_backup_archive(archive, tmp_path / "data", source_workspace)
 
     assert summary["contents"]["workspace_files"] == 1
@@ -86,10 +82,10 @@ def test_backup_replace_failure_preserves_existing_archive(tmp_path, monkeypatch
     archive = output_dir / "cow-backup.zip"
     archive.write_bytes(b"previous backup")
 
-    def fail_replace(source, destination):
+    def fail_move(source, destination):
         raise PermissionError("destination is locked")
 
-    monkeypatch.setattr(backup.os, "replace", fail_replace)
+    monkeypatch.setattr(backup.shutil, "move", fail_move)
     with pytest.raises(PermissionError, match="destination is locked"):
         create_backup_archive(archive, tmp_path / "data", tmp_path / "workspace")
 
