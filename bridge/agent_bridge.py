@@ -1413,9 +1413,9 @@ class AgentBridge:
         as the database. The operation is a no-op when the agent has not been
         instantiated yet for the session.
 
-        Tool blocks are stripped exactly as on session restore. Deleting a
-        message can orphan a tool_use from its tool_result, and replaying that
-        pair would make the provider reject the next request.
+        History is rebuilt exactly as on session restore. Deleting a message
+        can orphan a tool_use from its tool_result; a turn left like that is
+        replayed as text, since the provider would reject the broken pair.
 
         Returns:
             Number of messages now held in the agent's memory. Returns -1 if
@@ -1438,7 +1438,14 @@ class AgentBridge:
                 f"[AgentBridge] Failed to load messages for sync (session={session_id}): {e}"
             )
             return -1
-        remaining = AgentInitializer._filter_text_only_messages(remaining)
+        try:
+            remaining = AgentInitializer._restored_history(remaining)
+        except Exception as e:
+            logger.warning(
+                f"[AgentBridge] Replaying tool calls failed for session={session_id}, "
+                f"syncing text only: {e}"
+            )
+            remaining = AgentInitializer._filter_text_only_messages(remaining)
         with agent.messages_lock:
             agent.messages.clear()
             for msg in remaining:

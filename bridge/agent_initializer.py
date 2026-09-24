@@ -6,6 +6,7 @@ import os
 import asyncio
 import datetime
 import json
+import re
 import threading
 import time
 from typing import Dict, List, Optional
@@ -31,6 +32,18 @@ _memory_sync_inflight: set = set()
 # so the reply only has to show who actually said it; a long report would cost
 # more context than that is worth.
 _DELEGATED_REPLY_MAX_CHARS = 1200
+
+# Restored history keeps the tool calls of its most recent turns. A history of
+# replies with no trace of the work behind them teaches the model to answer
+# without doing the work. Older turns stay text-only, and what the kept calls
+# carry is clipped: they show that and how the work was done, while the files
+# and systems they touched remain the source of truth.
+_RESTORE_TOOL_TURNS = 3
+_RESTORE_TOOL_RESULT_MAX_CHARS = 2000
+_RESTORE_TOOL_ARG_MAX_CHARS = 1000
+# The strictest provider's rule for a tool call id. A call recorded under one
+# model may be replayed to another, so its id is rewritten to fit.
+_UNSAFE_TOOL_ID_CHARS = re.compile(r"[^A-Za-z0-9_-]")
 
 
 class AgentInitializer:
@@ -219,17 +232,11 @@ class AgentInitializer:
         Load persisted conversation messages from SQLite and inject them
         into the agent's in-memory message list.
 
-        Only user text and assistant text are restored. Tool call chains
-        (tool_use / tool_result) are stripped out because:
-        1. They are intermediate process, the value is already in the final
-           assistant text reply.
-        2. They consume massive context tokens (often 80%+ of history).
-        3. Different models have incompatible tool message formats, so
-           restoring tool chains across model switches causes 400 errors.
-        4. Eliminates the entire class of tool_use/tool_result pairing bugs.
-
-        A shared conversation is the exception: it is reread before every turn,
-        so the reader's own turns keep their tool chains (see _shared_history).
+        The most recent turns keep their tool calls, clipped; older turns are
+        reduced to user text and the final assistant text (see
+        _restored_history). A shared conversation is reread before every turn
+        and applies the same rule to the reader's own turns (see
+        _shared_history).
         """
         from config import conf
         if not conf().get("conversation_persistence", True):
@@ -245,24 +252,37 @@ class AgentInitializer:
             )
             max_turns = conf().get("agent_max_context_turns", 20)
             # Restore honours the session's context boundary (cleared history is
-            # never brought back), so we can afford a fairly generous window and
-            # still keep it under the runtime cap. Regular chats restore ~half of
-            # the runtime budget so a dialogue feels continuous after a restart.
+            # never brought back). Regular chats restore about a third of the
+            # runtime budget so a dialogue feels continuous after a restart
+            # without opening on a long run of replayed history. A shared
+            # conversation is reread before every turn, so its window is the
+            # live context each speaker gets and stays at half.
             # Scheduler tasks run on a stable isolated session and can fire many
             # times a day, so they keep a smaller window: enough to see the last
             # few runs for trend / dedup logic while keeping prompt cost bounded.
             if session_id.startswith("scheduler_"):
                 restore_turns = max(1, max_turns // 4)
-            else:
+            elif shared:
                 restore_turns = max(3, max_turns // 2)
+            else:
+                restore_turns = max(3, max_turns // 3)
             saved = store.load_messages(
                 session_id, max_turns=restore_turns, with_authors=shared
             )
             if saved:
-                if shared:
-                    filtered = self._shared_history(saved, reader)
-                else:
+                try:
+                    if shared:
+                        filtered = self._shared_history(saved, reader)
+                    else:
+                        filtered = self._restored_history(saved)
+                except Exception as e:
+                    logger.warning(
+                        f"[AgentInitializer] Replaying tool calls failed for "
+                        f"session={session_id}, restoring text only: {e}"
+                    )
                     filtered = self._filter_text_only_messages(saved)
+                    if shared:
+                        filtered = self._attribute_history(filtered, reader)
                 if filtered:
                     with agent.messages_lock:
                         agent.messages = filtered
@@ -393,41 +413,204 @@ class AgentInitializer:
     def _shared_history(messages: list, reader_agent_id: str) -> list:
         """Rebuild a shared transcript for the Agent about to speak.
 
-        A turn every reply of which the reader wrote keeps its tool calls and
-        results. Flattened to its final text, the reader's own history shows it
-        announcing work with no trace of doing it, and it goes on to announce
-        the next piece of work without doing that either. Every other turn is
-        reduced to text and attributed.
+        The reader's most recent turns (those every reply of which it wrote)
+        keep their tool calls and results, clipped. Flattened to its final
+        text, the reader's own history shows it announcing work with no trace
+        of doing it, and it goes on to announce the next piece of work without
+        doing that either. Every other turn is reduced to text and attributed.
         """
         from agent.protocol.message_utils import identify_complete_turns
 
-        rebuilt: list = []
-        others: list = []
+        turns = identify_complete_turns(messages)
 
-        def flush_others() -> None:
-            if others:
-                rebuilt.extend(AgentInitializer._attribute_history(
-                    AgentInitializer._filter_text_only_messages(others),
-                    reader_agent_id,
-                ))
-                others.clear()
-
-        for turn in identify_complete_turns(messages):
-            turn_messages = turn["messages"]
-            replies = turn_messages[1:]
-            own = bool(reader_agent_id) and bool(replies) and all(
+        def own(turn) -> bool:
+            replies = turn["messages"][1:]
+            return bool(reader_agent_id) and bool(replies) and all(
                 message.get("agent_id") == reader_agent_id for message in replies
             )
-            if not own:
-                others.extend(turn_messages)
-                continue
-            flush_others()
-            rebuilt.extend(
-                {"role": message["role"], "content": message["content"]}
-                for message in turn_messages
+
+        own_indices = [index for index, turn in enumerate(turns) if own(turn)]
+        recent = set(own_indices[-_RESTORE_TOOL_TURNS:])
+        return AgentInitializer._rebuild_turns(
+            turns,
+            recent,
+            lambda flat: AgentInitializer._attribute_history(
+                AgentInitializer._filter_text_only_messages(flat), reader_agent_id
+            ),
+        )
+
+    @staticmethod
+    def _restored_history(messages: list) -> list:
+        """Rebuild a solo conversation's stored history for a fresh runtime.
+
+        The most recent turns keep their tool calls and results, clipped (see
+        _restorable_turn); older turns are reduced to user text and the final
+        assistant text.
+        """
+        from agent.protocol.message_utils import identify_complete_turns
+
+        turns = identify_complete_turns(messages)
+        recent = set(range(max(0, len(turns) - _RESTORE_TOOL_TURNS), len(turns)))
+        return AgentInitializer._rebuild_turns(
+            turns, recent, AgentInitializer._filter_text_only_messages
+        )
+
+    @staticmethod
+    def _rebuild_turns(turns: list, recent: set, flatten) -> list:
+        """Keep the tool calls of the turns in *recent*, flatten the rest.
+
+        A recent turn whose tool calls cannot be replayed intact is flattened
+        like any other. Consecutive flattened turns go through *flatten*
+        together so it sees them in order.
+        """
+        from agent.protocol.message_utils import sanitize_claude_messages
+
+        rebuilt: list = []
+        flat: list = []
+        for index, turn in enumerate(turns):
+            kept = (
+                AgentInitializer._restorable_turn(turn["messages"])
+                if index in recent else None
             )
-        flush_others()
+            if kept is None:
+                flat.extend(turn["messages"])
+                continue
+            if flat:
+                rebuilt.extend(flatten(flat))
+                flat = []
+            rebuilt.extend(kept)
+        if flat:
+            rebuilt.extend(flatten(flat))
+        sanitize_claude_messages(rebuilt)
         return rebuilt
+
+    @staticmethod
+    def _restorable_turn(messages: list) -> Optional[list]:
+        """A stored turn, clipped for replay, or None when it cannot be replayed.
+
+        Only text, tool_use and tool_result blocks are kept. A turn is replayed
+        only when it opens with the user's query, closes on an assistant reply,
+        and every tool call is answered in the very next message — anything
+        else (a run cut off mid-call, a partial write) would be rejected by the
+        provider, so the caller falls back to the turn's text.
+        """
+        kept = []
+        for message in messages:
+            role = message.get("role")
+            if role not in ("user", "assistant"):
+                return None
+            content = message.get("content")
+            if isinstance(content, str):
+                if content.strip():
+                    kept.append({"role": role, "content": content})
+                continue
+            if not isinstance(content, list):
+                return None
+            blocks = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                kind = block.get("type")
+                if kind == "text":
+                    if block.get("text"):
+                        blocks.append({"type": "text", "text": block["text"]})
+                elif kind == "tool_use":
+                    if not block.get("id") or not block.get("name"):
+                        return None
+                    blocks.append({
+                        **block,
+                        "id": _UNSAFE_TOOL_ID_CHARS.sub("_", str(block["id"])),
+                        "input": AgentInitializer._clip_tool_input(block.get("input")),
+                    })
+                elif kind == "tool_result":
+                    if not block.get("tool_use_id"):
+                        return None
+                    blocks.append({
+                        **block,
+                        "tool_use_id": _UNSAFE_TOOL_ID_CHARS.sub("_", str(block["tool_use_id"])),
+                        "content": AgentInitializer._clip_tool_result(block.get("content")),
+                    })
+            if blocks:
+                kept.append({"role": role, "content": blocks})
+
+        if len(kept) < 2 or kept[0]["role"] != "user" or kept[-1]["role"] != "assistant":
+            return None
+
+        def block_ids(message, kind, key):
+            content = message["content"]
+            if not isinstance(content, list):
+                return []
+            return [b[key] for b in content if b.get("type") == kind]
+
+        if block_ids(kept[0], "tool_result", "tool_use_id"):
+            return None
+        for index, message in enumerate(kept):
+            if message["role"] == "user":
+                results = block_ids(message, "tool_result", "tool_use_id")
+                calls = block_ids(kept[index - 1], "tool_use", "id") if index else []
+                if results and set(results) != set(calls):
+                    return None
+                if len(results) != len(set(results)):
+                    return None
+                continue
+            calls = block_ids(message, "tool_use", "id")
+            if not calls:
+                continue
+            if len(calls) != len(set(calls)):
+                return None
+            following = kept[index + 1] if index + 1 < len(kept) else None
+            if following is None or following["role"] != "user":
+                return None
+            if set(block_ids(following, "tool_result", "tool_use_id")) != set(calls):
+                return None
+        return kept
+
+    @staticmethod
+    def _clip_tool_result(content) -> str:
+        """A tool result as plain text, cut to the restore limit."""
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "text":
+                    parts.append(block.get("text", ""))
+                elif block.get("type") in ("image", "image_url"):
+                    parts.append("[image]")
+            text = "\n".join(p for p in parts if p)
+        elif isinstance(content, str):
+            text = content
+        elif content is None:
+            text = ""
+        else:
+            text = json.dumps(content, ensure_ascii=False)
+        if len(text) > _RESTORE_TOOL_RESULT_MAX_CHARS:
+            text = (
+                text[:_RESTORE_TOOL_RESULT_MAX_CHARS]
+                + f"\n\n[Historical output truncated: {len(text)} -> "
+                f"{_RESTORE_TOOL_RESULT_MAX_CHARS} chars]"
+            )
+        return text
+
+    @staticmethod
+    def _clip_tool_input(value, depth: int = 0):
+        """Tool call arguments with every long string cut to the restore limit.
+
+        The structure is left as it was so the call still parses as arguments.
+        """
+        if value is None and depth == 0:
+            return {}
+        if isinstance(value, str):
+            if len(value) > _RESTORE_TOOL_ARG_MAX_CHARS:
+                return value[:_RESTORE_TOOL_ARG_MAX_CHARS] + f"…[{len(value)} chars]"
+            return value
+        if depth >= 8:
+            return value
+        if isinstance(value, dict):
+            return {k: AgentInitializer._clip_tool_input(v, depth + 1) for k, v in value.items()}
+        if isinstance(value, list):
+            return [AgentInitializer._clip_tool_input(v, depth + 1) for v in value]
+        return value
 
     @staticmethod
     def _filter_text_only_messages(messages: list) -> list:
