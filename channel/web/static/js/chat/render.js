@@ -238,12 +238,14 @@ function splitAssistantTurn(msg) {
     return bubbles;
 }
 
-function renderStepsHtml(steps) {
+// With keepContent every text stays a step: a reply that never reached its
+// answer has no text to promote.
+function renderStepsHtml(steps, keepContent) {
     if (!steps || steps.length === 0) return { stepsHtml: '', finalContent: '' };
 
     // Find the index of the last content step — it becomes the main answer, not a step
     let lastContentIdx = -1;
-    for (let i = steps.length - 1; i >= 0; i--) {
+    for (let i = steps.length - 1; i >= 0 && !keepContent; i--) {
         if (steps[i].type === 'content') { lastContentIdx = i; break; }
     }
 
@@ -333,6 +335,20 @@ function _renderSentFileFromToolResult(step) {
         `<i class="fas fa-file-download" style="color:#6b7280;"></i> ${escapeHtml(fileName)}</a></div>`;
 }
 
+// The stop marker a cancelled run stores as its closing message, when it is
+// all that message says.
+function isCancelMarker(text) {
+    return /^\s*_\(Cancelled(?: by user)?\)_\s*$/.test(text || '');
+}
+
+// Status line closing a reply's steps: stopped by the user, cut off before
+// its answer, or still running elsewhere.
+function replyStatusHtml(kind) {
+    const icon = { cancelled: 'fa-circle-stop', interrupted: 'fa-circle-exclamation', running: 'fa-hourglass-half' }[kind];
+    const label = t({ cancelled: 'reply_cancelled', interrupted: 'reply_interrupted', running: 'reply_running' }[kind]);
+    return `<div class="agent-step agent-status-step"><i class="fas ${icon}"></i><span>${escapeHtml(label)}</span></div>`;
+}
+
 // Cosmetic translator for cancel markers persisted in history.
 // History keeps the English canonical form for the LLM; only display is localized.
 function localizeCancelMarker(text) {
@@ -358,8 +374,16 @@ function createBotMessageEl(content, timestamp, requestId, msg, peer) {
 
     let stepsHtml = '';
     let displayContent = localizeCancelMarker(content);
+    // A reply still running, cut off before its answer (a crash), or stopped
+    // by the user: none has an answer, so every text stays a step.
+    const runState = msg && msg.run_state;
+    const status = runState || (isCancelMarker(content) ? 'cancelled' : null);
 
-    if (msg && msg.steps && msg.steps.length > 0) {
+    if (status) {
+        const steps = ((msg && msg.steps) || []).filter(s => !(s.type === 'content' && isCancelMarker(s.content)));
+        stepsHtml = renderStepsHtml(steps, true).stepsHtml + replyStatusHtml(status);
+        displayContent = '';
+    } else if (msg && msg.steps && msg.steps.length > 0) {
         // New format: ordered steps with interleaved content
         const result = renderStepsHtml(msg.steps);
         stepsHtml = result.stepsHtml;
@@ -695,10 +719,22 @@ function loadHistory(page, untilSeq) {
             const ctxStartSeq = data.context_start_seq || 0;
             let dividerInserted = false;
 
+            // A reply this page already streams owns its unfinished turn, so the
+            // stored copy stays out. Otherwise a reply still in flight on the
+            // server (the page was reloaded mid-reply) is picked up once, and
+            // continues in the bubble of its stored steps.
+            const streamedHere = isFirstLoad && !!sessionActiveRequest[runtimeSessionKey(historySessionId)];
+            const active = isFirstLoad && !streamedHere ? data.active_request : null;
+            const resume = active && active.request_id && !resumedRequests.has(active.request_id) ? active : null;
+            let resumeEl = null;
+
             data.messages.forEach(msg => {
                 const hasContent = msg.content && msg.content.trim();
                 const hasToolCalls = msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0;
-                if (!hasContent && !hasToolCalls) return;
+                const hasSteps = msg.role === 'assistant' && msg.steps && msg.steps.length > 0;
+                const runState = msg.role === 'assistant' && msg.run_state;
+                if (!hasContent && !hasToolCalls && !hasSteps && !runState) return;
+                if (runState === 'running' && streamedHere) return;
 
                 // Insert context divider when transitioning from above to below boundary
                 if (ctxStartSeq > 0 && !dividerInserted && msg._seq !== undefined && msg._seq >= ctxStartSeq) {
@@ -737,10 +773,16 @@ function loadHistory(page, untilSeq) {
                 // and regenerate act on.
                 const parts = splitAssistantTurn(msg);
                 parts.forEach((part, i) => {
-                    const el = createBotMessageEl(part.msg.content || '', ts, null, part.msg, part.peer);
-                    if (msg._seq !== undefined && i === parts.length - 1 && !part.peer) {
+                    const isLast = i === parts.length - 1;
+                    // Only the closing bubble of the turn is the unfinished one.
+                    const partMsg = runState && !isLast
+                        ? Object.assign({}, part.msg, { run_state: null })
+                        : part.msg;
+                    const el = createBotMessageEl(partMsg.content || '', ts, null, partMsg, part.peer);
+                    if (msg._seq !== undefined && isLast && !part.peer) {
                         el.dataset.seq = msg._seq;
                     }
+                    if (resume && runState === 'running' && isLast && !part.peer) resumeEl = el;
                     fragment.appendChild(el);
                 });
             });
@@ -763,6 +805,20 @@ function loadHistory(page, untilSeq) {
             // is present in the DOM; do not autoplay delayed attachments.
             if (isFirstLoad) {
                 flushPendingVoiceAttachments(historySessionId, false);
+            }
+
+            // Follow the in-flight reply from where the stored steps end. With
+            // no bubble of its own to write on (nothing stored yet, or a
+            // teammate spoke last) it continues in a fresh one.
+            if (resume) {
+                resumedRequests.add(resume.request_id);
+                setSendBtnCancelMode(resume.request_id);
+                startSSE(
+                    resume.request_id,
+                    resumeEl ? null : addLoadingIndicator(),
+                    new Date(), null, null,
+                    { el: resumeEl, afterSeq: resume.after_seq || 0 }
+                );
             }
 
             // Manage the "load more" sentinel at the very top

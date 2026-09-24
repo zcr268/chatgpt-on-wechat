@@ -38,6 +38,7 @@ function updateEditButtonsState() {
     });
 }
 let streamBuffers = {};   // request_id -> { items: [event...], timestamp } for re-attach replay
+const resumedRequests = new Set();  // in-flight replies picked up after a page load, at most once each
 let isComposing = false;
 let appConfig = { use_agent: false, title: 'CowAgent', subtitle: '', providers: {}, api_bases: {} };
 

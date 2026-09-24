@@ -131,6 +131,25 @@ class ChatService:
         # State shared between the event callback and this method
         state = _StreamState()
 
+        from agent.protocol.step_writer import StepWriter
+
+        # The store is the owner's: a guest speaker writes into the shared
+        # transcript, stamped as author.
+        def write_run_messages(messages: list):
+            workspace_root = agent.workspace_dir
+            if is_team:
+                messages = self.agent_bridge._attribute_to_speaker(messages, speaker_id)
+                messages = self.agent_bridge._strip_speaker_prefix_from_messages(messages)
+                workspace_root = self._owner_workspace(resolved_agent_id, agent)
+            # Only the first chunk carries the run's query.
+            if model_query != query and not writer.started:
+                messages = self._restore_verbatim_query(messages, model_query, query)
+            self._persist_messages(
+                session_id, list(messages), channel_type, workspace_root=workspace_root,
+            )
+
+        writer = StepWriter(write_run_messages)
+
         def flush_file_links():
             """Emit any buffered file links as content, then drop them."""
             if not state.pending_file_links:
@@ -143,13 +162,9 @@ class ChatService:
                 "segment_id": state.segment_id,
             })
 
-        _incremental_persisted = False
-        _persisted_msg_count = 0
-
         def on_event(event: dict):
             """Translate agent events into CHAT protocol chunks."""
             event_type = event.get("type")
-            nonlocal _persisted_msg_count, _incremental_persisted
             data = event.get("data", {})
 
             if event_type == "reasoning_update":
@@ -323,23 +338,9 @@ class ChatService:
                 # Now that the tool results are out, the links belong to the
                 # content that follows them.
                 flush_file_links()
+                writer.step()
 
-                # Persist new messages incrementally so a crash mid-run
-                # leaves recoverable rows in the DB (author-requested:
-                # per-turn write replaces the batch-at-end pattern).
-                try:
-                    with agent.messages_lock:
-                        new_msgs = list(executor.messages[_persisted_msg_count:])
-                    if new_msgs:
-                        ws = agent.workspace_dir
-                        self._persist_messages(
-                            session_id, new_msgs, channel_type, workspace_root=ws,
-                        )
-                        _persisted_msg_count = len(executor.messages)
-                        _incremental_persisted = True
-                except Exception as e:
-                    logger.debug(f"[ChatService] Incremental persist skipped: {e}")
-
+        # Run the agent with our event callback ---------------------------
         logger.info(
             f"[ChatService] Starting agent run: agent={resolved_agent_id}, "
             f"session={session_id}, query={query[:80]}"
@@ -357,7 +358,6 @@ class ChatService:
             original_length = len(agent.messages)
 
         from agent.protocol.agent_stream import AgentStreamExecutor
-
 
         # Register a cancel token so /cancel can abort this in-flight run.
         # API calls can key by request; IM channels remain session scoped.
@@ -405,6 +405,7 @@ class ChatService:
             cancel_event=cancel_event,
             steer_inbox=steer_inbox,
         )
+        writer.bind(executor)
 
         try:
             if cancel_event is not None and cancel_event.is_set():
@@ -415,6 +416,8 @@ class ChatService:
                 return
             executor.run_stream(model_query)
         except Exception:
+            # Keep the steps finished before the failure.
+            writer.step()
             # If executor cleared messages (context overflow), sync back
             if len(executor.messages) == 0:
                 with agent.messages_lock:
@@ -492,30 +495,9 @@ class ChatService:
             agent.messages = list(executor.messages)
 
         # Persist new messages to SQLite so they survive restarts and
-        # can be queried via the HISTORY interface. The store is the owner's:
-        # a guest speaker writes into the shared transcript, stamped as author.
-        if new_messages and not _incremental_persisted:
-            # Incremental per-turn persistence already wrote these rows;
-            # a batch rewrite here would duplicate them.
-            workspace_root = agent.workspace_dir
-            if is_team:
-                new_messages = self.agent_bridge._attribute_to_speaker(
-                    new_messages, speaker_id
-                )
-                new_messages = self.agent_bridge._strip_speaker_prefix_from_messages(
-                    new_messages
-                )
-                workspace_root = self._owner_workspace(resolved_agent_id, agent)
-            if model_query != query:
-                new_messages = self._restore_verbatim_query(
-                    new_messages, model_query, query
-                )
-            self._persist_messages(
-                session_id,
-                list(new_messages),
-                channel_type,
-                workspace_root=workspace_root,
-            )
+        # can be queried via the HISTORY interface. Steps already stored at
+        # turn_end are skipped.
+        writer.finish(new_messages)
 
         # Store executor reference for files_to_send access
         agent.stream_executor = executor
@@ -866,4 +848,3 @@ class _StreamState:
         # it would place content between a tool's start and its result, which no
         # other event does and which leaves clients unable to pair the two.
         self.pending_file_links: list = []
-

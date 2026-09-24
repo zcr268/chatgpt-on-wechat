@@ -32,6 +32,64 @@ _memory_sync_inflight: set = set()
 # more context than that is worth.
 _DELEGATED_REPLY_MAX_CHARS = 1200
 
+# How many of an interrupted turn's tool calls its restored note lists.
+_INTERRUPTED_TOOLS_LISTED = 12
+
+
+def _interruption_note(tool_uses: List[dict], results_kept: bool = False) -> str:
+    """Note closing a restored turn that stopped before its answer."""
+    note = "_(Interrupted: this reply stopped before it finished, and no answer was given.)_"
+    if not tool_uses:
+        return note
+    calls = []
+    for block in tool_uses[-_INTERRUPTED_TOOLS_LISTED:]:
+        args = block.get("input") if isinstance(block.get("input"), dict) else {}
+        shown = ", ".join(
+            f"{key}={str(value)[:80]}" for key, value in list(args.items())[:3]
+            if isinstance(value, (str, int, float, bool))
+        )
+        calls.append(f"- {block.get('name', 'tool')}({shown})")
+    skipped = len(tool_uses) - len(calls)
+    head = f"Tool calls already made ({skipped} earlier ones not listed):" if skipped else "Tool calls already made:"
+    note += "\n" + head + "\n" + "\n".join(calls)
+    if results_kept:
+        note += "\nThese calls really ran; build on their results instead of repeating them."
+    return note
+
+
+def _replayable_chain(chain: List[dict]) -> List[dict]:
+    """An interrupted turn's steps, cut back to calls that got their results.
+
+    Empty when the stored steps don't pair up, so a damaged transcript falls
+    back to the note alone instead of reaching the model half-formed.
+    """
+    kept = []
+    for msg in chain:
+        role = msg.get("role")
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        wanted = ("text", "tool_use") if role == "assistant" else ("tool_result",)
+        blocks = [dict(b) for b in content if isinstance(b, dict) and b.get("type") in wanted]
+        if blocks:
+            kept.append({"role": role, "content": blocks})
+    while kept and kept[-1]["role"] == "assistant":
+        kept.pop()
+    for i, msg in enumerate(kept):
+        if msg["role"] != ("assistant" if i % 2 == 0 else "user"):
+            return []
+        if msg["role"] == "user":
+            continue
+        called = {b.get("id") for b in msg["content"] if b.get("type") == "tool_use"}
+        answer = kept[i + 1] if i + 1 < len(kept) else None
+        answered = (
+            {b.get("tool_use_id") for b in answer["content"]}
+            if answer and answer["role"] == "user" else set()
+        )
+        if not called or called != answered:
+            return []
+    return kept
+
 
 class AgentInitializer:
     """
@@ -262,7 +320,9 @@ class AgentInitializer:
                 if shared:
                     filtered = self._shared_history(saved, reader)
                 else:
-                    filtered = self._filter_text_only_messages(saved)
+                    # Nothing of this session is running while its agent is
+                    # being built, so a turn without an answer was cut off.
+                    filtered = self._filter_text_only_messages(saved, mark_unfinished=True)
                 if filtered:
                     with agent.messages_lock:
                         agent.messages = filtered
@@ -430,7 +490,7 @@ class AgentInitializer:
         return rebuilt
 
     @staticmethod
-    def _filter_text_only_messages(messages: list) -> list:
+    def _filter_text_only_messages(messages: list, mark_unfinished: bool = False) -> list:
         """
         Extract clean user/assistant turn pairs from raw message history.
 
@@ -449,6 +509,11 @@ class AgentInitializer:
         knew by itself — which is what teaches it to answer in a teammate's
         place instead of asking. So the reply is lifted back out as a turn of
         its own, attributed to whoever wrote it.
+
+        With ``mark_unfinished`` a turn that stops short of its answer closes
+        with a note naming the tool calls it made, and the latest such turn
+        keeps its tool chain so the work can be picked up where it stopped.
+        Only for callers that know no turn of the session is still running.
         """
 
         def _extract_text(content) -> str:
@@ -508,14 +573,24 @@ class AgentInitializer:
             if _is_real_user_msg(msg):
                 if current_turn is not None:
                     turns.append(current_turn)
-                current_turn = {"user": msg, "assistants": []}
+                current_turn = {
+                    "user": msg, "assistants": [], "tools": [], "chain": [], "closed": False,
+                }
                 continue
             if current_turn is None:
                 continue
             content = msg.get("content")
             blocks = content if isinstance(content, list) else []
+            current_turn["chain"].append(msg)
+            # A turn is finished once an assistant message calls no tool; one
+            # ending on a call or its result was cut off before its answer.
+            current_turn["closed"] = msg.get("role") == "assistant" and not any(
+                isinstance(b, dict) and b.get("type") == "tool_use" for b in blocks
+            )
             if msg.get("role") == "assistant":
                 for block in blocks:
+                    if isinstance(block, dict) and block.get("type") == "tool_use":
+                        current_turn["tools"].append(block)
                     if (
                         isinstance(block, dict)
                         and block.get("type") == "tool_use"
@@ -544,7 +619,7 @@ class AgentInitializer:
 
         # Build result: one user msg + one assistant msg per turn
         filtered = []
-        for turn in turns:
+        for index, turn in enumerate(turns):
             user_text = _extract_text(turn["user"].get("content"))
             if not user_text:
                 continue
@@ -552,6 +627,31 @@ class AgentInitializer:
                 "role": "user",
                 "content": [{"type": "text", "text": user_text}]
             })
+            if mark_unfinished and not turn["closed"] and index == len(turns) - 1:
+                # The turn a restart cut off keeps its steps: a list of calls
+                # without their results reads as work never done, and the
+                # model redoes or disowns it. The closing note is the turn's
+                # last text, so it survives if trimming reduces it to text.
+                chain = _replayable_chain(turn["chain"])
+                filtered.extend(chain)
+                filtered.append({
+                    "role": "assistant",
+                    "content": [{
+                        "type": "text",
+                        "text": _interruption_note(turn["tools"], results_kept=bool(chain)),
+                    }],
+                })
+                continue
+            if mark_unfinished and not turn["closed"]:
+                # Its tool chain is dropped like any other, so say what was
+                # already done; otherwise the model takes a half-done task for
+                # one it never started, and redoes or disowns it.
+                note = _interruption_note(turn["tools"])
+                last = turn["assistants"][-1] if turn["assistants"] else None
+                if last and not last[2]:
+                    turn["assistants"][-1] = (f"{last[0]}\n\n{note}", last[1], False)
+                else:
+                    turn["assistants"].append((note, "", False))
             if not turn["assistants"]:
                 continue
             # The speaker's intermediate thoughts are still dropped — only its

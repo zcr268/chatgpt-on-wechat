@@ -957,12 +957,33 @@ class HistoryHandler:
                 _get_workspace_root(agent_id=agent_id)
             )
             until_seq = params.until_seq.strip()
+            page = int(params.page)
+            # A reply still streaming is shown as of its last stored point and
+            # followed live from there, so nothing appears twice or goes missing.
+            live = None
+            if page == 1 and not until_seq:
+                try:
+                    live = WebChannel().resumable_stream(session_id, agent_id)
+                except Exception as e:
+                    logger.debug(f"[WebChannel] resumable stream lookup skipped: {e}")
             result = store.load_history_page(
                 session_id=session_id,
-                page=int(params.page),
+                page=page,
                 page_size=int(params.page_size),
                 until_seq=int(until_seq) if until_seq.lstrip('-').isdigit() else None,
+                max_seq=live["stored_seq"] if live else None,
             )
+            if live:
+                messages = result.get("messages") or []
+                last = messages[-1] if messages else {}
+                running = last.get("role") == "assistant" and last.get("run_state") == "running"
+                # Before the run starts there is nothing stored to line up
+                # with; once it has, only its own unfinished turn is followed.
+                if running or live["stored_seq"] is None:
+                    result["active_request"] = {
+                        "request_id": live["request_id"],
+                        "after_seq": live["after_seq"],
+                    }
             # Same workspace-relative media rewrite the live SSE path applies,
             # so images/videos survive a page reload for non-default agents.
             history_root = None

@@ -732,7 +732,7 @@ class Agent:
 
     def run_stream(self, user_message: str, on_event=None, clear_history: bool = False,
                    skill_filter=None, cancel_event=None, steer_inbox=None,
-                   allow_empty_response: bool = False) -> str:
+                   allow_empty_response: bool = False, on_executor=None) -> str:
         """
         Execute single agent task with streaming (based on tool-call)
 
@@ -760,6 +760,8 @@ class Agent:
             allow_empty_response: If True, an empty answer is returned as-is
                 instead of a fallback message. For runs nobody is waiting on
                 (scheduled tasks), where sending nothing is a valid outcome.
+            on_executor: Optional callback(executor), called once before the
+                run starts, for callers that follow its messages as it goes.
 
         Returns:
             Final response text
@@ -808,6 +810,8 @@ class Agent:
             steer_inbox=steer_inbox,
             allow_empty_response=allow_empty_response,
         )
+        if on_executor is not None:
+            on_executor(executor)
 
         # Execute
         try:
