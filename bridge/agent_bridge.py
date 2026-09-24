@@ -432,6 +432,11 @@ class AgentLLMModel(LLMModel):
                 session_id = getattr(self, 'session_id', None)
                 if session_id:
                     kwargs['session_id'] = session_id
+                # Only bots that declare it get the agent id: others may pass
+                # unknown kwargs straight through to their provider.
+                agent_id = getattr(self, 'agent_id', None)
+                if agent_id and getattr(self.bot, 'accepts_agent_id', False):
+                    kwargs['agent_id'] = agent_id
 
                 # Thinking mode is a global toggle independent of the channel.
                 # IM channels (WeChat/WeCom/DingTalk/Feishu) won't render the
@@ -499,6 +504,11 @@ class AgentLLMModel(LLMModel):
                 session_id = getattr(self, 'session_id', None)
                 if session_id:
                     kwargs['session_id'] = session_id
+                # Only bots that declare it get the agent id: others may pass
+                # unknown kwargs straight through to their provider.
+                agent_id = getattr(self, 'agent_id', None)
+                if agent_id and getattr(self.bot, 'accepts_agent_id', False):
+                    kwargs['agent_id'] = agent_id
 
                 # Thinking mode is a global toggle independent of the channel.
                 # IM channels (WeChat/WeCom/DingTalk/Feishu) won't render the
@@ -708,6 +718,22 @@ class AgentBridge:
         """
         if not session_id or not context:
             return
+        # A roster may name teammates that live in another process. Learn how to
+        # reach them before resolving the roster below, so a member reached
+        # through the transport is kept rather than dropped as unknown. Empty or
+        # no transport (a stand-alone install) makes this a no-op.
+        peers = context.get("peers")
+        if peers is None:
+            peers = context.kwargs.get("peers")
+        if peers:
+            try:
+                from agent.multiagent import get_transport
+
+                transport = get_transport()
+                if transport is not None:
+                    transport.register_peers(peers)
+            except Exception as e:
+                logger.debug(f"[AgentBridge] register_peers failed: {e}")
         # The channel path carries the roster under ``members`` and is
         # authoritative (it mirrors the instance's live team.json roster). A
         # delegated turn instead carries ``delegation_members`` and is seed-once.
@@ -742,6 +768,7 @@ class AgentBridge:
                         f"[AgentBridge] Cleared stale team roster from session "
                         f"'{session_id}' owned by {host_agent_id} (instance is single-Agent)"
                     )
+                self._retire_session_runtimes(session_id)
                 return
 
             # Delegation path: seed once, never clobber an existing roster.
@@ -754,8 +781,31 @@ class AgentBridge:
                     f"[AgentBridge] Seeded team roster {cleaned} onto session "
                     f"'{session_id}' owned by {host_agent_id}"
                 )
+                self._retire_session_runtimes(session_id)
         except Exception as e:
             logger.debug(f"[AgentBridge] _seed_team_members failed: {e}")
+
+    def _retire_session_runtimes(self, session_id: str) -> None:
+        """Drop the runtimes of *session_id* so the next turn rebuilds them.
+
+        A runtime fixes its tool list when it is built, and delegation is only
+        offered to a conversation that has teammates. A roster that changes
+        while the conversation is already live therefore has to retire what was
+        built under the old one: otherwise the team gains a member and the tool
+        to reach them only appears after a restart. Retiring costs a rebuild on
+        the next turn; the transcript is reloaded from the store either way.
+        """
+        with self._agents_lock:
+            retired = [key for key in self._agent_instances if key[1] == session_id]
+            for key in retired:
+                self._agent_instances.pop(key, None)
+            if retired:
+                self.agents.pop(session_id, None)
+        if retired:
+            logger.info(
+                f"[AgentBridge] Retired {len(retired)} runtime(s) of session "
+                f"'{session_id}' after its roster changed"
+            )
 
     def _clean_team_members(self, members, host_agent_id: str) -> list:
         """Normalize a roster: drop the owner, blanks, dupes and unknown/disabled
@@ -812,6 +862,145 @@ class AgentBridge:
             f"answering in {host_agent_id}'s conversation"
         )
         return profile.id
+
+    def _peer_speaker(self, named: str, host_agent_id: str):
+        """The teammate a turn names when it is hosted in another process.
+
+        None for an id that is empty, the owner's, a local Agent's, or that no
+        transport knows — every one of which the ordinary path already handles.
+        """
+        named = str(named or "").strip()
+        if not named or named == host_agent_id:
+            return None
+        try:
+            self.agent_registry.get_addressed(named, require_enabled=False)
+            return None  # local: answered here, as always
+        except Exception:
+            pass
+        try:
+            from agent.multiagent import get_transport, peer as peer_of
+
+            if get_transport() is None:
+                return None
+            return peer_of(named)
+        except Exception:
+            return None
+
+    def _speak_on_peer(self, query: str, session_id: str, host_agent_id: str, peer,
+                       channel_type: str = "") -> Reply:
+        """Let a teammate elsewhere answer this turn, as itself.
+
+        The conversation stays the owner's — same session, same transcript — and
+        only the voice changes, which is what addressing someone by name asks
+        for. The teammate is given the conversation so far so it answers in
+        context rather than cold.
+        """
+        from agent.multiagent import MODE_SPEAK, InvokeRequest, PeerAgent, get_transport, resolve_teammate
+
+        owner = self.agent_registry.get(host_agent_id, require_enabled=False)
+
+        members = [owner.id]
+        for member_id in self._session_members(session_id, host_agent_id):
+            if member_id not in (owner.id, peer.id) and member_id not in members:
+                members.append(member_id)
+        peers = []
+        for member_id in members:
+            found = resolve_teammate(member_id)
+            profile = PeerAgent.from_any(found) if found else None
+            if profile is not None:
+                peers.append(profile)
+
+        request = InvokeRequest(
+            request_id=uuid.uuid4().hex,
+            target_id=peer.id,
+            task=self._strip_peer_address(query, peer),
+            source_id=owner.id,
+            source_name=owner.name,
+            root_session_id=session_id,
+            trace=(owner.id,),
+            depth=0,
+            members=tuple(members),
+            peers=tuple(peers),
+            timeout_seconds=self._delegation_timeout(),
+            mode=MODE_SPEAK,
+            history=tuple(self._shared_history(session_id, owner.id)),
+        )
+        logger.info(
+            f"[AgentBridge] Turn addressed to peer {peer.id}; "
+            f"answering in {owner.id}'s conversation, session={session_id}"
+        )
+        result = get_transport().invoke(request)
+        if not result.ok:
+            return Reply(ReplyType.ERROR, f"{peer.name} could not answer: {result.error}")
+
+        content = result.content or ""
+        # The turn happened in this conversation, so it belongs in its record;
+        # nothing local ran to write it down.
+        turn = [
+            {"role": "user", "content": [{"type": "text", "text": query}]},
+            {"role": "assistant", "content": [{"type": "text", "text": content}]},
+        ]
+        self._persist_messages(
+            session_id, self._attribute_to_speaker(turn, peer.id), channel_type, owner.id
+        )
+        return Reply(ReplyType.TEXT, content)
+
+    @staticmethod
+    def _session_members(session_id: str, host_agent_id: str) -> list:
+        """Teammate ids recorded on the session, as stored."""
+        if not session_id:
+            return []
+        try:
+            from agent.workspace import session_prefs
+
+            return list(session_prefs.get_prefs(session_id, host_agent_id).get("members") or [])
+        except Exception:
+            return []
+
+    @staticmethod
+    def _strip_peer_address(query: str, peer) -> str:
+        """Drop the leading "@name" aimed at *peer*; see ``_strip_address``."""
+        if not query:
+            return query
+        labels = [label for label in (peer.name, peer.id) if label]
+        pattern = (
+            r"^\s*@(?:"
+            + "|".join(re.escape(label) for label in sorted(labels, key=len, reverse=True))
+            + r")[\s,，:：、]*"
+        )
+        stripped = re.sub(pattern, "", query, count=1, flags=re.IGNORECASE)
+        return stripped if stripped.strip() else query
+
+    @staticmethod
+    def _delegation_timeout() -> float:
+        try:
+            return float((conf().get("agent_delegation") or {}).get("timeout_seconds") or 600)
+        except Exception:
+            return 600.0
+
+    def _shared_history(self, session_id: str, owner_agent_id: str) -> list:
+        """Text-only history with authors, oldest first."""
+        try:
+            if not conf().get("conversation_persistence", True):
+                return []
+            max_turns = conf().get("agent_max_context_turns", 20)
+            saved = self.get_conversation_store(owner_agent_id).load_messages(
+                session_id, max_turns=max(3, max_turns // 2), with_authors=True
+            )
+        except Exception as e:
+            logger.warning(f"[AgentBridge] shared history unavailable for {session_id}: {e}")
+            return []
+        history = []
+        for message in AgentInitializer._filter_text_only_messages(saved or []):
+            blocks = message.get("content") or []
+            text = blocks[0].get("text", "") if blocks and isinstance(blocks[0], dict) else ""
+            if not text:
+                continue
+            entry = {"role": message["role"], "text": text}
+            if message["role"] == "assistant":
+                entry["agent_id"] = message.get("agent_id") or owner_agent_id
+            history.append(entry)
+        return history
 
     def _strip_address(self, query: str, speaker_agent_id: str) -> str:
         """Drop the leading "@name" now that it has been acted on.
@@ -1016,6 +1205,14 @@ class AgentBridge:
         """Keep legacy token keys for the default agent, namespace the rest."""
         return token if agent_id == default_agent_id else f"{agent_id}::{token}"
 
+    def _has_runtime(self, agent_id: str, session_id: str) -> bool:
+        """Whether ``get_agent`` would return a cached runtime rather than build one."""
+        if not session_id:
+            return False
+        with self._agents_lock:
+            key = self._runtime_key(self._resolve_agent_id(agent_id), session_id)
+            return key in self._agent_instances
+
     def get_agent(
         self,
         session_id: str = None,
@@ -1084,9 +1281,9 @@ class AgentBridge:
         """Reload the host's transcript so every teammate sees the same history.
 
         Solo conversations keep their live in-memory list (including tool
-        chains). A team conversation is reread from the host store, with
-        colleagues' replies replayed as ``Name：`` user turns so ``assistant``
-        stays this speaker's own voice.
+        chains). A team conversation is reread from the host store: this
+        speaker's own turns keep their tool chains, and colleagues' replies are
+        replayed as ``Name：`` user turns so ``assistant`` stays its own voice.
         """
         if not session_id or not AgentInitializer._is_shared_conversation(
             session_id, host_agent_id
@@ -1303,6 +1500,17 @@ class AgentBridge:
             # directly. The conversation still belongs to `resolved_agent_id`,
             # so the transcript, the run and the queue all stay in one place —
             # only the voice answering this turn changes.
+            #
+            # A teammate on the roster may be hosted in another process; it
+            # answers over the transport instead of here, and the turn is
+            # recorded in this conversation either way.
+            addressed = (context.get("speaker_agent_id") if context else "") or ""
+            remote_speaker = self._peer_speaker(addressed, resolved_agent_id)
+            if remote_speaker is not None:
+                return self._speak_on_peer(
+                    query, session_id, resolved_agent_id, remote_speaker,
+                    channel_type=(context.get("channel_type") or "") if context else "",
+                )
             speaker_agent_id = self._resolve_speaker(resolved_agent_id, context)
             # With multiple Agents (and especially several bound channel
             # instances) it isn't obvious from the logs which Agent a message
@@ -1364,6 +1572,7 @@ class AgentBridge:
                 )
 
             # Get agent for this session (will auto-initialize if needed)
+            cached = self._has_runtime(speaker_agent_id, session_id)
             agent = self.get_agent(
                 session_id=session_id,
                 agent_id=speaker_agent_id,
@@ -1376,8 +1585,10 @@ class AgentBridge:
             # in-memory list and only restores it on first init, so a teammate
             # that already joined would miss later turns spoken by someone else
             # (and the host would miss guest replies). Reload the shared
-            # transcript with author labels before this turn is appended.
-            self._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            # transcript with author labels before this turn is appended; a
+            # runtime built for this turn has only just restored it.
+            if cached:
+                self._sync_shared_transcript(agent, session_id, resolved_agent_id)
             
             # Create event handler for logging and channel communication
             event_handler = AgentEventHandler(context=context, original_callback=on_event)

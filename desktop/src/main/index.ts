@@ -798,7 +798,11 @@ app.whenReady().then(async () => {
   // Re-apply a previously set icon/title before the page loads.
   applyCachedAppIcon()
   // Undo any damage the last update did to this app's shortcuts.
-  repairWindowsShortcuts()
+  try {
+    repairWindowsShortcuts()
+  } catch (e) {
+    console.warn('[app-icon] shortcut repair failed:', (e as Error).message)
+  }
   await startBackend()
 
   // Wire auto-update: a first silent check a few seconds after launch (so it

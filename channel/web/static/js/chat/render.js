@@ -183,6 +183,61 @@ function renderThinkingHtml(text) {
 </div>`;
 }
 
+/** The teammate's reply carried by an `agent_delegate` step, or null. */
+function handoffPayload(step) {
+    if (!step || step.type !== 'tool' || step.name !== 'agent_delegate') return null;
+    let payload;
+    try {
+        payload = JSON.parse(step.result || '{}');
+    } catch (e) {
+        return null;
+    }
+    return (payload && payload.content) ? payload : null;
+}
+
+/**
+ * The bubbles one persisted assistant turn was shown as while it streamed.
+ *
+ * A hand-off is stored as an `agent_delegate` step inside the delegating
+ * Agent's turn, but it was shown as the teammate answering in a bubble of its
+ * own. Replaying it as a card would tell a different story from the one the
+ * user watched, so split the turn back apart: what the Agent did up to the
+ * hand-off, then the teammate's reply, then whatever the Agent said next.
+ * A turn without a hand-off comes back as one bubble, exactly as before.
+ */
+function splitAssistantTurn(msg) {
+    const steps = (msg && msg.steps) || [];
+    if (!steps.some(handoffPayload)) return [{ msg: msg, peer: null }];
+
+    const bubbles = [];
+    let pending = [];
+    for (let i = 0; i < steps.length; i++) {
+        pending.push(steps[i]);
+        const payload = handoffPayload(steps[i]);
+        if (!payload) continue;
+        // Everything the Agent did up to and including asking for help. No
+        // answer text and no seq: those belong to the turn's last bubble.
+        bubbles.push({
+            msg: Object.assign({}, msg, { steps: pending, content: '', artifacts: null, extras: null }),
+            peer: null,
+        });
+        bubbles.push({
+            msg: { content: payload.content || '', steps: [], created_at: msg.created_at },
+            peer: {
+                id: payload.agent_id || '',
+                name: payload.agent_name || payload.agent_id || '',
+            },
+        });
+        pending = [];
+    }
+    // The tail carries the answer, the artifacts and the seq — drop it only
+    // when the hand-off was the last thing that happened and it is empty.
+    if (pending.length || (msg.content || '').trim()) {
+        bubbles.push({ msg: Object.assign({}, msg, { steps: pending }), peer: null });
+    }
+    return bubbles;
+}
+
 function renderStepsHtml(steps) {
     if (!steps || steps.length === 0) return { stepsHtml: '', finalContent: '' };
 
@@ -208,9 +263,16 @@ function renderStepsHtml(steps) {
             const argsStr = formatToolArgs(step.arguments || {});
             const resultStr = step.result ? escapeHtml(String(step.result)) : '';
             const isErr = step.is_error === true;
+            // A hand-off is headed by who took the work, since its answer is
+            // replayed as that teammate's own bubble just below. The card still
+            // folds open onto the task it was handed, which lives nowhere else.
+            const handoff = isErr ? null : handoffPayload(step);
             const iconClass = isErr
                 ? 'fas fa-times text-red-400 flex-shrink-0 tool-icon'
-                : 'fas fa-check text-primary-400 flex-shrink-0 tool-icon';
+                : `fas ${handoff ? 'fa-share' : 'fa-check'} text-primary-400 flex-shrink-0 tool-icon`;
+            const toolLabel = handoff
+                ? t('handoff_to').replace('{name}', handoff.agent_name || handoff.agent_id || '')
+                : (step.name || '');
             // Same rule as the live stream: a tool that wrote its outcome for
             // a person shows that, not the form the model was handed.
             const outputHtml = step.display
@@ -219,10 +281,10 @@ function renderStepsHtml(steps) {
                     ? `<pre class="tool-detail-content${isErr ? ' tool-error-text' : ''}">${resultStr}</pre>`
                     : '');
             html += `
-<div class="agent-step agent-tool-step${isErr ? ' tool-failed' : ''}">
+<div class="agent-step agent-tool-step${isErr ? ' tool-failed' : ''}${handoff ? ' agent-handoff-step' : ''}">
     <div class="tool-header" onclick="this.parentElement.classList.toggle('expanded')">
         <i class="${iconClass}"></i>
-        <span class="tool-name">${escapeHtml(step.name || '')}</span>
+        <span class="tool-name">${escapeHtml(toolLabel)}</span>
         <i class="fas fa-chevron-right tool-chevron"></i>
     </div>
     <div class="tool-detail">
@@ -288,10 +350,11 @@ function evolutionContentKey(text) {
     return (text || '').replace(/\s+/g, ' ').trim();
 }
 
-function createBotMessageEl(content, timestamp, requestId, msg) {
+function createBotMessageEl(content, timestamp, requestId, msg, peer) {
     const el = document.createElement('div');
     el.className = 'flex gap-3 px-4 sm:px-6 py-3 bot-message-group';
     if (requestId) el.dataset.requestId = requestId;
+    if (peer) el.dataset.peerBubble = '1';
 
     let stepsHtml = '';
     let displayContent = localizeCancelMarker(content);
@@ -335,12 +398,16 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
     // product logo by default. A shared conversation also labels the bubble,
     // since consecutive bubbles can come from different Agents; a solo chat
     // stays unlabelled but still reflects that Agent's own avatar.
-    const speaker = botSpeakerAgent(msg, requestId) || findAgent(activeAgentId);
+    // A teammate's bubble names itself: the label is what makes it read as
+    // someone else answering rather than the Agent changing voice mid-reply.
+    const speaker = peer
+        ? (findAgent(peer.id) || peer)
+        : (botSpeakerAgent(msg, requestId) || findAgent(activeAgentId));
     // Remember who spoke, so a later avatar change can repaint this exact face
     // without re-rendering the whole bubble.
     if (speaker && speaker.id) el.dataset.speakerAgent = speaker.id;
     const faceHtml = `<span class="bot-face">${agentAvatarHTML(speaker, 32)}</span>`;
-    const speakerName = (sharedConversation() && speaker)
+    const speakerName = ((peer || sharedConversation()) && speaker)
         ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
         : '';
 
@@ -363,9 +430,9 @@ function createBotMessageEl(content, timestamp, requestId, msg) {
                 <button class="speak-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 transition-colors cursor-pointer" title="${t('speak_msg')}" style="display:none;">
                     <i class="fas fa-volume-up"></i>
                 </button>
-                <button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}">
+                ${peer ? '' : `<button class="regenerate-msg-btn text-xs text-slate-300 dark:text-slate-600 hover:text-primary-400 dark:hover:text-primary-400 transition-colors cursor-pointer" title="${t('regenerate_response')}">
                     <i class="fas fa-rotate-right"></i>
-                </button>
+                </button>`}
             </div>
         </div>
     `;
@@ -585,8 +652,10 @@ function addBotMessage(content, timestamp, requestId) {
 
 // Load conversation history from the server (page 1 = most recent messages).
 // Subsequent pages prepend older messages when the user scrolls to the top.
-function loadHistory(page) {
-    if (historyLoading) return;
+// With untilSeq, every page from `page` back to the one holding that message
+// arrives in a single request (the message navigator's long jumps).
+function loadHistory(page, untilSeq) {
+    if (historyLoading) return Promise.resolve();
     historyLoading = true;
     const historySessionId = sessionId;
 
@@ -597,7 +666,8 @@ function loadHistory(page) {
     // before rendering so a reload looks exactly like the live conversation.
     const ready = _sessCfg ? Promise.resolve() : refreshSessionSettings().catch(() => {});
 
-    ready.then(() => fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20`)
+    const until = untilSeq != null ? `&until_seq=${encodeURIComponent(untilSeq)}` : '';
+    return ready.then(() => fetch(`/api/history?session_id=${encodeURIComponent(historySessionId)}&page=${page}&page_size=20${until}`)
         .then(r => r.json())
         .then(data => {
             // A response from a session we have since left must never render
@@ -606,6 +676,7 @@ function loadHistory(page) {
             if (data.status !== 'success' || data.messages.length === 0) return;
 
             const prevScrollHeight = messagesDiv.scrollHeight;
+            const prevScrollTop = messagesDiv.scrollTop;
             const isFirstLoad = page === 1;
 
             // On first load, remove the welcome screen if history exists
@@ -654,14 +725,24 @@ function loadHistory(page) {
                 }
 
                 const ts = new Date(msg.created_at * 1000);
-                const el = msg.role === 'user'
-                    ? createUserMessageEl(msg.content, ts)
-                    : createBotMessageEl(msg.content || '', ts, null, msg);
-                // Store seq for delete functionality
-                if (msg._seq !== undefined) {
-                    el.dataset.seq = msg._seq;
+                if (msg.role === 'user') {
+                    const el = createUserMessageEl(msg.content, ts);
+                    if (msg._seq !== undefined) el.dataset.seq = msg._seq;
+                    fragment.appendChild(el);
+                    return;
                 }
-                fragment.appendChild(el);
+                // One stored turn can be several bubbles: a hand-off showed the
+                // teammate answering in its own. The seq identifies the stored
+                // message, so it goes on the last bubble — the one edit, delete
+                // and regenerate act on.
+                const parts = splitAssistantTurn(msg);
+                parts.forEach((part, i) => {
+                    const el = createBotMessageEl(part.msg.content || '', ts, null, part.msg, part.peer);
+                    if (msg._seq !== undefined && i === parts.length - 1 && !part.peer) {
+                        el.dataset.seq = msg._seq;
+                    }
+                    fragment.appendChild(el);
+                });
             });
 
             // If context was cleared but no new messages exist yet, append divider at the end
@@ -699,7 +780,13 @@ function loadHistory(page) {
             }
 
             historyHasMore = data.has_more;
-            historyPage = page;
+            historyPage = data.page || page;
+
+            // Rebuild the navigation rail from the full user-message index on
+            // the first load of a session (later pages don't change the index).
+            if (isFirstLoad && typeof refreshTimeline === 'function') {
+                refreshTimeline();
+            }
 
             if (isFirstLoad) {
                 // Scroll to the very bottom after the DOM settles. A single
@@ -709,8 +796,10 @@ function loadHistory(page) {
                 requestAnimationFrame(() => scrollChatToBottom(true));
                 [120, 350, 700].forEach(d => setTimeout(() => scrollChatToBottom(true), d));
             } else {
-                // Restore scroll position so loading older messages doesn't jump the view
-                messagesDiv.scrollTop = messagesDiv.scrollHeight - prevScrollHeight;
+                // Restore scroll position so loading older messages doesn't jump the
+                // view. Offset from where the reader was, not from the top: a page
+                // can also be pulled in from mid-list (the message navigator).
+                messagesDiv.scrollTop = prevScrollTop + (messagesDiv.scrollHeight - prevScrollHeight);
             }
         })
         .catch(() => {})

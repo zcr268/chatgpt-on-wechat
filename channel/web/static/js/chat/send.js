@@ -225,6 +225,35 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let cancelled = false;
     let lastSeq = 0;
 
+    // Who the bubble currently being written belongs to. A delegation hands the
+    // floor to a teammate partway through the turn: the teammate's reply gets
+    // its own bubble, and when it ends the floor returns to whoever held it
+    // before. Nesting therefore reads as a flat run of turns, in the order they
+    // happened, rather than turns buried inside each other.
+    const speakerStack = [];
+    const peerSpeaker = () => (speakerStack.length ? speakerStack[speakerStack.length - 1] : null);
+
+    // Seal the current bubble so whatever comes next starts a new one. In-flight
+    // tools are deliberately left alone: the delegating call is still running
+    // while its teammate speaks, and its card should keep spinning.
+    function closeBubble() {
+        if (currentReasoningEl) {
+            finalizeThinking(currentReasoningEl, reasoningStartTime, reasoningText);
+            currentReasoningEl = null;
+            reasoningText = '';
+        }
+        if (botEl && contentEl) {
+            if (accumulatedText.trim()) contentEl.innerHTML = renderMarkdown(accumulatedText);
+            contentEl.classList.remove('sse-streaming');
+            applyHighlighting(botEl);
+        }
+        accumulatedText = '';
+        botEl = null;
+        stepsEl = null;
+        contentEl = null;
+        mediaEl = null;
+    }
+
     // A stream can end while tools are still marked in-flight (cancel, dropped
     // connection). Settle them so nothing spins forever.
     function settlePendingTools() {
@@ -274,11 +303,17 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
         // The streaming face is whoever is answering this request: the addressed
         // teammate if one was named, else the conversation's own Agent. Wrapped
         // in .bot-face so a later avatar change repaints it like any bubble.
-        const speaker = liveSpeakerAgent(requestId);
+        const peer = peerSpeaker();
+        const speaker = peer || liveSpeakerAgent(requestId);
         if (speaker && speaker.id) botEl.dataset.speakerAgent = speaker.id;
+        // Marks the bubble as belonging to a teammate rather than to the Agent
+        // this request was addressed to, so lookups for "the reply" skip it.
+        if (peer) botEl.dataset.peerBubble = '1';
         // In a group the bubble is labelled with its author while it streams,
         // exactly as the replayed history shows it — a solo chat stays unlabelled.
-        const speakerName = (sharedConversation() && speaker)
+        // A teammate's bubble is always labelled: the label is what makes it read
+        // as someone else answering instead of the Agent changing voice mid-reply.
+        const speakerName = ((peer || sharedConversation()) && speaker)
             ? `<div class="bot-speaker">${escapeHtml(speaker.name || speaker.id)}</div>`
             : '';
         botEl.innerHTML = `
@@ -403,6 +438,23 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     scrollChatToBottom();
                 }
 
+            } else if (item.type === 'peer_start') {
+                // A teammate takes the floor. Everything until the matching
+                // peer_end is its reply, and it renders through the very same
+                // branches below — it just lands in a bubble wearing its face.
+                closeBubble();
+                speakerStack.push(
+                    findAgent(item.agent_id)
+                    || { id: item.agent_id || '', name: item.agent_name || item.agent_id || '' }
+                );
+                // The card that spawned this turn now only needs to say who was
+                // handed the work; the answer itself is the bubble.
+                markHandoffCard(toolElements.get(item.card_id), item);
+
+            } else if (item.type === 'peer_end') {
+                closeBubble();
+                speakerStack.pop();
+
             } else if (item.type === 'tool_retrieval') {
                 ensureBotEl();
                 const fallback = item.mode === 'fallback';
@@ -507,10 +559,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 const toolEl = toolElements.get(item.tool_call_id);
                 if (toolEl) {
                     const isError = item.status !== 'success';
+                    // A hand-off keeps the icon that says what it was, rather
+                    // than the generic tick: the teammate's bubble below is the
+                    // outcome, and this row is the fact that work was passed on.
+                    const handoff = !isError && toolEl.classList.contains('agent-handoff-step');
                     const icon = toolEl.querySelector('.tool-icon');
                     icon.className = isError
                         ? 'fas fa-times text-red-400 flex-shrink-0 tool-icon'
-                        : 'fas fa-check text-primary-400 flex-shrink-0 tool-icon';
+                        : `fas ${handoff ? 'fa-share' : 'fa-check'} text-primary-400 flex-shrink-0 tool-icon`;
 
                     // Show execution time
                     const nameEl = toolEl.querySelector('.tool-name');
@@ -537,8 +593,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     toolEl.classList.remove('tool-streaming');
                     // Tools collapse once they are done; their output is a
                     // trace. A tool that wrote something for a person to read
-                    // stays open — the reader just waited for it.
-                    toolEl.classList.toggle('expanded', !!item.display);
+                    // stays open — the reader just waited for it. A hand-off is
+                    // the exception: its answer is already the bubble below, so
+                    // it folds away and keeps the task it passed on for whoever
+                    // opens it.
+                    toolEl.classList.toggle('expanded', !!item.display && !handoff);
                     if (!item.result && !item.display) {
                         const outputSection = toolEl.querySelector('.tool-output-section');
                         if (outputSection) outputSection.remove();
@@ -662,7 +721,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 // Backfill seq metadata so edit/regenerate buttons can call
                 // the delete API without a page refresh. Backend includes
                 // user_seq / bot_seq on the done event after persistence.
-                const targetBotEl = botEl || (requestId ? messagesDiv.querySelector(`[data-request-id="${requestId}"]`) : null);
+                // Never a teammate's bubble: the seq being backfilled belongs to
+                // the reply this request persisted, which is the Agent's own.
+                const targetBotEl = botEl || (requestId
+                    ? messagesDiv.querySelector(`[data-request-id="${requestId}"]:not([data-peer-bubble])`)
+                    : null);
                 if (targetBotEl) {
                     if (item.bot_seq !== undefined && item.bot_seq !== null) {
                         targetBotEl.dataset.seq = item.bot_seq;
@@ -680,6 +743,11 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                             prev.dataset.seq = item.user_seq;
                         }
                     }
+                }
+                // The turn is persisted: refresh the navigation rail so the new
+                // question gets its own dot (only for the foreground session).
+                if (isActive() && typeof refreshTimeline === 'function') {
+                    refreshTimeline();
                 }
                 renderBotSpeakerButton(botEl, finalText);
                 scrollChatToBottom();
@@ -732,9 +800,15 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 delete activeStreams[requestId];
                 clearOwnerRequest();
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
+                if (contentEl) contentEl.classList.remove('sse-streaming');
                 // After a stop the stream is expected to end; the bubble is
                 // already tagged "已中止", so don't stack a failure on top.
-                if (!cancelled) addBotMessage(t('error_send'), new Date());
+                // An unknown request after "done" only means its log was
+                // reclaimed: the reply is persisted and already on screen.
+                const unknown = item.reason === 'unknown_request';
+                if (!cancelled && !(unknown && mainDone)) {
+                    addBotMessage(t(unknown ? 'error_reply_interrupted' : 'error_send'), new Date());
+                }
                 resetSendBtnSendMode();
             }
     }
@@ -786,7 +860,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     notifyTaskFinished(ownerSession, 'done', item.content, ownerAgent);
                 }
             } else if (item.type === 'error') {
-                if (!cancelled && !isSchedulerRequest(requestId)) notifyTaskFinished(ownerSession, 'error', '', ownerAgent);
+                if (!cancelled && !mainDone && !isSchedulerRequest(requestId)) notifyTaskFinished(ownerSession, 'error', '', ownerAgent);
             } else if (
                 item.type === 'voice_attach'
                 && item.url
@@ -857,13 +931,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
             settlePendingTools();
             if (!isActive()) return;
             if (loadingEl) { loadingEl.remove(); loadingEl = null; }
-            if (!botEl) {
-                addBotMessage(t('error_send'), new Date());
-            } else if (accumulatedText) {
+            if (botEl && contentEl) {
                 contentEl.classList.remove('sse-streaming');
-                contentEl.innerHTML = renderMarkdown(accumulatedText);
+                if (accumulatedText) contentEl.innerHTML = renderMarkdown(accumulatedText);
                 applyHighlighting(botEl);
             }
+            // The message itself was accepted; only the live view dropped, and
+            // the server may still finish and persist the reply.
+            if (!mainDone) addBotMessage(t('error_connection_lost'), new Date());
             resetSendBtnSendMode();
         };
     }

@@ -72,6 +72,7 @@ class ChatService:
         speaker_id = resolved_agent_id
         model_query = query
         is_team = False
+        cached = False
         if speaker_agent_id or members is not None:
             if members is not None:
                 context["members"] = list(members)
@@ -92,6 +93,7 @@ class ChatService:
                 # (also when the owner itself was named); the transcript keeps
                 # the verbatim query.
                 model_query = self.agent_bridge._strip_address(query, speaker_id)
+            cached = self.agent_bridge._has_runtime(speaker_id, session_id)
             agent = self.agent_bridge.get_agent(
                 session_id=session_id,
                 agent_id=speaker_id,
@@ -105,8 +107,10 @@ class ChatService:
             raise RuntimeError("Failed to initialise agent for the session")
         if is_team:
             # One transcript per team conversation: reload it with author labels
-            # so this speaker sees the turns others spoke since it last ran.
-            self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            # so this speaker sees the turns others spoke since it last ran. A
+            # runtime built for this turn has only just restored it.
+            if cached:
+                self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
             self._send_speaker(send_chunk_fn, speaker_id)
         if transcript is not None:
             with agent.messages_lock:
@@ -241,6 +245,21 @@ class ChatService:
                     "id": tool_call_id,
                 }
 
+                # A call settles when its own tool finishes, not when the round
+                # does. A delegated turn holds the round open for as long as the
+                # teammate works, so every call made inside one - the hand-off
+                # included - would otherwise sit unfinished until it returns.
+                send_chunk_fn({
+                    "chunk_type": "tool_end",
+                    "tool_id": tool_call_id,
+                    "tool": tool_name,
+                    "status": status,
+                    "result": result,
+                    "elapsed": elapsed_str,
+                })
+
+                # Still collected for the closing batch: a client that predates
+                # the chunk above learns the outcome there, as it always did.
                 if state.pending_tool_results is not None:
                     state.pending_tool_results.append(tool_info)
 
@@ -261,6 +280,25 @@ class ChatService:
                     "status": data.get("status"),
                     "execution_time": data.get("execution_time"),
                     "error": data.get("error"),
+                })
+
+            elif event_type == "peer_message_start":
+                # A teammate takes over for a stretch of this turn. What follows
+                # is its reply, in the same chunks as any other, until the
+                # matching end marker hands the floor back.
+                send_chunk_fn({
+                    "chunk_type": "peer_start",
+                    "card_id": data.get("card_id"),
+                    "agent_id": data.get("agent_id"),
+                    "agent_name": data.get("agent_name"),
+                })
+
+            elif event_type == "peer_message_end":
+                send_chunk_fn({
+                    "chunk_type": "peer_end",
+                    "card_id": data.get("card_id"),
+                    "agent_id": data.get("agent_id"),
+                    "status": data.get("status", "done"),
                 })
 
             elif event_type == "artifact":
@@ -405,8 +443,11 @@ class ChatService:
         # appending would leave stale pre-trim messages in agent.messages
         # and cause the same trim to fire on every subsequent request.
         with agent.messages_lock:
+            run_start = executor.run_start_index()
             trimmed = len(executor.messages) < original_length
-            if trimmed:
+            if run_start is not None:
+                new_messages = list(executor.messages[run_start:])
+            elif trimmed:
                 # Context was trimmed: the executor appended the new user
                 # query *before* trimming, so the new messages (user +
                 # assistant + tools) sit at the tail of the trimmed list.
@@ -465,6 +506,10 @@ class ChatService:
                     new_messages
                 )
                 workspace_root = self._owner_workspace(resolved_agent_id, agent)
+            if model_query != query:
+                new_messages = self._restore_verbatim_query(
+                    new_messages, model_query, query
+                )
             self._persist_messages(
                 session_id,
                 list(new_messages),
@@ -672,6 +717,32 @@ class ChatService:
         )
         stripped = re.sub(pattern, "", query, count=1, flags=re.IGNORECASE)
         return stripped if stripped.strip() else query
+
+    @staticmethod
+    def _restore_verbatim_query(messages: list, model_query: str, query: str) -> list:
+        """Put the verbatim query back into the turn's user message.
+
+        The model is asked ``model_query`` (the "@name" already acted on), but
+        the transcript must keep what was typed, or replay loses the address.
+        Copies are returned; the in-memory context keeps what the model saw.
+        """
+        restored = list(messages)
+        for i, msg in enumerate(restored):
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and model_query in content:
+                restored[i] = {**msg, "content": content.replace(model_query, query, 1)}
+                return restored
+            if isinstance(content, list):
+                for j, block in enumerate(content):
+                    text = block.get("text") if isinstance(block, dict) and block.get("type") == "text" else None
+                    if text and model_query in text:
+                        blocks = list(content)
+                        blocks[j] = {**block, "text": text.replace(model_query, query, 1)}
+                        restored[i] = {**msg, "content": blocks}
+                        return restored
+        return restored
 
     @staticmethod
     def _speak_timeout() -> float:

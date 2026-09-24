@@ -20,7 +20,7 @@ import threading
 # invisible to any code that does ``from app import ...`` (that import builds a
 # second, separate ``app`` module). The registry is a single shared cell every
 # caller sees — see common/channel_registry.py and issue #3120.
-from common.channel_registry import get_channel_manager, set_channel_manager
+from common.channel_registry import get_channel_manager, set_channel_manager  # noqa: F401 - re-exported for `from app import get_channel_manager`
 
 # Desktop mode: a lighter runtime for the packaged Electron client. Plugins are
 # loaded in a background thread (so command plugins like cow_cli/godcmd work
@@ -192,6 +192,7 @@ class ChannelManager:
                     "bound_agent_id": entry.agent_id,
                     "credentials": entry.credentials or None,
                     "members": entry.members or None,
+                    "peers": entry.peers or None,
                 },
             )
         return (entry, entry, {})
@@ -602,6 +603,13 @@ def _migrate_team_roster():
     except Exception as e:
         # Never a reason not to start: read() still falls back to config.json.
         logger.warning(f"[App] Could not move the roster into its own file: {e}")
+    try:
+        from agent import team
+        from config import conf
+
+        team.adopt_legacy_channels(conf())
+    except Exception as e:
+        logger.warning(f"[App] Could not add legacy channels to the roster: {e}")
 
 
 def _migrate_conversations():

@@ -8,7 +8,7 @@ import os
 from typing import List, Optional, Dict, Any, Sequence, Tuple
 from pathlib import Path
 import hashlib
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from agent.memory.config import MemoryConfig, get_default_memory_config
 from agent.memory.storage import MemoryStorage, MemoryChunk, SearchResult
@@ -362,6 +362,11 @@ class MemoryManager:
             knowledge_dir = Path(state_dir.knowledge_dir(base=workspace_dir))
             if knowledge_dir.exists():
                 for file_path in knowledge_dir.rglob("*.md"):
+                    # The root index.md / log.md only restate pages indexed on
+                    # their own, and change on every page write, which re-embeds
+                    # the whole file each time.
+                    if file_path.parent == knowledge_dir and file_path.name in ("index.md", "log.md"):
+                        continue
                     files_to_scan.append((file_path, "knowledge", "shared", None))
 
         # Pass 1: inline chunking + change detection. Inlined (instead of

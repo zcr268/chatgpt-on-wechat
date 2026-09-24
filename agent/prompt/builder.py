@@ -6,7 +6,8 @@ System Prompt Builder - 系统提示词构建器
 
 from __future__ import annotations
 import os
-from typing import List, Dict, Optional, Any
+import re
+from typing import List, Dict, Optional, Any, Tuple
 from dataclasses import dataclass
 
 from common.log import logger
@@ -559,6 +560,40 @@ def _build_memory_section(
     return lines
 
 
+# index.md grows by a line per knowledge page and is re-sent on every turn.
+# Past _INDEX_FULL_CHARS only the entry titles are injected, and past
+# _INDEX_MAX_CHARS the list is cut; the pages stay reachable through read and
+# memory_search, and the prompt says so.
+_INDEX_FULL_CHARS = 8000
+_INDEX_MAX_CHARS = 20000
+_INDEX_ENTRY_RE = re.compile(r"^\s*[-*]\s+\[[^\]]*\]\([^)]*\)")
+
+
+def _compact_knowledge_index(content: str) -> Tuple[str, int, bool]:
+    """Return (index text to inject, entries left out, whether it was compacted)."""
+    if len(content) <= _INDEX_FULL_CHARS:
+        return content, 0, False
+
+    kept: List[str] = []
+    size = 0
+    omitted = 0
+    full = False
+    for line in content.split("\n"):
+        entry = _INDEX_ENTRY_RE.match(line)
+        if entry:
+            line = entry.group(0).strip()
+        elif not line.lstrip().startswith("#"):
+            continue
+        if full or size + len(line) + 1 > _INDEX_MAX_CHARS:
+            full = True
+            if entry:
+                omitted += 1
+            continue
+        kept.append(line)
+        size += len(line) + 1
+    return "\n".join(kept), omitted, True
+
+
 def _build_knowledge_section(
     workspace_dir: str, language: str, project_dir: Optional[str] = None
 ) -> List[str]:
@@ -629,12 +664,22 @@ def _build_knowledge_section(
         ]
 
     if index_content:
+        index_text, omitted, compacted = _compact_knowledge_index(index_content)
         lines.extend([
             ("### Current knowledge index" if language == "en" else "### 当前知识索引"),
             "",
-            index_content,
-            "",
         ])
+        if compacted:
+            if language == "en":
+                more = f", {omitted} more entries are not listed" if omitted else ""
+                note = (f"The index is large, so only titles are listed here{more}. "
+                        f"`read` `{kb}/index.md` for the full index, or use `memory_search`.")
+            else:
+                more = f"，另有 {omitted} 条未列出" if omitted else ""
+                note = (f"索引较大，此处只列出标题{more}。"
+                        f"完整索引请 `read` `{kb}/index.md` 查看，或用 `memory_search` 检索。")
+            lines.extend([note, ""])
+        lines.extend([index_text, ""])
 
     lines.extend([
         ("**How to query**: use `read` to open a knowledge page, or `memory_search` (knowledge is in the vector index)."
@@ -758,16 +803,16 @@ def _build_workspace_section(
             "**路径使用规则** (非常重要):",
             "",
             f"1. **相对路径的基准目录**: 所有相对路径都是相对于 `{workspace_dir}` 而言的",
-            f"   - ✅ 正确: 访问工作空间内的文件用相对路径，如 `AGENT.md`",
+            "   - ✅ 正确: 访问工作空间内的文件用相对路径，如 `AGENT.md`",
             f"   - ❌ 错误: 用相对路径访问其他目录的文件 (如果它不在 `{workspace_dir}` 内)",
             "",
             "2. **访问其他目录**: 如果要访问工作空间之外的目录（如项目代码、系统文件），**必须使用绝对路径**",
-            f"   - ✅ 正确: 例如 `~/chatgpt-on-wechat`、`/usr/local/`",
-            f"   - ❌ 错误: 假设相对路径会指向其他目录",
+            "   - ✅ 正确: 例如 `~/chatgpt-on-wechat`、`/usr/local/`",
+            "   - ❌ 错误: 假设相对路径会指向其他目录",
             "",
             "3. **路径解析示例**:",
             f"   - 相对路径 `memory/` → 实际路径 `{workspace_dir}/memory/`",
-            f"   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
+            "   - 绝对路径 `~/chatgpt-on-wechat/docs/` → 实际路径 `~/chatgpt-on-wechat/docs/`",
             "",
             "4. **不确定时**: 先用 `bash pwd` 确认当前目录，或用 `ls .` 查看当前位置",
             "",
@@ -828,7 +873,7 @@ def _build_project_workspace_section(
             "",
             f"2. **Memory and skills stay in the system directory** `{workspace_dir}`. Never write them into the project. Memory tools handle this for you; if you ever touch these files directly, use **absolute paths** under the system directory.",
             f"   - ✅ absolute `{workspace_dir}/MEMORY.md`",
-            f"   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
+            "   - ❌ relative `MEMORY.md` (that would land in the project, which is wrong)",
             "",
             "3. **Accessing any other directory**: use absolute paths.",
             "",
@@ -851,7 +896,7 @@ def _build_project_workspace_section(
             "",
             f"2. **记忆和技能仍在系统目录** `{workspace_dir}`，不要写入项目目录。记忆操作由记忆工具自动完成；若确需直接访问这些文件，请使用系统目录下的**绝对路径**。",
             f"   - ✅ 绝对路径 `{workspace_dir}/MEMORY.md`",
-            f"   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
+            "   - ❌ 相对路径 `MEMORY.md`（那会落到项目目录里，是错误的）",
             "",
             "3. **访问其他任意目录**：使用绝对路径。",
             "",
@@ -990,7 +1035,10 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
             "Use agent_delegate for work that belongs to a teammate, passing "
             "their id above as agent_id (without the @), and say who you handed "
             "it to and what you asked for. Refer to teammates by name to the "
-            "user, without the @id — the id is internal.",
+            "user and keep the @id out of your reply — the id is internal. "
+            "Never answer in a teammate's place: hand any question or task "
+            "that is theirs straight over, and do not report their words or "
+            "actions without a hand-off.",
             "",
         ]
     return [
@@ -1008,7 +1056,8 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
         "",
         "该由某位同事做的事，用 agent_delegate 交出去：把那位同事上面的 id "
         "作为 agent_id 传入 (不含@符号)，并说明交给了谁、交办了什么。对用户提到同事时只用名字，"
-        "不要带 @id，id 只用于内部。",
+        "回复内容不要带 @id，id 只用于内部。不要替同事回答：该由某位成员回答的问题或执行的任务直接转交，"
+        "未经转交不得转述其言行。",
         "",
     ]
 

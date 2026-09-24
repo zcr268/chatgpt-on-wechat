@@ -5,6 +5,7 @@ Agent Initializer - Handles agent initialization logic
 import os
 import asyncio
 import datetime
+import json
 import threading
 import time
 from typing import Dict, List, Optional
@@ -24,6 +25,12 @@ _memory_sync_lock = threading.Lock()
 # request for the same workspace is dropped instead of forking another thread,
 # so a burst of messages can't stack up dozens of embedding HTTP calls.
 _memory_sync_inflight: set = set()
+
+# How much of a teammate's delegated reply is replayed in later turns. The
+# whole exchange is already summarised by the Agent that handed the work out,
+# so the reply only has to show who actually said it; a long report would cost
+# more context than that is worth.
+_DELEGATED_REPLY_MAX_CHARS = 1200
 
 
 class AgentInitializer:
@@ -220,6 +227,9 @@ class AgentInitializer:
         3. Different models have incompatible tool message formats, so
            restoring tool chains across model switches causes 400 errors.
         4. Eliminates the entire class of tool_use/tool_result pairing bugs.
+
+        A shared conversation is the exception: it is reread before every turn,
+        so the reader's own turns keep their tool chains (see _shared_history).
         """
         from config import conf
         if not conf().get("conversation_persistence", True):
@@ -249,14 +259,15 @@ class AgentInitializer:
                 session_id, max_turns=restore_turns, with_authors=shared
             )
             if saved:
-                filtered = self._filter_text_only_messages(saved)
                 if shared:
-                    filtered = self._attribute_history(filtered, reader)
+                    filtered = self._shared_history(saved, reader)
+                else:
+                    filtered = self._filter_text_only_messages(saved)
                 if filtered:
                     with agent.messages_lock:
                         agent.messages = filtered
                     logger.debug(
-                        f"[AgentInitializer] Restored {len(filtered)} text messages "
+                        f"[AgentInitializer] Restored {len(filtered)} messages "
                         f"(from {len(saved)} total, {restore_turns} turns cap) "
                         f"for session={session_id}"
                     )
@@ -268,15 +279,65 @@ class AgentInitializer:
 
     @staticmethod
     def _is_shared_conversation(session_id: str, host_agent_id: str) -> bool:
-        """Whether anyone besides the owner was invited into this conversation."""
+        """Whether anyone besides the owner was invited into this conversation.
+
+        A stored id only counts when it still resolves to a configured Agent,
+        or to a teammate the installed transport can reach. A roster made
+        entirely of deleted Agents, with no such peer, is not a team
+        conversation: treating it as one rereads history from the store on
+        every turn and flattens each turn the reader did not answer to text.
+        """
         if not session_id:
             return False
         try:
             from agent.workspace import session_prefs
 
-            return bool(session_prefs.get_prefs(session_id, host_agent_id).get("members"))
+            members = session_prefs.get_prefs(session_id, host_agent_id).get("members")
+            if not members:
+                return False
+            return AgentInitializer._any_member_exists(members)
         except Exception:
             return False
+
+    @staticmethod
+    def _any_member_exists(members: list) -> bool:
+        """Whether at least one id names a local Agent or a transport peer.
+
+        Local lookup stays ``require_enabled=False`` so a disabled teammate
+        and the reserved ``"default"`` alias still count. ``resolve_teammate``
+        is not used: it looks up with ``require_enabled=True`` and would drop
+        a disabled local teammate. An id this process does not host counts
+        when ``peer`` knows it, the same rule as ``_clean_team_members``.
+        """
+        try:
+            from agent.multiagent import peer as peer_of
+            from agent.registry import get_agent_registry
+
+            registry = get_agent_registry()
+        except Exception:
+            # Cannot judge resolvability; fall back to the roster's own word
+            # rather than turning every team conversation into a solo one.
+            # Both lookups are needed to call an id a ghost, so a failure to
+            # reach either one has to fail open here: _is_shared_conversation
+            # turns anything raised out of this into "not shared", which is
+            # the downgrade this guard exists to avoid.
+            return True
+
+        for member in members:
+            if not isinstance(member, str) or not member.strip():
+                continue
+            try:
+                # "default" is a reserved alias, not a stored id. Disabled is
+                # not deleted: a teammate who is off still makes this a team.
+                registry.get_addressed(member, require_enabled=False)
+                return True
+            except Exception:
+                # Remote-only teammates are real. A single-agent deployment
+                # stores hosted peer ids and has no local profile for them.
+                if peer_of(member) is not None:
+                    return True
+                continue
+        return False
 
     @staticmethod
     def _attribute_history(messages: list, reader_agent_id: str) -> list:
@@ -329,6 +390,46 @@ class AgentInitializer:
         return attributed
 
     @staticmethod
+    def _shared_history(messages: list, reader_agent_id: str) -> list:
+        """Rebuild a shared transcript for the Agent about to speak.
+
+        A turn every reply of which the reader wrote keeps its tool calls and
+        results. Flattened to its final text, the reader's own history shows it
+        announcing work with no trace of doing it, and it goes on to announce
+        the next piece of work without doing that either. Every other turn is
+        reduced to text and attributed.
+        """
+        from agent.protocol.message_utils import identify_complete_turns
+
+        rebuilt: list = []
+        others: list = []
+
+        def flush_others() -> None:
+            if others:
+                rebuilt.extend(AgentInitializer._attribute_history(
+                    AgentInitializer._filter_text_only_messages(others),
+                    reader_agent_id,
+                ))
+                others.clear()
+
+        for turn in identify_complete_turns(messages):
+            turn_messages = turn["messages"]
+            replies = turn_messages[1:]
+            own = bool(reader_agent_id) and bool(replies) and all(
+                message.get("agent_id") == reader_agent_id for message in replies
+            )
+            if not own:
+                others.extend(turn_messages)
+                continue
+            flush_others()
+            rebuilt.extend(
+                {"role": message["role"], "content": message["content"]}
+                for message in turn_messages
+            )
+        flush_others()
+        return rebuilt
+
+    @staticmethod
     def _filter_text_only_messages(messages: list) -> list:
         """
         Extract clean user/assistant turn pairs from raw message history.
@@ -337,9 +438,17 @@ class AgentInitializer:
         then keeps only:
         - The first user text in each turn (the actual user input)
         - The last assistant text in each turn (the final answer)
+        - Any teammate turn inside it (see below)
 
         All tool_use, tool_result, intermediate assistant thoughts, and
         internal hint messages injected by the agent loop are discarded.
+
+        Work handed to a teammate is the exception. It arrives as an
+        ``agent_delegate`` result, and dropping it with the rest of the tool
+        chain leaves the teammate's answer looking like something the speaker
+        knew by itself — which is what teaches it to answer in a teammate's
+        place instead of asking. So the reply is lifted back out as a turn of
+        its own, attributed to whoever wrote it.
         """
 
         def _extract_text(content) -> str:
@@ -369,20 +478,67 @@ class AgentInitializer:
             text = _extract_text(content)
             return bool(text)
 
+        def _delegated_turn(block: dict):
+            """The teammate's reply carried by an ``agent_delegate`` result."""
+            raw = block.get("content")
+            if isinstance(raw, list):
+                raw = _extract_text(raw)
+            if not isinstance(raw, str) or not raw.strip():
+                return None
+            try:
+                payload = json.loads(raw)
+            except ValueError:
+                return None
+            if not isinstance(payload, dict):
+                return None
+            author = payload.get("agent_id") or ""
+            said = payload.get("content")
+            if not author or not isinstance(said, str) or not said.strip():
+                return None
+            said = said.strip()
+            if len(said) > _DELEGATED_REPLY_MAX_CHARS:
+                said = said[:_DELEGATED_REPLY_MAX_CHARS] + "…"
+            return said, author, True
+
         # Group into turns: each turn starts with a real user message
         turns = []
         current_turn = None
+        handed_off = set()
         for msg in messages:
             if _is_real_user_msg(msg):
                 if current_turn is not None:
                     turns.append(current_turn)
                 current_turn = {"user": msg, "assistants": []}
-            elif current_turn is not None and msg.get("role") == "assistant":
-                text = _extract_text(msg.get("content"))
+                continue
+            if current_turn is None:
+                continue
+            content = msg.get("content")
+            blocks = content if isinstance(content, list) else []
+            if msg.get("role") == "assistant":
+                for block in blocks:
+                    if (
+                        isinstance(block, dict)
+                        and block.get("type") == "tool_use"
+                        and block.get("name") == "agent_delegate"
+                    ):
+                        handed_off.add(block.get("id"))
+                text = _extract_text(content)
                 if text:
                     current_turn["assistants"].append(
-                        (text, msg.get("agent_id") or "")
+                        (text, msg.get("agent_id") or "", False)
                     )
+                continue
+            # A tool_result rides on a ``user`` message. Only a hand-off is
+            # lifted out of one; every other result stays discarded.
+            for block in blocks:
+                if (
+                    isinstance(block, dict)
+                    and block.get("type") == "tool_result"
+                    and block.get("tool_use_id") in handed_off
+                ):
+                    spoke = _delegated_turn(block)
+                    if spoke:
+                        current_turn["assistants"].append(spoke)
         if current_turn is not None:
             turns.append(current_turn)
 
@@ -396,11 +552,17 @@ class AgentInitializer:
                 "role": "user",
                 "content": [{"type": "text", "text": user_text}]
             })
-            if turn["assistants"]:
-                final_reply, author = turn["assistants"][-1]
+            if not turn["assistants"]:
+                continue
+            # The speaker's intermediate thoughts are still dropped — only its
+            # last text is the answer. A teammate's turn is another voice, so
+            # it is kept where it happened rather than folded into that answer.
+            spoken = [said for said in turn["assistants"][:-1] if said[2]]
+            spoken.append(turn["assistants"][-1])
+            for text, author, _handed_off in spoken:
                 reply = {
                     "role": "assistant",
-                    "content": [{"type": "text", "text": final_reply}],
+                    "content": [{"type": "text", "text": text}],
                 }
                 if author:
                     reply["agent_id"] = author

@@ -210,6 +210,31 @@ def _extract_display_text(content: Any) -> str:
     return ""
 
 
+def _first_line_preview(text: str, max_chars: int = 60) -> str:
+    """Compact single-line preview of a user message, for the nav timeline.
+
+    Collapses whitespace to keep the tooltip on one line and truncates to
+    ``max_chars`` with an ellipsis. Trailing ``[label: path]`` attachment
+    markers are stripped so the preview shows the actual question, not the
+    file references appended to it.
+    """
+    if not text:
+        return ""
+    # Drop trailing attachment marker lines (e.g. "[Image: /path]").
+    lines = text.split("\n")
+    while lines:
+        stripped = lines[-1].strip()
+        if stripped and re.match(r"^\[[^\]:]+:\s*.+\]$", stripped):
+            lines.pop()
+            continue
+        break
+    body = "\n".join(lines)
+    collapsed = " ".join(body.split())
+    if len(collapsed) > max_chars:
+        return collapsed[:max_chars].rstrip() + "…"
+    return collapsed
+
+
 # Internal markers written into the session for the agent's own bookkeeping
 # (scheduler injection / self-evolution undo). They must stay in the stored
 # content (the LLM reads them, e.g. to find a backup_id for undo) but should
@@ -1579,9 +1604,15 @@ class ConversationStore:
         session_id: str,
         page: int = 1,
         page_size: int = 20,
+        until_seq: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Load a page of conversation history for UI display, grouped into turns.
+
+        With ``until_seq`` the response runs from ``page`` back through the
+        page holding the turn with that seq, in one go, and ``page`` in the
+        result is the last page covered. This lets a client jump to an old
+        message without walking the history one page per request.
 
         Each "turn" maps to one of:
           - A user message (role="user", content=str)
@@ -1661,18 +1692,88 @@ class ConversationStore:
         visible = _group_into_display_turns(rows, include_thinking=include_thinking)
 
         total = len(visible)
+        newest_first = list(reversed(visible))
         offset = (page - 1) * page_size
-        page_items = list(reversed(visible))[offset: offset + page_size]
-        page_items = list(reversed(page_items))
+        last_page = page
+        if until_seq is not None:
+            for idx, turn in enumerate(newest_first):
+                seq = turn.get("_seq")
+                if seq is not None and seq <= until_seq:
+                    last_page = max(page, idx // page_size + 1)
+                    break
+        end = last_page * page_size
+        page_items = list(reversed(newest_first[offset:end]))
 
         return {
             "messages": page_items,
             "context_start_seq": ctx_start,
             "total": total,
-            "page": page,
+            "page": last_page,
             "page_size": page_size,
-            "has_more": offset + page_size < total,
+            "has_more": end < total,
         }
+
+    def list_user_messages(
+        self,
+        session_id: str,
+        preview_chars: int = 60,
+    ) -> Dict[str, Any]:
+        """
+        Return a lightweight index of every visible user message in a session,
+        for building a navigation timeline in the UI.
+
+        Unlike ``load_history_page`` this skips turn grouping and assistant
+        content entirely: it only walks user rows, applies the same visibility
+        rules (hiding tool_result and internal marker messages), and returns a
+        compact ``{seq, preview, created_at}`` per entry. The payload stays
+        small even for very long conversations, so the whole index can be
+        fetched at once without pagination.
+
+        Returns:
+            {
+                "messages": [{"seq": int, "preview": str, "created_at": int}, ...],
+                "total": int,
+            }
+        """
+        with self._lock:
+            conn = self._connect()
+            try:
+                aid = self._agent_id
+                rows = conn.execute(
+                    """
+                    SELECT seq, content, created_at
+                    FROM messages
+                    WHERE agent_id = ? AND session_id = ? AND role = 'user'
+                    ORDER BY seq ASC
+                    """,
+                    (aid, session_id),
+                ).fetchall()
+            finally:
+                conn.close()
+
+        items: List[Dict[str, Any]] = []
+        for seq, raw_content, created_at in rows:
+            try:
+                content = json.loads(raw_content)
+            except Exception:
+                content = raw_content
+            # Only real user turns: skip tool_result carriers and the internal
+            # scheduler / self-evolution injection markers.
+            if not _is_visible_user_message(content):
+                continue
+            text = _extract_display_text(content)
+            if not text or _is_internal_user_marker(text):
+                continue
+            preview = _first_line_preview(text, preview_chars)
+            if not preview:
+                continue
+            items.append({
+                "seq": seq,
+                "preview": preview,
+                "created_at": created_at,
+            })
+
+        return {"messages": items, "total": len(items)}
 
     def list_sessions(
         self,

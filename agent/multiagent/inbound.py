@@ -29,8 +29,10 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
         TASK_SOURCE,
         AgentDelegateTool,
         DelegationPolicy,
+        _DelegateView,
         _relay_lock,
         delegated_prompt,
+        delegated_result_text,
     )
 
     request_id = str(payload.get("request_id") or "")
@@ -155,12 +157,12 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
     context["parent_run_id"] = current_agent_run_id() or ""
     context["task_source"] = TASK_SOURCE
 
+    # The caller's side brackets and attributes these; here we only decide what
+    # crosses the wire, and it is the same set a local hand-off relays.
+    _forwarded = (*_DelegateView.RELAYED, _DelegateView.START, _DelegateView.END)
+
     def forward(event) -> None:
-        # Only tool steps travel back: prose and reasoning belong to this
-        # teammate's own run, exactly as for a local hand-off.
-        if isinstance(event, dict) and event.get("type") in (
-            "tool_execution_start", "tool_execution_end",
-        ):
+        if isinstance(event, dict) and event.get("type") in _forwarded:
             try:
                 send_chunk({"chunk_type": CHUNK_EVENT, "request_id": request_id, "event": event})
             except Exception as exc:
@@ -189,7 +191,7 @@ def serve_invoke(payload: dict, agent_bridge, send_chunk: Callable[[dict], None]
         "chunk_type": CHUNK_RESULT,
         "request_id": request_id,
         "status": "done",
-        "content": reply.content if reply is not None else "",
+        "content": delegated_result_text(reply),
         "agent_id": target.id,
         "agent_name": target.name,
         "duration": round(duration, 3),
