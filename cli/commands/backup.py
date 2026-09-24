@@ -237,7 +237,7 @@ def create_backup_archive(
                 for path in files:
                     relative = path.relative_to(source).as_posix()
                     archive.write(str(path), f"{archive_root}/{relative}")
-        os.replace(str(temp_archive), str(output))
+        shutil.move(str(temp_archive), str(output))
         try:
             os.chmod(str(output), stat.S_IRUSR | stat.S_IWUSR)
         except OSError:
