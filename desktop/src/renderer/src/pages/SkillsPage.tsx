@@ -8,6 +8,7 @@ import { Toggle } from './settings/primitives'
 import Markdown from '../components/Markdown'
 import { DocActions, DocEditor, DocNotice } from '../components/DocEditor'
 import { createDocEditorStore, docRefusal } from '../store/docEditorStore'
+import { askConfirm } from '../store/confirmStore'
 
 interface SkillsPageProps {
   baseUrl: string
@@ -124,6 +125,13 @@ function mcpStatusLabel(status?: string): string {
   return t(key[status || ''] || 'mcp_status_idle')
 }
 
+function mcpStatusClass(status?: string): string {
+  if (status === 'ready') return 'bg-emerald-500/10 text-emerald-600'
+  if (status === 'failed') return 'bg-red-500/10 text-red-500'
+  if (status === 'needs_auth') return 'bg-amber-500/10 text-amber-600'
+  return 'bg-inset-2 text-content-tertiary'
+}
+
 const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [tools, setTools] = useState<ToolInfo[]>([])
   const [skills, setSkills] = useState<SkillInfo[]>([])
@@ -137,7 +145,10 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   const [envText, setEnvText] = useState('')
   const [headersText, setHeadersText] = useState('')
   const [testResult, setTestResult] = useState('')
+  const [testing, setTesting] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [mcpError, setMcpError] = useState('')
+  const [skillError, setSkillError] = useState('')
 
   const doc = skillEditor((s) => s.doc)
   const content = skillEditor((s) => s.content)
@@ -152,7 +163,8 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
       const [toolsData, skillsData, mcpData] = await Promise.all([
         apiClient.getTools(),
         apiClient.getSkills(),
-        apiClient.getMcpServers(),
+        // A broken mcp.json must not take the tools and skills lists down with it.
+        apiClient.getMcpServers().catch(() => ({ servers: [] as McpServerConfig[] })),
       ])
       setTools(toolsData || [])
       setSkills(skillsData || [])
@@ -171,6 +183,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   }, [baseUrl])
 
   const toggle = async (skill: SkillInfo, enabled: boolean) => {
+    // Optimistic flip; revert on failure.
     setSkills((prev) => prev.map((s) => (s.name === skill.name ? { ...s, enabled } : s)))
     try {
       const res = await apiClient.toggleSkill(skill.name, enabled ? 'open' : 'close')
@@ -180,6 +193,9 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
     }
   }
 
+  // The card's pencil opens the viewer and jumps straight into editing,
+  // skipping the read-only view. `startEdit` no-ops for a read-only skill, so
+  // the built-in ones simply open to their content.
   const openSkillForEdit = async (skill: SkillInfo) => {
     await skillEditor
       .getState()
@@ -189,6 +205,8 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
 
   const closeViewer = async () => {
     if (!(await skillEditor.getState().close())) return
+    // A saved edit can change the name and description in the frontmatter, so
+    // the cards behind this panel may be out of date.
     void loadData()
   }
 
@@ -253,6 +271,8 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
   }
 
   const testEditor = async () => {
+    if (testing) return
+    setTesting(true)
     setTestResult(t('mcp_test') + '...')
     try {
       const data = await apiClient.testMcpServer(readEditor())
@@ -264,42 +284,53 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
       }
     } catch (err) {
       setTestResult(`${t('mcp_test_fail')}: ${err instanceof Error ? err.message : ''}`)
+    } finally {
+      setTesting(false)
     }
   }
 
   const removeServer = async (name: string) => {
-    if (!window.confirm(t('mcp_delete_confirm'))) return
+    const ok = await askConfirm({ titleKey: 'mcp_delete', msgKey: 'mcp_delete_confirm', okKey: 'mcp_delete' })
+    if (!ok) return
+    setMcpError('')
     try {
       await persistServers(servers.filter((item) => item.name !== name))
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : t('mcp_save_error'))
+      setMcpError(err instanceof Error ? err.message : t('mcp_save_error'))
     }
+  }
+
+  const reloadSkills = async () => {
+    setSkills((await apiClient.getSkills()) || [])
   }
 
   const install = async () => {
     const spec = installSpec.trim()
-    if (!spec) return
+    if (!spec || installing) return
     setInstalling(true)
+    setSkillError('')
     try {
       const res = await apiClient.installSkill(spec)
       if (res.status !== 'success') throw new Error(res.message || t('skill_install_error'))
       setInstallSpec('')
-      await loadData()
+      await reloadSkills()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : t('skill_install_error'))
+      setSkillError(`${t('skill_install_error')}: ${err instanceof Error ? err.message : ''}`)
     } finally {
       setInstalling(false)
     }
   }
 
   const uninstall = async (name: string) => {
-    if (!window.confirm(t('skill_delete_confirm'))) return
+    const ok = await askConfirm({ titleKey: 'skill_delete', msgKey: 'skill_delete_confirm', okKey: 'skill_delete' })
+    if (!ok) return
+    setSkillError('')
     try {
       const res = await apiClient.deleteSkill(name)
       if (res.status !== 'success') throw new Error(res.message || t('skill_delete_error'))
-      await loadData()
+      await reloadSkills()
     } catch (err) {
-      window.alert(err instanceof Error ? err.message : t('skill_delete_error'))
+      setSkillError(`${t('skill_delete_error')}: ${err instanceof Error ? err.message : ''}`)
     }
   }
 
@@ -416,6 +447,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 }
               >
                 <p className="text-xs text-content-tertiary mb-3">{t('mcp_section_hint')}</p>
+                {mcpError && <p className="mb-3 text-sm text-red-500">{mcpError}</p>}
                 {servers.length === 0 ? (
                   <Empty text={t('mcp_empty')} />
                 ) : (
@@ -428,7 +460,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
                             <span className="text-sm font-medium text-content font-mono truncate flex-1">{server.name}</span>
-                            <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-inset-2 text-content-tertiary">
+                            <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${mcpStatusClass(server.status)}`}>
                               {mcpStatusLabel(server.status)}
                             </span>
                             <button type="button" title={t('mcp_edit')} onClick={() => openEditor(server)} className="p-1 text-content-tertiary hover:text-content">
@@ -469,6 +501,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                     {t('skill_install_btn')}
                   </button>
                 </div>
+                {skillError && <p className="mb-3 text-sm text-red-500">{skillError}</p>}
                 {skills.length === 0 ? (
                   <Empty text={t('skills_empty')} />
                 ) : (
@@ -652,7 +685,13 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
               <button type="button" onClick={() => setEditor(null)} className="px-3 py-1.5 rounded-btn text-sm text-content-secondary">
                 {t('mcp_cancel')}
               </button>
-              <button type="button" onClick={() => void testEditor()} className="px-3 py-1.5 rounded-btn text-sm text-accent bg-accent-soft">
+              <button
+                type="button"
+                onClick={() => void testEditor()}
+                disabled={testing}
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-btn text-sm text-accent bg-accent-soft disabled:opacity-50"
+              >
+                {testing && <Loader2 size={12} className="animate-spin" />}
                 {t('mcp_test')}
               </button>
               <button type="button" onClick={() => void saveEditor()} disabled={saving} className="px-3 py-1.5 rounded-btn text-sm text-white bg-accent disabled:opacity-50">

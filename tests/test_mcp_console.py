@@ -87,6 +87,21 @@ def test_save_writes_mcp_servers_dict(tmp_path, monkeypatch):
     assert {item["name"] for item in loaded} == {"fetch", "github", "remote"}
 
 
+def test_save_replaces_edited_fields_and_keeps_unknown_ones(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "agent.tools.mcp.service.mcp_config_path",
+        lambda workspace=None: str(tmp_path / "mcp.json"),
+    )
+    (tmp_path / "mcp.json").write_text(json.dumps({"mcpServers": {
+        "fetch": {"command": "uvx", "args": ["mcp-server-fetch"], "timeout": 30, "cwd": "/srv"},
+    }}), encoding="utf-8")
+
+    save_servers(str(tmp_path), [{"name": "fetch", "type": "sse", "url": "https://example.com/sse"}])
+
+    entry = json.loads((tmp_path / "mcp.json").read_text(encoding="utf-8"))["mcpServers"]["fetch"]
+    assert entry == {"type": "sse", "url": "https://example.com/sse", "cwd": "/srv"}
+
+
 def test_get_does_not_spawn_servers(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "agent.tools.mcp.service.mcp_config_path",

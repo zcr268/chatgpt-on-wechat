@@ -96,27 +96,32 @@ function loadMcpSection() {
     const listEl = document.getElementById('mcp-list');
     const badge = document.getElementById('mcp-count-badge');
     if (!listEl) return;
+    const showEmpty = (text) => {
+        listEl.classList.add('hidden');
+        listEl.innerHTML = '';
+        if (!emptyEl) return;
+        emptyEl.innerHTML = `<span class="text-sm">${escapeHtml(text)}</span>`;
+        emptyEl.classList.remove('hidden');
+    };
     fetch('/api/mcp/servers').then(r => r.json()).then(data => {
-        if (data.status !== 'success') return;
+        if (data.status !== 'success') {
+            showEmpty(`${t('mcp_load_failed')}: ${data.message || ''}`);
+            return;
+        }
         mcpServersCache = data.servers || [];
         if (badge) {
             badge.textContent = mcpServersCache.length;
             badge.classList.toggle('hidden', mcpServersCache.length === 0);
         }
         if (!mcpServersCache.length) {
-            emptyEl?.classList.remove('hidden');
-            listEl.classList.add('hidden');
-            listEl.innerHTML = '';
+            showEmpty(t('mcp_empty'));
             return;
         }
         emptyEl?.classList.add('hidden');
         listEl.innerHTML = '';
         mcpServersCache.forEach(server => listEl.appendChild(renderMcpCard(server)));
         listEl.classList.remove('hidden');
-    }).catch(() => {
-        emptyEl?.classList.remove('hidden');
-        if (emptyEl) emptyEl.innerHTML = `<span class="text-sm text-slate-400 dark:text-slate-500">${t('mcp_save_error')}</span>`;
-    });
+    }).catch(() => showEmpty(t('mcp_load_failed')));
 }
 
 function renderMcpCard(server) {
@@ -218,6 +223,9 @@ async function persistMcpServers(servers) {
 }
 
 async function saveMcpEditor() {
+    const btn = document.getElementById('mcp-editor-save');
+    if (btn.disabled) return;
+    btn.disabled = true;
     try {
         const cfg = readMcpEditor();
         const next = mcpServersCache.filter(s => s.name !== mcpEditorOriginalName && s.name !== cfg.name);
@@ -228,10 +236,15 @@ async function saveMcpEditor() {
         const result = document.getElementById('mcp-test-result');
         result.classList.remove('hidden');
         result.textContent = err.message || t('mcp_save_error');
+    } finally {
+        btn.disabled = false;
     }
 }
 
 async function testMcpEditor() {
+    const btn = document.getElementById('mcp-editor-test');
+    if (btn.disabled) return;
+    btn.disabled = true;
     const result = document.getElementById('mcp-test-result');
     result.classList.remove('hidden');
     result.textContent = t('mcp_test') + '...';
@@ -250,6 +263,8 @@ async function testMcpEditor() {
         }
     } catch (err) {
         result.textContent = t('mcp_test_fail') + ': ' + (err.message || '');
+    } finally {
+        btn.disabled = false;
     }
 }
 

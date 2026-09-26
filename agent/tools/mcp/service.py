@@ -221,7 +221,15 @@ def save_servers(workspace: Optional[str], servers: list) -> list:
     normalized = []
     seen = set()
     for item in servers:
-        merged = dict(existing.get((item or {}).get("name"), {}))
+        # Only fields the editor cannot show carry over from disk; the known
+        # ones are authoritative as submitted, so a cleared timeout or a
+        # stdio -> url switch does not inherit stale values.
+        previous = existing.get((item or {}).get("name"), {})
+        merged = {
+            key: value
+            for key, value in previous.items()
+            if key not in _KNOWN_FIELDS and key not in _EPHEMERAL_FIELDS
+        }
         if isinstance(item, dict):
             merged.update(item)
         entry = validate_server(merged)
