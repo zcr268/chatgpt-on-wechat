@@ -6,7 +6,7 @@ import apiClient from '../api/client'
 import { useWorkspaceStore } from '../store/workspaceStore'
 import Markdown from './Markdown'
 import MentionText from './MentionText'
-import MessageSteps, { ThinkingStep } from './MessageSteps'
+import MessageSteps, { ReplyStatus, ThinkingStep } from './MessageSteps'
 import FileCard from './FileCard'
 import { useLightboxStore } from './Lightbox'
 import AgentAvatar from './AgentAvatar'
@@ -153,6 +153,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
 
   const hasSteps = !!(message.steps && message.steps.length > 0)
   const hasLiveReasoning = !!(message.reasoning && message.isStreaming)
+  const status = message.runState || (message.isCancelled ? 'cancelled' : null)
 
   return (
     <div className="group flex gap-3 px-4 sm:px-6 py-2">
@@ -180,9 +181,10 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
           )}
 
           {/* Steps area (thinking / tools / intermediate content), web-aligned:
-              muted, separated from the final answer by a dashed divider. */}
-          {(hasSteps || hasLiveReasoning) && (
-            <div className="mb-2.5 pb-2 border-b border-dashed border-default">
+              muted, separated from the final answer by a dashed divider, which
+              a reply closed without an answer has no use for. */}
+          {(hasSteps || hasLiveReasoning || status) && (
+            <div className={status && !message.content ? '' : 'mb-2.5 pb-2 border-b border-dashed border-default'}>
               {hasSteps && <MessageSteps steps={message.steps!} />}
               {/* Live reasoning is the current, not-yet-committed thinking, so it
                   must render after all committed steps (tools/thinking), not at
@@ -190,6 +192,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
               {hasLiveReasoning && (
                 <div className={hasSteps ? 'mt-1' : ''}>
                   <ThinkingStep content={message.reasoning!} streaming />
+                </div>
+              )}
+              {status && (
+                <div className={hasSteps || hasLiveReasoning ? 'mt-1' : ''}>
+                  <ReplyStatus kind={status} />
                 </div>
               )}
             </div>
@@ -262,7 +269,6 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
             <span className="inline-block w-[6px] h-[14px] bg-accent ml-0.5 align-middle animate-blink" />
           )}
 
-          {message.isCancelled && <div className="text-xs text-warning mt-1">{t('msg_cancelled')}</div>}
           {message.error && <div className="text-xs text-danger mt-1">{message.error}</div>}
         </div>
 

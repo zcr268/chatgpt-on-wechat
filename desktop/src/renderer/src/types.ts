@@ -181,6 +181,8 @@ export interface ChatMessage {
   extras?: Record<string, unknown>
   isStreaming?: boolean
   isCancelled?: boolean
+  /** A reply that never reached its answer: cut off (a crash, a quit) or still running. */
+  runState?: RunState
   error?: string
   /** request_id of a server-pushed (scheduler) message, used to dedupe polls. */
   pushRequestId?: string
@@ -358,6 +360,8 @@ export interface StreamEvent {
   permission_denied?: boolean
   /** `tool_end`: the mode that refused the call. */
   permission_mode?: string
+  /** `error`: why the stream ended, e.g. `unknown_request` once the backend restarted. */
+  reason?: string
   /** `subagent_step` event fields: which step of which card, and how it went. */
   card_id?: string
   step_id?: string
@@ -480,7 +484,11 @@ export interface HistoryMessage {
   artifacts?: Artifact[]
   /** Per-message sequence number used by delete/regenerate APIs. */
   _seq?: number
+  /** Set on an assistant turn whose run stopped short of its answer. */
+  run_state?: RunState
 }
+
+export type RunState = 'interrupted' | 'running'
 
 export interface HistoryPage {
   messages: HistoryMessage[]
