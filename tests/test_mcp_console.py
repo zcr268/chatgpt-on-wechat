@@ -325,36 +325,48 @@ def test_skills_handler_refuses_builtin_delete():
 
 
 def test_frontend_contract_exposes_mcp_and_skill_install_surfaces():
-    html = _read("channel/web/templates/views/skills.html") + _read("channel/web/templates/modals/mcp-editor.html")
+    html = (
+        _read("channel/web/templates/views/skills.html")
+        + _read("channel/web/templates/modals/mcp-editor.html")
+        + _read("channel/web/templates/modals/skill-add.html")
+    )
     js = _read("channel/web/static/js/views/skills.js") + _read("channel/web/static/js/core/i18n.js")
     py = _read("channel/web/web_channel.py") + _read("channel/web/api/skills.py")
-    desktop_page = _read("desktop/src/renderer/src/pages/SkillsPage.tsx")
+    desktop_page = "".join(
+        _read(f"desktop/src/renderer/src/pages/{name}")
+        for name in ("SkillsPage.tsx", "skills/McpEditorModal.tsx", "skills/SkillAddModal.tsx")
+    )
     desktop_api = _read("desktop/src/renderer/src/api/client.ts")
     docs_en = _read("docs/tools/mcp.mdx")
     docs_zh = _read("docs/zh/tools/mcp.mdx")
 
     assert "'/api/mcp/servers', 'McpServersHandler'" in py
     assert "'/api/mcp/servers/test', 'McpServerTestHandler'" in py
-    assert "action == \"install\"" in py
-    assert "action == \"delete\"" in py
+    assert "'/api/skills/upload', 'SkillUploadHandler'" in py
+    for action in ("preview", "confirm", "discard", "delete"):
+        assert f"action == \"{action}\"" in py
 
     for token in (
         'id="mcp-section"',
         'id="mcp-list"',
         'id="mcp-editor-overlay"',
-        'id="skill-install-input"',
-        'id="skill-install-btn"',
+        'id="mcp-pane-json"',
+        'id="skill-add-btn"',
+        'id="skill-add-overlay"',
     ):
         assert token in html
 
     for token in (
         "function loadMcpSection",
+        "function parseMcpJson",
         "/api/mcp/servers",
         "/api/mcp/servers/test",
-        "action: 'install'",
+        "/api/skills/upload",
+        "action: 'preview'",
+        "action: 'confirm'",
         "action: 'delete'",
         "mcp_section_title:",
-        "skill_install_btn:",
+        "skill_add:",
     ):
         assert token in js
 
@@ -362,16 +374,19 @@ def test_frontend_contract_exposes_mcp_and_skill_install_surfaces():
         "getMcpServers",
         "saveMcpServers",
         "testMcpServer",
-        "installSkill",
+        "previewSkill",
+        "uploadSkill",
+        "confirmSkill",
         "deleteSkill",
     ):
         assert token in desktop_api
 
     for token in (
         "mcp_section_title",
-        "skill-install",
         "getMcpServers",
-        "installSkill",
+        "testMcpServer",
+        "previewSkill",
+        "confirmSkill",
     ):
         assert token in desktop_page
 

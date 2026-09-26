@@ -906,6 +906,32 @@ export interface McpTestResult {
   message?: string
 }
 
+export type SkillMarketSource = 'hub' | 'github' | 'clawhub'
+
+/** One skill found in a staged fetch or upload, shown for review before installing. */
+export interface SkillPreviewItem {
+  name: string
+  display_name: string
+  description: string
+  source: string
+  skill_md: string
+  skill_md_truncated: boolean
+  has_skill_md: boolean
+  files: string[]
+  file_count: number
+  size: number
+  /** A skill with this name is already installed and would be replaced. */
+  exists: boolean
+}
+
+export interface SkillPreviewResult {
+  status: string
+  message?: string
+  token?: string
+  skills?: SkillPreviewItem[]
+  messages?: string[]
+}
+
 /** Response of GET /api/skills/content: a skill's definition file. */
 export interface SkillContent extends WorkspaceReadResult {
   name: string

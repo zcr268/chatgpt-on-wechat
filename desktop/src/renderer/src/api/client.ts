@@ -8,6 +8,8 @@ import type {
   McpServerConfig,
   McpServersResult,
   McpTestResult,
+  SkillMarketSource,
+  SkillPreviewResult,
   MemoryItem,
   MemoryCategory,
   MemoryPage,
@@ -838,10 +840,35 @@ class ApiClient {
     })
   }
 
-  async installSkill(spec: string): Promise<ApiResult & { installed?: string[]; messages?: string[] }> {
+  /** Fetch a skill into a staging area so it can be reviewed before installing. */
+  async previewSkill(source: SkillMarketSource, value: string): Promise<SkillPreviewResult> {
     return this.request('/api/skills', {
       method: 'POST',
-      body: JSON.stringify({ action: 'install', spec }),
+      body: JSON.stringify({ action: 'preview', source, value }),
+    })
+  }
+
+  /** Stage uploaded files; `path` keeps each file's place inside a dropped folder. */
+  async uploadSkill(files: Array<{ file: File; path: string }>): Promise<SkillPreviewResult> {
+    const formData = new FormData()
+    for (const { file, path } of files) {
+      formData.append('files', file, file.name)
+      formData.append('paths', path)
+    }
+    return this.postFormData('/api/skills/upload', formData)
+  }
+
+  async confirmSkill(token: string, names: string[]): Promise<ApiResult & { installed?: string[] }> {
+    return this.request('/api/skills', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'confirm', token, names }),
+    })
+  }
+
+  async discardSkill(token: string): Promise<ApiResult> {
+    return this.request('/api/skills', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'discard', token }),
     })
   }
 
