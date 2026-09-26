@@ -265,7 +265,7 @@ SAFETY:
             
             # Workaround for exit code 126 with no output
             if result.returncode == 126 and not result.stdout and not result.stderr:
-                logger.warning(f"[Bash] Exit 126 with no output - trying alternative execution method")
+                logger.warning("[Bash] Exit 126 with no output - trying alternative execution method")
                 # Try using argument list instead of shell=True
                 import shlex
                 try:
@@ -301,7 +301,7 @@ SAFETY:
                                     stdout='{"error": "图片无法解析", "reason": "该图片格式可能不受支持，或图片文件存在问题", "suggestion": "请尝试其他图片"}',
                                     stderr=''
                                 )
-                                logger.info(f"[Bash] Converted exit 126 to user-friendly image error message for vision skill")
+                                logger.info("[Bash] Converted exit 126 to user-friendly image error message for vision skill")
                 except Exception as retry_err:
                     logger.warning(f"[Bash] Retry failed: {retry_err}")
 
