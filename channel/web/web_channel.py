@@ -53,7 +53,7 @@ from channel.web.api.sessions import (  # noqa: F401
     HistoryHandler, MessageDeleteHandler, PromptOptimizeHandler,
     SessionClearContextHandler, SessionCompactContextHandler,
     SessionContextUsageHandler, SessionDetailHandler, SessionSettingsHandler,
-    SessionTitleHandler, SessionsHandler,
+    SessionTitleHandler, SessionsHandler, UserMessagesHandler,
 )
 from channel.web.api.skills import (  # noqa: F401
     McpServerTestHandler, McpServersHandler,
@@ -147,6 +147,7 @@ URLS = (
     '/api/sessions/(.*)/compact_context', 'SessionCompactContextHandler',
     '/api/sessions/(.*)/settings', 'SessionSettingsHandler',
     '/api/sessions/(.*)', 'SessionDetailHandler',
+    '/api/history/user_messages', 'UserMessagesHandler',
     '/api/history', 'HistoryHandler',
     '/api/messages/delete', 'MessageDeleteHandler',
     '/api/logs/download', 'LogsDownloadHandler',

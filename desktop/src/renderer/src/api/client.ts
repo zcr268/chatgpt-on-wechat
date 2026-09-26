@@ -23,6 +23,7 @@ import type {
   SessionsPage,
   SessionSettingsState,
   HistoryPage,
+  UserMessageIndex,
   ContextUsage,
   ModelsData,
   ModelsAction,
@@ -630,12 +631,28 @@ class ApiClient {
     })
   }
 
-  async getHistory(sessionId: string, page = 1, pageSize = 20, agentId?: string): Promise<HistoryPage> {
+  async getHistory(
+    sessionId: string,
+    page = 1,
+    pageSize = 20,
+    agentId?: string,
+    untilSeq?: number
+  ): Promise<HistoryPage> {
+    const until = untilSeq != null ? `&until_seq=${untilSeq}` : ''
     return this.request<{ status: string } & HistoryPage>(
       this.scoped(
-        `/api/history?session_id=${encodeURIComponent(sessionId)}&page=${page}&page_size=${pageSize}`,
+        `/api/history?session_id=${encodeURIComponent(sessionId)}&page=${page}&page_size=${pageSize}${until}`,
         agentId
       )
+    )
+  }
+
+  // Lightweight index of a session's user messages for the navigation timeline.
+  // Returns the whole conversation's user turns at once (no pagination): the
+  // payload is small since it only carries {seq, preview, created_at}.
+  async getUserMessages(sessionId: string, agentId?: string): Promise<UserMessageIndex> {
+    return this.request<{ status: string } & UserMessageIndex>(
+      this.scoped(`/api/history/user_messages?session_id=${encodeURIComponent(sessionId)}`, agentId)
     )
   }
 

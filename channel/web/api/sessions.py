@@ -946,7 +946,7 @@ class HistoryHandler:
         web.header('Content-Type', 'application/json; charset=utf-8')
         web.header('Access-Control-Allow-Origin', '*')
         try:
-            params = web.input(session_id='', page='1', page_size='20', agent_id='')
+            params = web.input(session_id='', page='1', page_size='20', agent_id='', until_seq='')
             session_id = params.session_id.strip()
             if not session_id:
                 return json.dumps({"status": "error", "message": "session_id required"})
@@ -956,11 +956,34 @@ class HistoryHandler:
             store = get_conversation_store(
                 _get_workspace_root(agent_id=agent_id)
             )
+            until_seq = params.until_seq.strip()
+            page = int(params.page)
+            # A reply still streaming is shown as of its last stored point and
+            # followed live from there, so nothing appears twice or goes missing.
+            live = None
+            if page == 1 and not until_seq:
+                try:
+                    live = WebChannel().resumable_stream(session_id, agent_id)
+                except Exception as e:
+                    logger.debug(f"[WebChannel] resumable stream lookup skipped: {e}")
             result = store.load_history_page(
                 session_id=session_id,
-                page=int(params.page),
+                page=page,
                 page_size=int(params.page_size),
+                until_seq=int(until_seq) if until_seq.lstrip('-').isdigit() else None,
+                max_seq=live["stored_seq"] if live else None,
             )
+            if live:
+                messages = result.get("messages") or []
+                last = messages[-1] if messages else {}
+                running = last.get("role") == "assistant" and last.get("run_state") == "running"
+                # Before the run starts there is nothing stored to line up
+                # with; once it has, only its own unfinished turn is followed.
+                if running or live["stored_seq"] is None:
+                    result["active_request"] = {
+                        "request_id": live["request_id"],
+                        "after_seq": live["after_seq"],
+                    }
             # Same workspace-relative media rewrite the live SSE path applies,
             # so images/videos survive a page reload for non-default agents.
             history_root = None
@@ -986,6 +1009,36 @@ class HistoryHandler:
             return json.dumps({"status": "success", **result}, ensure_ascii=False)
         except Exception as e:
             logger.error(f"[WebChannel] History API error: {e}")
+            return json.dumps({"status": "error", "message": str(e)})
+
+
+class UserMessagesHandler:
+    """Lightweight index of a session's user messages for the nav timeline.
+
+    Returns only ``{seq, preview, created_at}`` per user turn, so the whole
+    conversation's user-message list can be fetched at once regardless of how
+    many messages there are; the main history stays paginated.
+    """
+
+    def GET(self):
+        _require_auth()
+        web.header('Content-Type', 'application/json; charset=utf-8')
+        web.header('Access-Control-Allow-Origin', '*')
+        try:
+            params = web.input(session_id='', agent_id='')
+            session_id = params.session_id.strip()
+            if not session_id:
+                return json.dumps({"status": "error", "message": "session_id required"})
+
+            agent_id = _request_agent_id(params)
+            from agent.memory import get_conversation_store
+            store = get_conversation_store(
+                _get_workspace_root(agent_id=agent_id)
+            )
+            result = store.list_user_messages(session_id=session_id)
+            return json.dumps({"status": "success", **result}, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"[WebChannel] User messages API error: {e}")
             return json.dumps({"status": "error", "message": str(e)})
 
 

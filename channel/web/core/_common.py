@@ -85,6 +85,10 @@ class SSEStreamState:
     stream_complete: bool = False
     completed_at: Optional[float] = None
     closed: bool = False
+    # Where the stored transcript and this log last lined up: messages up to
+    # ``stored_seq`` hold exactly what events up to ``stored_event_seq`` showed.
+    stored_seq: Optional[int] = None
+    stored_event_seq: int = 0
 
 
 def _read_config_file_for_write() -> dict:
@@ -626,6 +630,7 @@ def _roster_from_members(host_agent_id: str, members) -> List[dict]:
     is reachable. Deduped on the resolved id, because an alias and the id it
     resolves to name one teammate.
     """
+    from agent.multiagent import peer as peer_of
     from agent.registry import get_agent_registry
 
     if not members:
@@ -635,13 +640,18 @@ def _roster_from_members(host_agent_id: str, members) -> List[dict]:
     seen: set = set()
     for agent_id in [host_agent_id, *members]:
         try:
-            profile = registry.get_addressed(agent_id)
+            badge = _agent_badge(registry.get_addressed(agent_id))
         except Exception:
+            # A teammate hosted elsewhere: it has no local profile, but it is on
+            # the team and must be listed. It carries no avatar of its own here.
+            found = peer_of(agent_id)
+            if found is None:
+                continue
+            badge = {"id": found.id, "name": found.name or found.id, "avatar": ""}
+        if badge["id"] in seen:
             continue
-        if profile.id in seen:
-            continue
-        seen.add(profile.id)
-        roster.append(_agent_badge(profile))
+        seen.add(badge["id"])
+        roster.append(badge)
     return roster
 
 

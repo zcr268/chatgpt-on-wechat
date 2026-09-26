@@ -10,7 +10,7 @@ import MessageSteps, { ThinkingStep } from './MessageSteps'
 import FileCard from './FileCard'
 import { useLightboxStore } from './Lightbox'
 import AgentAvatar from './AgentAvatar'
-import { useAgentStore, selectMultiAgent, findAgent } from '../store/agentStore'
+import { useAgentStore, findAgent } from '../store/agentStore'
 import { useSessionSettingsStore, selectSharedConversation } from '../store/sessionSettingsStore'
 import { product } from '@product'
 
@@ -52,16 +52,16 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
   const [copied, setCopied] = useState(false)
   const preview = useWorkspaceStore((s) => s.preview)
   const openLightbox = useLightboxStore((s) => s.open)
-  // In multi-Agent mode, show the speaking Agent's face on assistant bubbles.
-  // A teammate's turn is tagged with its author (`extras.agent_id`); untagged
-  // replies are the conversation owner's, and the owner is always the active
-  // Agent (opening a chat activates its owner; switching Agents on a chat that
-  // has messages starts a new one), so falling back to it never rewrites who
-  // spoke in past turns.
-  const multiAgent = useAgentStore(selectMultiAgent)
+  // Show the speaking Agent's own face on assistant bubbles. A teammate's turn
+  // is tagged with its author (`extras.agent_id`); untagged replies are the
+  // conversation owner's, and the owner is always the active Agent (opening a
+  // chat activates its owner; switching Agents on a chat that has messages
+  // starts a new one), so falling back to it never rewrites who spoke in past
+  // turns. An Agent with no face of its own falls back to the brand one, which
+  // is what a lone default Agent has always worn.
   const activeAgentId = useAgentStore((s) => s.activeAgentId)
   const speakerId = (message.extras?.agent_id as string) || activeAgentId
-  const speaker = multiAgent && speakerId ? findAgent(speakerId) : undefined
+  const speaker = speakerId ? findAgent(speakerId) : undefined
   // In a group conversation several Agents answer, so each reply is labelled
   // with its speaker's name (as in the web console). A solo chat keeps the
   // plain bubble — the face alone says who it is.
@@ -156,13 +156,13 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, onRegenerate, on
 
   return (
     <div className="group flex gap-3 px-4 sm:px-6 py-2">
-      {product.slots?.AssistantAvatar ? (
-        <div className="w-7 h-7 rounded-lg flex-shrink-0 mt-1 overflow-hidden">
-          <product.slots.AssistantAvatar />
-        </div>
-      ) : speaker ? (
+      {speaker ? (
         <div className="mt-1">
           <AgentAvatar agent={speaker} size={28} shape="square" />
+        </div>
+      ) : product.slots?.AssistantAvatar ? (
+        <div className="w-7 h-7 rounded-lg flex-shrink-0 mt-1 overflow-hidden">
+          <product.slots.AssistantAvatar />
         </div>
       ) : (
         <img src="./logo.jpg" alt="Agent" className="w-7 h-7 rounded-lg flex-shrink-0 mt-1" />

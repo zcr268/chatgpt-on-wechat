@@ -528,7 +528,7 @@ class CloudClient(LinkAIClient):
                 return
             service = get_agent_admin_service()
             service.update_agent(current.id, **fields)
-            self._reload_agents(service)
+            self._reload_agents(service, changed_agent_ids=[current.id])
             logger.info(f"[CloudClient] Agent '{current.id}' updated: {list(fields)}")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to update agent '{agent_id}': {e}", exc_info=True)
@@ -541,14 +541,23 @@ class CloudClient(LinkAIClient):
             from agent.admin import get_agent_admin_service
             service = get_agent_admin_service()
             service.delete_agent(agent_id)
-            self._reload_agents(service)
+            self._reload_agents(service, changed_agent_ids=[agent_id])
             logger.info(f"[CloudClient] Agent '{agent_id}' deleted")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to delete agent '{agent_id}': {e}", exc_info=True)
 
     def _handle_agent_create(self, agent_id: str, data: dict):
         """Add a new agent and re-point the live runtime, so it can answer
-        without a restart. A no-op when agent support is unavailable."""
+        without a restart. A no-op when agent support is unavailable.
+
+        The console may send the same registration again, e.g. after a
+        reconnect to make sure an agent it created while this instance was
+        offline exists; an agent that already exists takes it as an update,
+        and its asset modes are left as they are."""
+        if self._agent_exists(agent_id):
+            logger.info(f"[CloudClient] Agent '{agent_id}' already exists, applying as update")
+            self._handle_agent_update(agent_id, data)
+            return
         name = str(data.get("name") or agent_id).strip()
         description = str(data.get("description") or "").strip()
         model = data.get("model")
@@ -582,11 +591,26 @@ class CloudClient(LinkAIClient):
             logger.error(f"[CloudClient] Failed to create agent '{agent_id}': {e}", exc_info=True)
 
     @staticmethod
-    def _reload_agents(service):
-        """Re-point the running runtime at the updated roster."""
+    def _agent_exists(agent_id: str) -> bool:
+        # Addressed lookup, so the reserved default alias names the existing
+        # default agent rather than a new agent to create.
+        try:
+            from agent.registry import get_agent_registry
+            get_agent_registry().get_addressed(agent_id, require_enabled=False)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _reload_agents(service, changed_agent_ids=None):
+        """Re-point the running runtime at the updated roster.
+
+        ``changed_agent_ids`` are the agents whose cached runtimes are dropped:
+        a runtime keeps the model it was built with, so an edited agent would
+        otherwise answer on its old model until the process restarts."""
         try:
             from channel.web.api.agents import _reload_agent_runtime
-            _reload_agent_runtime(service)
+            _reload_agent_runtime(service, changed_agent_ids=changed_agent_ids)
         except Exception as e:
             logger.warning(f"[CloudClient] agent runtime reload skipped: {e}")
 
@@ -634,6 +658,21 @@ class CloudClient(LinkAIClient):
                 return [str(m).strip() for m in value if str(m or "").strip()]
         return None
 
+    @staticmethod
+    def _instance_peers(data: dict):
+        """How to reach members that are not in this process, or None to leave
+        the directory as-is.
+
+        Same authoritative-list rule as the members above: ``[]`` clears it, an
+        absent key keeps whatever the record had. Entries are
+        ``{id, name, description}``; anything without an id is dropped later.
+        """
+        for key in ("peers", "peerAgents", "peer_agents"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [p for p in value if isinstance(p, dict)]
+        return None
+
     def _instance_signature(self, inst):
         """What decides whether a running instance must restart.
 
@@ -655,6 +694,9 @@ class CloudClient(LinkAIClient):
             owner,
             tuple(sorted((inst.credentials or {}).items())),
             tuple(sorted(inst.members or [])),
+            # A teammate that moved to another process, or back, changes how it is
+            # reached even when the roster itself reads the same.
+            tuple(sorted(str(p.get("id") or "") for p in (inst.peers or []))),
         )
 
     @staticmethod
@@ -698,6 +740,7 @@ class CloudClient(LinkAIClient):
             agent_id=self._instance_agent_id(data),
             credentials=self._instance_credentials_from(channel_type, data),
             members=self._instance_members(data),
+            peers=self._instance_peers(data),
             name=(str(data.get("channelName") or "").strip() or None),
         )
         if not self.channel_mgr:
@@ -1118,14 +1161,34 @@ class CloudClient(LinkAIClient):
         :return: response dict
         """
         action = data.get("action", "")
-        payload = data.get("payload")
+        payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_skill: action={action}")
 
-        svc = self.skill_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._skill_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "SkillService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _skill_service_for(self, agent_id):
+        """A SkillService over the requested agent's skills: its own set when it
+        has one, else the shared set. Falls back to the process-wide service when
+        no agent is requested, so single-agent installs are unaffected."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.skill_service
+        try:
+            from agent.skills.manager import SkillManager
+            from agent.skills.service import SkillService
+            from common.state_dir import skills_dir
+            return SkillService(SkillManager(custom_dir=str(skills_dir(base=workspace))))
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build SkillService for agent: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # memory callback
@@ -1344,11 +1407,14 @@ class CloudClient(LinkAIClient):
                     send_chunk_fn=self._aliasing_sender(send_chunk_fn), agent_id=agent_id,
                     speaker_agent_id=speaker_agent_id, members=members)
 
+    #: Chunks that name a speaker, so the caller can attribute what follows.
+    _SPEAKER_CHUNKS = ("speaker", "peer_start", "peer_end")
+
     def _aliasing_sender(self, send_chunk_fn):
         """Report the default agent to remote callers by its reserved alias,
         matching how they address it (see AgentRegistry.get_addressed)."""
         def send(chunk):
-            if isinstance(chunk, dict) and chunk.get("chunk_type") == "speaker":
+            if isinstance(chunk, dict) and chunk.get("chunk_type") in self._SPEAKER_CHUNKS:
                 chunk = {**chunk, "agent_id": self._alias_agent_id(chunk.get("agent_id"))}
             send_chunk_fn(chunk)
         return send
