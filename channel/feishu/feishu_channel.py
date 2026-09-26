@@ -2306,8 +2306,11 @@ class FeishuController:
                 or event.get("token")
                 or request.get("token")
             )
-            if not hmac.compare_digest(
-                callback_token or "", channel.feishu_token or ""
+            expected_token = channel.feishu_token
+            if not (
+                isinstance(callback_token, str)
+                and expected_token
+                and hmac.compare_digest(callback_token, expected_token)
             ):
                 return self.FAILED_MSG
 
