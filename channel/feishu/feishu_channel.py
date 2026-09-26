@@ -759,6 +759,15 @@ class FeiShuChanel(ChatChannel):
             logger.warning("[FeiShu] message ignore")
             return
 
+        # Types we cannot parse (e.g. interactive cards posted by other bots in a
+        # group) get no reply either way; skip them here instead of raising, so
+        # they do not show up in the log as handler errors.
+        if msg.get("message_type") not in FeishuMessage.SUPPORTED_TYPES:
+            logger.debug(
+                f"[FeiShu] unsupported message type ignored: {msg.get('message_type')}, msg_id={msg_id}"
+            )
+            return
+
         # 构造飞书消息对象
         feishu_msg = FeishuMessage(event, is_group=is_group, access_token=self.fetch_access_token())
         if not feishu_msg:

@@ -166,6 +166,12 @@ SAFETY:
             # Prepare environment with .env file variables
             env = os.environ.copy()
 
+            # The console connection belongs to this process. A child inheriting
+            # these would, if it started another instance, log in as the same
+            # client and take the connection over.
+            for _name in ("CLOUD_DEPLOYMENT_ID", "CLOUD_CLIENT_ID"):
+                env.pop(_name, None)
+
             # Anchor artifact outputs to the workspace/project dir regardless of
             # any `cd` inside the command, so tools (e.g. image-generation) can
             # resolve a stable output dir instead of relying on the live cwd.

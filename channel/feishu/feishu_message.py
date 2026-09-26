@@ -10,6 +10,9 @@ from config import conf
 
 
 class FeishuMessage(ChatMessage):
+    # Message types __init__ can parse; anything else raises NotImplementedError.
+    SUPPORTED_TYPES = ("text", "image", "post", "file", "audio")
+
     def __init__(self, event: dict, is_group=False, access_token=None):
         super().__init__(event)
         msg = event.get("message")

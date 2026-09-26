@@ -1897,8 +1897,75 @@ def build_website_prompt(workspace_dir: str) -> list:
         "",
     ]
 
+# Held open for the life of the process; the OS drops the lock when it exits.
+_connection_lock_handle = None
+
+
+def _claim_connection(deployment_id: str) -> bool:
+    """Whether this process may open the console connection for *deployment_id*.
+
+    The console keeps a single connection per client and gives it to whichever
+    process logged in last. A second instance started on the same host (for
+    example from a shell tool, inheriting the environment) would silently take
+    over every request, so only the first process to take a per-deployment lock
+    connects. Where file locking is unavailable the check is skipped rather than
+    blocking the connection.
+    """
+    global _connection_lock_handle
+    if _connection_lock_handle is not None:
+        return True
+    import re
+    import tempfile
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", str(deployment_id))
+    path = os.path.join(tempfile.gettempdir(), f"cow-console-{safe_id}.lock")
+    try:
+        handle = open(path, "a+")
+    except OSError as e:
+        logger.warning(f"[Console] Connection lock unavailable, continuing without it: {e}")
+        return True
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                handle.close()
+                logger.warning(
+                    "[Console] Another process already holds the console connection "
+                    "for this deployment; not connecting from this one"
+                )
+                return False
+        else:
+            import fcntl
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                handle.seek(0)
+                holder = handle.read().strip()
+                handle.close()
+                logger.warning(
+                    f"[Console] Another process{f' (pid {holder})' if holder else ''} already "
+                    f"holds the console connection for this deployment; not connecting from this one"
+                )
+                return False
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+    except Exception as e:
+        handle.close()
+        logger.warning(f"[Console] Connection lock unavailable, continuing without it: {e}")
+        return True
+    _connection_lock_handle = handle
+    return True
+
+
 def start(channel, channel_mgr=None):
-    if not get_deployment_id():
+    deployment_id = get_deployment_id()
+    if not deployment_id:
+        return
+    if not _claim_connection(deployment_id):
         return
 
     global chat_client
