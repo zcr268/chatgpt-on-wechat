@@ -867,6 +867,69 @@ export interface SkillInfo {
   source?: string
   enabled: boolean
   category?: string
+  ships_with_install?: boolean
+  deletable?: boolean
+}
+
+export type McpTransport = 'stdio' | 'sse' | 'streamable-http'
+export type McpServerStatus = 'pending' | 'ready' | 'failed' | 'needs_auth' | 'disabled' | 'idle' | 'unknown'
+
+export interface McpServerConfig {
+  name: string
+  type?: McpTransport | string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+  scope?: string
+  tool_name_prefix?: string
+  disabled?: boolean
+  timeout?: number
+  status?: McpServerStatus | string
+}
+
+export interface McpServersResult {
+  status: string
+  servers: McpServerConfig[]
+  path?: string
+  hint?: string
+  message?: string
+}
+
+export interface McpTestResult {
+  status: string
+  ok: boolean
+  tools: Array<{ name: string; description?: string }>
+  error?: string | null
+  needs_auth?: boolean
+  message?: string
+}
+
+export type SkillMarketSource = 'hub' | 'github' | 'clawhub'
+
+/** One skill found in a staged fetch or upload, shown for review before installing. */
+export interface SkillPreviewItem {
+  name: string
+  display_name: string
+  description: string
+  source: string
+  skill_md: string
+  skill_md_truncated: boolean
+  has_skill_md: boolean
+  files: string[]
+  file_count: number
+  size: number
+  /** A skill with this name is already installed and would be replaced. */
+  exists: boolean
+}
+
+export interface SkillPreviewResult {
+  status: string
+  message?: string
+  token?: string
+  skills?: SkillPreviewItem[]
+  messages?: string[]
 }
 
 /** Response of GET /api/skills/content: a skill's definition file. */

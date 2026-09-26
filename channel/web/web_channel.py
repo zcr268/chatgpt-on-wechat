@@ -56,7 +56,9 @@ from channel.web.api.sessions import (  # noqa: F401
     SessionTitleHandler, SessionsHandler, UserMessagesHandler,
 )
 from channel.web.api.skills import (  # noqa: F401
-    SkillContentHandler, SkillsHandler, ToolsHandler,
+    McpServerTestHandler, McpServersHandler,
+    SkillContentHandler, SkillsHandler, SkillUploadHandler, ToolsHandler,
+    _install_skill_for_agent,
 )
 from channel.web.api.update import (  # noqa: F401
     UpdateCheckHandler, UpdateStartHandler, UpdateStatusHandler, VersionHandler,
@@ -112,8 +114,11 @@ URLS = (
     '/api/weixin/qrlogin', 'WeixinQrHandler',
     '/api/feishu/register', 'FeishuRegisterHandler',
     '/api/tools', 'ToolsHandler',
+    '/api/mcp/servers', 'McpServersHandler',
+    '/api/mcp/servers/test', 'McpServerTestHandler',
     '/api/skills', 'SkillsHandler',
     '/api/skills/content', 'SkillContentHandler',
+    '/api/skills/upload', 'SkillUploadHandler',
     '/api/memory', 'MemoryHandler',
     '/api/memory/content', 'MemoryContentHandler',
     '/api/knowledge/list', 'KnowledgeListHandler',
