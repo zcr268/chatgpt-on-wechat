@@ -604,7 +604,7 @@ class ConversationStore:
                 ctx_start = ctx_row[0] if ctx_row else 0
 
                 columns = "seq, role, content" + (", extras" if with_authors else "")
-                rows = conn.execute(
+                cursor = conn.execute(
                     f"""
                     SELECT {columns}
                     FROM messages
@@ -612,7 +612,8 @@ class ConversationStore:
                     ORDER BY seq DESC
                     """,
                     (aid, session_id, ctx_start),
-                ).fetchall()
+                )
+                rows = self._rows_within_turns(cursor, max(1, max_turns))
             finally:
                 conn.close()
 
@@ -621,26 +622,8 @@ class ConversationStore:
 
         authors = {row[0]: self._author_of(row[3]) for row in rows} if with_authors else {}
 
-        visible_turn_seqs: List[int] = []
-        for seq, role, raw_content, *_ in rows:
-            if role != "user":
-                continue
-            try:
-                content = json.loads(raw_content)
-            except Exception:
-                content = raw_content
-            if _is_visible_user_message(content):
-                visible_turn_seqs.append(seq)
-
-        if len(visible_turn_seqs) <= max_turns:
-            cutoff_seq = None
-        else:
-            cutoff_seq = visible_turn_seqs[max_turns - 1]
-
         result = []
         for seq, role, raw_content, *_ in reversed(rows):
-            if cutoff_seq is not None and seq < cutoff_seq:
-                continue
             try:
                 content = json.loads(raw_content)
             except Exception:
@@ -653,6 +636,44 @@ class ConversationStore:
                 message["agent_id"] = authors[seq]
             result.append(message)
         return result
+
+    @staticmethod
+    def _rows_within_turns(cursor, max_turns: int) -> List[tuple]:
+        """Newest-first rows back to the ``max_turns``-th visible user message.
+
+        Reading stops at the first visible user message beyond the budget, so a
+        long session costs its recent tail instead of its whole history. When
+        the session has no more than ``max_turns`` visible turns, every row is
+        returned, including any that precede the oldest visible message.
+        """
+        kept: List[tuple] = []
+        older: List[tuple] = []
+        visible = 0
+        for row in cursor:
+            is_visible = False
+            if row[1] == "user":
+                try:
+                    content = json.loads(row[2])
+                except Exception:
+                    content = row[2]
+                is_visible = _is_visible_user_message(content)
+            if visible >= max_turns:
+                if is_visible:
+                    return kept
+                older.append(row)
+                continue
+            kept.append(row)
+            if is_visible:
+                visible += 1
+        return kept + older
+
+    def _adjust_msg_count(self, conn: sqlite3.Connection, session_id: str, delta: int) -> None:
+        if not delta:
+            return
+        conn.execute(
+            "UPDATE sessions SET msg_count = MAX(msg_count + ?, 0) WHERE agent_id = ? AND session_id = ?",
+            (delta, self._agent_id, session_id),
+        )
 
     @staticmethod
     def _author_of(raw_extras: Any) -> str:
@@ -747,6 +768,7 @@ class ConversationStore:
                     ).fetchone()
                     next_seq = row[0] + 1
 
+                    inserted = 0
                     for msg in messages:
                         role = msg.get("role", "")
                         content = json.dumps(
@@ -755,7 +777,7 @@ class ConversationStore:
                         extras_obj = msg.get("extras") or {}
                         extras = json.dumps(extras_obj, ensure_ascii=False) if extras_obj else ""
                         msg_run_id = str(msg.get("run_id") or run_id or "")
-                        conn.execute(
+                        cur = conn.execute(
                             """
                             INSERT OR IGNORE INTO messages
                                 (agent_id, session_id, seq, role, content, created_at, extras, run_id)
@@ -763,19 +785,14 @@ class ConversationStore:
                             """,
                             (aid, session_id, next_seq, role, content, now, extras, msg_run_id),
                         )
+                        inserted += max(cur.rowcount, 0)
                         next_seq += 1
 
-                    conn.execute(
-                        """
-                        UPDATE sessions
-                        SET msg_count = (
-                            SELECT COUNT(*) FROM messages
-                            WHERE agent_id = ? AND session_id = ?
-                        )
-                        WHERE agent_id = ? AND session_id = ?
-                        """,
-                        (aid, session_id, aid, session_id),
-                    )
+                    # Incremental on purpose: on databases upgraded in place the
+                    # session index lacks agent_id, so a COUNT(*) here reads
+                    # every row of the session and, on a long transcript, holds
+                    # the write lock for minutes.
+                    self._adjust_msg_count(conn, session_id, inserted)
 
                     # Auto-generate title from the first visible user message
                     cur_title = conn.execute(
@@ -1001,19 +1018,7 @@ class ConversationStore:
                         (aid, session_id, start_seq, end_seq),
                     )
                     deleted = cur.rowcount
-
-                    # Update session msg_count
-                    conn.execute(
-                        """
-                        UPDATE sessions
-                        SET msg_count = (
-                            SELECT COUNT(*) FROM messages
-                            WHERE agent_id = ? AND session_id = ?
-                        )
-                        WHERE agent_id = ? AND session_id = ?
-                        """,
-                        (aid, session_id, aid, session_id),
-                    )
+                    self._adjust_msg_count(conn, session_id, -deleted)
 
                     return deleted
             finally:
@@ -1065,9 +1070,11 @@ class ConversationStore:
             conn = self._connect()
             try:
                 aid = self._agent_id
+                # Only user content can carry a marker. Skipping the rest keeps
+                # SQLite from pulling large assistant/tool payloads off disk.
                 rows = conn.execute(
                     """
-                    SELECT seq, role, content
+                    SELECT seq, role, CASE WHEN role = 'user' THEN content ELSE '' END
                     FROM messages
                     WHERE agent_id = ? AND session_id = ?
                     ORDER BY seq ASC
@@ -1103,21 +1110,11 @@ class ConversationStore:
 
                 placeholders = ",".join("?" * len(seqs_to_delete))
                 with conn:
-                    conn.execute(
+                    cur = conn.execute(
                         f"DELETE FROM messages WHERE agent_id = ? AND session_id = ? AND seq IN ({placeholders})",
                         (aid, session_id, *seqs_to_delete),
                     )
-                    conn.execute(
-                        """
-                        UPDATE sessions
-                        SET msg_count = (
-                            SELECT COUNT(*) FROM messages
-                            WHERE agent_id = ? AND session_id = ?
-                        )
-                        WHERE agent_id = ? AND session_id = ?
-                        """,
-                        (aid, session_id, aid, session_id),
-                    )
+                    self._adjust_msg_count(conn, session_id, -cur.rowcount)
                 return len(seqs_to_delete)
             finally:
                 conn.close()
