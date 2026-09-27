@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from agent.tools.base_tool import BaseTool, ToolResult
-from agent.tools.utils.url_safety import validate_url_safe
+from agent.tools.utils.url_safety import validate_url_safe, safe_get
 from common import const
 from common.log import logger
 from common.utils import expand_path
@@ -771,8 +771,14 @@ class Vision(BaseTool):
 
     @staticmethod
     def _download_to_data_url(url: str) -> dict:
-        """Download a remote image and return it as a base64 data URL."""
-        resp = requests.get(url, timeout=30)
+        """Download a remote image and return it as a base64 data URL.
+
+        Fetches through the shared redirect-aware SSRF helper. The guard in
+        ``_validate_url_safe`` only checks the URL the model supplied, so a
+        public URL that 3xx-redirects into a loopback / link-local /
+        cloud-metadata address would otherwise be pulled in unchecked.
+        """
+        resp = safe_get(url, timeout=30)
         if resp.status_code != 200:
             raise VisionAPIError(f"Failed to download image: HTTP {resp.status_code}")
         content_type = resp.headers.get("Content-Type", "image/jpeg").split(";")[0].strip()
