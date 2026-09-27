@@ -81,7 +81,7 @@ class MemoryManager:
             config: Memory configuration (uses global config if not provided)
             embedding_provider: Custom embedding provider (optional)
             llm_model: LLM model for summarization (optional)
-            reranker: Cross-encoder reranker for precision reordering (optional)
+            reranker: Reranker that reorders search candidates (optional)
         """
         self.config = config or get_default_memory_config()
         
@@ -110,7 +110,7 @@ class MemoryManager:
         # Cache for query embeddings (avoids redundant API calls within a session)
         self._embedding_cache = EmbeddingCache()
 
-        # Optional cross-encoder reranker; None means un-reranked retrieval
+        # Optional reranker; None means un-reranked retrieval
         self.reranker = reranker
 
         # Initialize memory flush manager
@@ -216,11 +216,10 @@ class MemoryManager:
             self.config.keyword_weight
         )
 
-        # Precision-reorder with cross-encoder (no-op when no reranker configured)
-        merged = self._rerank(query, merged)
-
-        # Filter by min score and limit
+        # min_score is a cutoff on the fused score, so it is applied before
+        # rerank; the reranker only reorders the candidates that pass it.
         filtered = [r for r in merged if r.score >= min_score]
+        filtered = self._rerank(query, filtered)
         return filtered[:max_results]
     
     async def add_memory(
@@ -765,18 +764,27 @@ class MemoryManager:
         query: str,
         results: List[SearchResult]
     ) -> List[SearchResult]:
-        """Precision-reorder merged candidates with a cross-encoder reranker.
+        """Reorder candidates by the reranker's relevance scores.
 
-        Replaces each candidate's fused score with the cross-encoder's
-        relevance judgement (still subject to temporal decay), then re-sorts.
-        Returns ``results`` unchanged when no reranker is configured, so the
-        optional ``sentence-transformers`` dependency is never required.
+        Replaces each candidate's fused score with the reranker's score (still
+        subject to temporal decay), then re-sorts. Returns ``results``
+        unchanged when no reranker is configured, and falls back to them when
+        rerank fails, the same way vector search degrades to keyword-only.
         """
         if self.reranker is None or not results:
             return results
 
-        documents = [r.snippet for r in results]
-        scores = self.reranker.rerank(query, documents)
+        from common.log import logger
+
+        try:
+            scores = self.reranker.rerank(query, [r.snippet for r in results])
+            if len(scores) != len(results):
+                raise ValueError(
+                    f"expected {len(results)} scores, got {len(scores)}"
+                )
+        except Exception as e:
+            logger.warning(f"[MemoryManager] Rerank failed, keeping fused order: {e}")
+            return results
 
         reranked = []
         for result, score in zip(results, scores):

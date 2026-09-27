@@ -27,7 +27,10 @@ from agent.memory.reranker import (
     DEFAULT_RERANK_MODEL,
     Reranker,
     SentenceTransformerReranker,
+    clear_reranker_cache,
+    create_default_reranker,
     create_reranker,
+    register_reranker_provider,
 )
 from agent.memory.summarizer import ensure_daily_memory_file
 from agent.memory.vector_backend import (
@@ -49,6 +52,9 @@ __all__ = [
     'Reranker',
     'SentenceTransformerReranker',
     'create_reranker',
+    'create_default_reranker',
+    'register_reranker_provider',
+    'clear_reranker_cache',
     'DEFAULT_RERANK_MODEL',
     'VectorBackend',
     'SQLiteVectorBackend',

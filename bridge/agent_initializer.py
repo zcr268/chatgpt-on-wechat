@@ -479,21 +479,14 @@ class AgentInitializer:
         return create_default_embedding_provider()
 
     def _init_reranker(self):
-        """Initialize the optional cross-encoder reranker from config.
+        """Return the reranker selected by ``rerank_provider``, or None.
 
-        Off by default. When ``rerank_enabled`` is set in config.json, builds
-        the configured model and returns it; otherwise returns None so memory
-        keeps un-reranked retrieval. Also returns None if the optional
-        sentence-transformers dependency is not installed.
+        Off by default. The instance is shared across sessions and loads
+        nothing until the first memory search, so this stays cheap on the
+        session init path.
         """
-        from config import conf
-
-        if not conf().get("rerank_enabled", False):
-            return None
-
-        model = (conf().get("rerank_model") or "").strip() or "BAAI/bge-reranker-base"
-        from agent.memory.reranker import create_reranker
-        return create_reranker(model)
+        from agent.memory.reranker import create_default_reranker
+        return create_default_reranker()
 
     def _sync_memory(self, memory_manager, session_id: Optional[str] = None):
         """Bring the memory index up to date with the workspace files.
