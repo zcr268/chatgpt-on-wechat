@@ -845,7 +845,11 @@ class AgentInitializer:
                 memory_config, session_id=session_id
             )
 
-            memory_manager = MemoryManager(memory_config, embedding_provider=embedding_provider)
+            reranker = self._init_reranker()
+
+            memory_manager = MemoryManager(
+                memory_config, embedding_provider=embedding_provider, reranker=reranker
+            )
             self._sync_memory(memory_manager, session_id)
 
             memory_tools = [
@@ -874,6 +878,16 @@ class AgentInitializer:
         """
         from agent.memory import create_default_embedding_provider
         return create_default_embedding_provider()
+
+    def _init_reranker(self):
+        """Return the reranker selected by ``rerank_provider``, or None.
+
+        Off by default. The instance is shared across sessions and loads
+        nothing until the first memory search, so this stays cheap on the
+        session init path.
+        """
+        from agent.memory.reranker import create_default_reranker
+        return create_default_reranker()
 
     def _sync_memory(self, memory_manager, session_id: Optional[str] = None):
         """Bring the memory index up to date with the workspace files.
