@@ -586,13 +586,15 @@ class BrowserService:
             if task is None:
                 break
             fn, args, kwargs, result_slot = task
+            # Keep consuming instead of exiting, so no caller is left waiting on
+            # a queue nobody reads; close() on the next request does the teardown.
             if self._driver_connection_lost():
                 result_slot["error"] = RuntimeError(
                     "Browser connection lost; it will be relaunched on the next request."
                 )
                 result_slot["event"].set()
                 self._needs_restart = True
-                break
+                continue
             try:
                 result_slot["value"] = fn(*args, **kwargs)
             except Exception as e:
@@ -608,7 +610,6 @@ class BrowserService:
             if self._driver_connection_lost():
                 self._needs_restart = True
                 logger.warning("[Browser] Driver connection lost; will relaunch on next request.")
-                break
 
         if self._thread is me or self._thread is None:
             self._shutdown_browser()

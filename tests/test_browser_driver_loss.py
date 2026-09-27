@@ -126,13 +126,15 @@ class DriverConnectionLostTest(unittest.TestCase):
         first = _submit_raw(svc, losing_task)
         self.assertTrue(first["event"].wait(5))
         second = _submit_raw(svc, lambda: ran.append(1))
-        svc._thread.join(5)
 
-        self.assertFalse(svc._thread.is_alive())
-        self.assertTrue(svc._needs_restart)
         self.assertTrue(second["event"].wait(5))
         self.assertIn("error", second)
         self.assertEqual(ran, [])
+        self.assertTrue(svc._needs_restart)
+
+        thread = svc._thread
+        svc.close()
+        self.assertFalse(thread.is_alive())
         self.assertEqual(pw.stopped, 1)
 
     def test_abandoned_thread_does_not_resume_or_touch_replacement(self):
