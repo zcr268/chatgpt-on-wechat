@@ -36,7 +36,7 @@ class KnowledgeService:
     # An optional "— summary" suffix on an index line. Links are percent-encoded
     # by _link(), so the path never contains ")", which lets the summary be
     # matched non-greedily up to the end of the line.
-    INDEX_SUMMARY_RE = re.compile(r'\]\(([^)\s]+)\)\s*[—–-]\s*(.+?)\s*$')
+    INDEX_SUMMARY_RE = re.compile(r'\]\(([^)\s]+)\)\s*(?:—|–|--?)\s*(.+?)\s*$')
     IMPORT_EXTENSIONS = {".md", ".txt"}
     MAX_IMPORT_FILES = 100
     MAX_IMPORT_FILE_SIZE = 10 * 1024 * 1024
@@ -146,13 +146,14 @@ class KnowledgeService:
             pass
         return fallback
 
-    def rebuild_index_md(self) -> bool:
+    def rebuild_index_md(self, renamed: Optional[dict] = None) -> bool:
         """Regenerate knowledge/index.md from the actual directory tree.
 
         Keeps the index in sync with real files so it never drifts or loses
         documents. Summaries the model wrote on existing lines are carried over
-        by path (see _read_index_summaries) instead of being dropped. Returns
-        True when the file was (re)written.
+        by path (see _read_index_summaries) instead of being dropped;
+        ``renamed`` maps old -> new relative paths so a moved document keeps
+        its summary. Returns True when the file was (re)written.
         """
         root = Path(self.knowledge_dir)
         if not root.is_dir():
@@ -173,6 +174,9 @@ class KnowledgeService:
 
         all_entries = collect(root)
         summaries = self._read_index_summaries()
+        for old_rel, new_rel in (renamed or {}).items():
+            if old_rel in summaries:
+                summaries.setdefault(new_rel, summaries.pop(old_rel))
 
         def link(rel: str) -> str:
             # Encode each path segment so spaces / special chars stay valid in
@@ -246,15 +250,11 @@ class KnowledgeService:
                 summaries[target] = match.group(2).strip()
         return summaries
 
-    def _unlink_and_reindex(self, deleted: Iterable[str]):
-        """Remove the knowledge index rows for paths that no longer exist.
-
-        Called after any operation that deletes or relocates documents, so an
-        index row never outlives the file it points at.
-        """
-        for rel_path in deleted:
-            self._resolve_path(rel_path, kind="document", allow_missing=True)
-        self._sync_index(list(deleted))
+    def _validate_document_paths(self, paths: Iterable[str]):
+        # Reject the whole batch up front so a bad entry cannot abort the loop
+        # after earlier entries were already deleted or moved.
+        for path in paths:
+            self._ensure_not_protected(self._resolve_path(path, kind="document")[0])
 
     def _sanitize_document_name(self, filename: str) -> str:
         name = os.path.basename((filename or "").replace("\\", "/")).strip()
@@ -390,9 +390,9 @@ class KnowledgeService:
             return {"old_path": old_rel, "path": new_rel, "moved": False, "reason": "not_found"}
         except FileExistsError:
             raise FileExistsError(f"target already exists: {new_rel}")
-        old_paths = [f"{old_rel}/{p}" for p in old_documents]
-        self.rebuild_index_md()
-        self._unlink_and_reindex(old_paths)
+        renamed = {f"{old_rel}/{p}": f"{new_rel}/{p}" for p in old_documents}
+        self.rebuild_index_md(renamed=renamed)
+        self._sync_index(renamed.keys())
         return {"old_path": old_rel, "path": new_rel, "moved_documents": len(old_documents)}
 
     def delete_category(self, path: str, confirm: bool = False) -> dict:
@@ -413,77 +413,77 @@ class KnowledgeService:
         except FileNotFoundError:
             return {"path": rel_path, "deleted": False, "reason": "not_found"}
         self.rebuild_index_md()
-        self._unlink_and_reindex(documents)
+        self._sync_index(documents)
         return {"path": rel_path, "deleted": True, "deleted_documents": len(documents)}
 
     def delete_documents(self, paths: Iterable[str]) -> dict:
         if not isinstance(paths, list):
             raise ValueError("paths must be a list")
+        self._validate_document_paths(paths)
         results = []
         deleted = []
         removed_files = []
-        for path in paths:
-            rel_path, full_path = self._resolve_path(path, kind="document")
-            self._ensure_not_protected(rel_path)
-            if not full_path.exists():
-                deleted.append(rel_path)
-                results.append({"path": rel_path, "deleted": False, "reason": "not_found"})
-                continue
-            if not full_path.is_file():
-                raise ValueError(f"not a document: {rel_path}")
-            try:
-                full_path.unlink()
-                deleted.append(rel_path)
-                removed_files.append(rel_path)
-                results.append({"path": rel_path, "deleted": True})
-            except FileNotFoundError:
-                deleted.append(rel_path)
-                results.append({"path": rel_path, "deleted": False, "reason": "not_found"})
-        if removed_files:
-            self.rebuild_index_md()
-        self._unlink_and_reindex(deleted)
+        # Files removed before a mid-batch failure must still leave index.md
+        # and the search index consistent.
+        try:
+            for path in paths:
+                rel_path, full_path = self._resolve_path(path, kind="document")
+                if not full_path.exists():
+                    deleted.append(rel_path)
+                    results.append({"path": rel_path, "deleted": False, "reason": "not_found"})
+                    continue
+                if not full_path.is_file():
+                    raise ValueError(f"not a document: {rel_path}")
+                try:
+                    full_path.unlink()
+                    deleted.append(rel_path)
+                    removed_files.append(rel_path)
+                    results.append({"path": rel_path, "deleted": True})
+                except FileNotFoundError:
+                    deleted.append(rel_path)
+                    results.append({"path": rel_path, "deleted": False, "reason": "not_found"})
+        finally:
+            if removed_files:
+                self.rebuild_index_md()
+            self._sync_index(deleted)
         return {"results": results, "deleted": sum(1 for item in results if item["deleted"])}
 
     def move_documents(self, paths: Iterable[str], target_category: str) -> dict:
         if not isinstance(paths, list):
             raise ValueError("paths must be a list")
-        # Checked up front so a rejected batch cannot rewrite index.md with the
-        # documents already relocated by an earlier iteration.
-        for path in paths:
-            self._ensure_not_protected(self._resolve_path(path, kind="document")[0])
+        self._validate_document_paths(paths)
         target_rel, target_full = self._resolve_path(target_category, kind="category")
         if not target_full.is_dir():
             raise FileNotFoundError(f"category not found: {target_rel}")
         results = []
-        moved_old_paths = []
-        moved_any = False
-        for path in paths:
-            rel_path, full_path = self._resolve_path(path, kind="document")
-            self._ensure_not_protected(rel_path)
-            if not full_path.exists():
-                results.append({"path": rel_path, "moved": False, "reason": "not_found"})
-                continue
-            destination = target_full / full_path.name
-            new_rel = str(destination.relative_to(Path(self.knowledge_dir).resolve())).replace(os.sep, "/")
-            if destination.exists():
-                results.append({"path": rel_path, "moved": False, "reason": "target_exists",
-                                "target": new_rel})
-                continue
-            try:
-                os.link(full_path, destination)
-                full_path.unlink()
-                moved_old_paths.append(rel_path)
-                moved_any = True
-                results.append({"path": rel_path, "moved": True, "target": new_rel})
-            except FileExistsError:
-                results.append({"path": rel_path, "moved": False, "reason": "target_exists",
-                                "target": new_rel})
-            except FileNotFoundError:
-                results.append({"path": rel_path, "moved": False, "reason": "not_found"})
-        if moved_any:
-            self.rebuild_index_md()
-        self._unlink_and_reindex(moved_old_paths)
-        return {"results": results, "moved": len(moved_old_paths)}
+        moved = {}
+        try:
+            for path in paths:
+                rel_path, full_path = self._resolve_path(path, kind="document")
+                if not full_path.exists():
+                    results.append({"path": rel_path, "moved": False, "reason": "not_found"})
+                    continue
+                destination = target_full / full_path.name
+                new_rel = str(destination.relative_to(Path(self.knowledge_dir).resolve())).replace(os.sep, "/")
+                if destination.exists():
+                    results.append({"path": rel_path, "moved": False, "reason": "target_exists",
+                                    "target": new_rel})
+                    continue
+                try:
+                    os.link(full_path, destination)
+                    full_path.unlink()
+                    moved[rel_path] = new_rel
+                    results.append({"path": rel_path, "moved": True, "target": new_rel})
+                except FileExistsError:
+                    results.append({"path": rel_path, "moved": False, "reason": "target_exists",
+                                    "target": new_rel})
+                except FileNotFoundError:
+                    results.append({"path": rel_path, "moved": False, "reason": "not_found"})
+        finally:
+            if moved:
+                self.rebuild_index_md(renamed=moved)
+            self._sync_index(moved.keys())
+        return {"results": results, "moved": len(moved)}
 
     # ------------------------------------------------------------------
     # list — directory tree with stats
