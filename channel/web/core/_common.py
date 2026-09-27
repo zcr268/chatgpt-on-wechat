@@ -85,6 +85,10 @@ class SSEStreamState:
     stream_complete: bool = False
     completed_at: Optional[float] = None
     closed: bool = False
+    # Where the stored transcript and this log last lined up: messages up to
+    # ``stored_seq`` hold exactly what events up to ``stored_event_seq`` showed.
+    stored_seq: Optional[int] = None
+    stored_event_seq: int = 0
 
 
 def _read_config_file_for_write() -> dict:

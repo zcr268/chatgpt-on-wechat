@@ -72,6 +72,7 @@ class ChatService:
         speaker_id = resolved_agent_id
         model_query = query
         is_team = False
+        cached = False
         if speaker_agent_id or members is not None:
             if members is not None:
                 context["members"] = list(members)
@@ -92,6 +93,7 @@ class ChatService:
                 # (also when the owner itself was named); the transcript keeps
                 # the verbatim query.
                 model_query = self.agent_bridge._strip_address(query, speaker_id)
+            cached = self.agent_bridge._has_runtime(speaker_id, session_id)
             agent = self.agent_bridge.get_agent(
                 session_id=session_id,
                 agent_id=speaker_id,
@@ -105,8 +107,10 @@ class ChatService:
             raise RuntimeError("Failed to initialise agent for the session")
         if is_team:
             # One transcript per team conversation: reload it with author labels
-            # so this speaker sees the turns others spoke since it last ran.
-            self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            # so this speaker sees the turns others spoke since it last ran. A
+            # runtime built for this turn has only just restored it.
+            if cached:
+                self.agent_bridge._sync_shared_transcript(agent, session_id, resolved_agent_id)
             self._send_speaker(send_chunk_fn, speaker_id)
         if transcript is not None:
             with agent.messages_lock:
@@ -126,6 +130,25 @@ class ChatService:
 
         # State shared between the event callback and this method
         state = _StreamState()
+
+        from agent.protocol.step_writer import StepWriter
+
+        # The store is the owner's: a guest speaker writes into the shared
+        # transcript, stamped as author.
+        def write_run_messages(messages: list):
+            workspace_root = agent.workspace_dir
+            if is_team:
+                messages = self.agent_bridge._attribute_to_speaker(messages, speaker_id)
+                messages = self.agent_bridge._strip_speaker_prefix_from_messages(messages)
+                workspace_root = self._owner_workspace(resolved_agent_id, agent)
+            # Only the first chunk carries the run's query.
+            if model_query != query and not writer.started:
+                messages = self._restore_verbatim_query(messages, model_query, query)
+            self._persist_messages(
+                session_id, list(messages), channel_type, workspace_root=workspace_root,
+            )
+
+        writer = StepWriter(write_run_messages)
 
         def flush_file_links():
             """Emit any buffered file links as content, then drop them."""
@@ -315,6 +338,7 @@ class ChatService:
                 # Now that the tool results are out, the links belong to the
                 # content that follows them.
                 flush_file_links()
+                writer.step()
 
         # Run the agent with our event callback ---------------------------
         logger.info(
@@ -381,6 +405,7 @@ class ChatService:
             cancel_event=cancel_event,
             steer_inbox=steer_inbox,
         )
+        writer.bind(executor)
 
         try:
             if cancel_event is not None and cancel_event.is_set():
@@ -391,6 +416,8 @@ class ChatService:
                 return
             executor.run_stream(model_query)
         except Exception:
+            # Keep the steps finished before the failure.
+            writer.step()
             # If executor cleared messages (context overflow), sync back
             if len(executor.messages) == 0:
                 with agent.messages_lock:
@@ -468,24 +495,9 @@ class ChatService:
             agent.messages = list(executor.messages)
 
         # Persist new messages to SQLite so they survive restarts and
-        # can be queried via the HISTORY interface. The store is the owner's:
-        # a guest speaker writes into the shared transcript, stamped as author.
-        if new_messages:
-            workspace_root = agent.workspace_dir
-            if is_team:
-                new_messages = self.agent_bridge._attribute_to_speaker(
-                    new_messages, speaker_id
-                )
-                new_messages = self.agent_bridge._strip_speaker_prefix_from_messages(
-                    new_messages
-                )
-                workspace_root = self._owner_workspace(resolved_agent_id, agent)
-            self._persist_messages(
-                session_id,
-                list(new_messages),
-                channel_type,
-                workspace_root=workspace_root,
-            )
+        # can be queried via the HISTORY interface. Steps already stored at
+        # turn_end are skipped.
+        writer.finish(new_messages)
 
         # Store executor reference for files_to_send access
         agent.stream_executor = executor
@@ -687,6 +699,32 @@ class ChatService:
         )
         stripped = re.sub(pattern, "", query, count=1, flags=re.IGNORECASE)
         return stripped if stripped.strip() else query
+
+    @staticmethod
+    def _restore_verbatim_query(messages: list, model_query: str, query: str) -> list:
+        """Put the verbatim query back into the turn's user message.
+
+        The model is asked ``model_query`` (the "@name" already acted on), but
+        the transcript must keep what was typed, or replay loses the address.
+        Copies are returned; the in-memory context keeps what the model saw.
+        """
+        restored = list(messages)
+        for i, msg in enumerate(restored):
+            if msg.get("role") != "user":
+                continue
+            content = msg.get("content")
+            if isinstance(content, str) and model_query in content:
+                restored[i] = {**msg, "content": content.replace(model_query, query, 1)}
+                return restored
+            if isinstance(content, list):
+                for j, block in enumerate(content):
+                    text = block.get("text") if isinstance(block, dict) and block.get("type") == "text" else None
+                    if text and model_query in text:
+                        blocks = list(content)
+                        blocks[j] = {**block, "text": text.replace(model_query, query, 1)}
+                        restored[i] = {**msg, "content": blocks}
+                        return restored
+        return restored
 
     @staticmethod
     def _speak_timeout() -> float:

@@ -203,13 +203,16 @@ def _truncate_memory_content(content: str) -> str:
         lines = lines[-_MEMORY_MAX_LINES:]
         truncated = True
 
-    result = '\n'.join(lines)
-    if len(result.encode('utf-8')) > _MEMORY_MAX_BYTES:
-        while len(result.encode('utf-8')) > _MEMORY_MAX_BYTES and lines:
-            lines.pop(0)
-            truncated = True
-        result = '\n'.join(lines)
+    # Drop the oldest lines until what is left fits the byte budget. The size
+    # has to be recomputed from the shrinking list on every pass: measuring
+    # text joined before the loop never notices the pops, so the condition
+    # stays true until `lines` is empty and the whole file collapses to the
+    # hint alone.
+    while lines and len('\n'.join(lines).encode('utf-8')) > _MEMORY_MAX_BYTES:
+        lines.pop(0)
+        truncated = True
 
+    result = '\n'.join(lines)
     if truncated:
         result = "...(older entries truncated, use `memory_search` or `memory_get` for full content)\n\n" + result
     return result

@@ -28,6 +28,28 @@ def delegated_prompt(source_name: str, source_id: str, task: str) -> str:
     )
 
 
+def delegated_result_text(reply) -> str:
+    """The teammate's answer as text for the delegating Agent.
+
+    A teammate that sent files comes back as a file reply whose ``content``
+    is the first file's URL; its prose rides in ``text_content``. Returning
+    ``content`` alone would hand back a bare link and drop the answer.
+    """
+    if reply is None:
+        return ""
+    if reply.type not in (ReplyType.IMAGE_URL, ReplyType.FILE):
+        return reply.content or ""
+    parts = [getattr(reply, "text_content", "") or ""]
+    for r in [reply] + list(getattr(reply, "extra_replies", None) or []):
+        url = str(r.content or "")
+        if not url:
+            continue
+        # Only a published image renders inline; a local path stays as it was.
+        is_web = url.lower().startswith(("http://", "https://"))
+        parts.append(f"![]({url})" if r.type == ReplyType.IMAGE_URL and is_web else url)
+    return "\n\n".join(p for p in parts if p)
+
+
 def format_delegate_result(
     source_name: str,
     target_name: str,
@@ -539,7 +561,7 @@ class AgentDelegateTool(BaseTool):
             return ToolResult.fail(
                 f"Delegation to '{target.id}' failed: {reply.content}", display=display
             )
-        content = reply.content if reply is not None else ""
+        content = delegated_result_text(reply)
         display = format_delegate_result(
             source.name, target.name, content, status="done", duration_seconds=duration,
         )

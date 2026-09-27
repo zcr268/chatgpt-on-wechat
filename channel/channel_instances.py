@@ -19,6 +19,7 @@ behavior byte-for-byte.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import secrets
@@ -342,7 +343,7 @@ def bootstrap_legacy_instances(
         if ctype not in MULTI_INSTANCE_READY or ctype in have_types:
             continue
         creds = _filtered_credentials(ctype, settings)
-        if not creds:
+        if not creds and not (ctype == const.WEIXIN and _legacy_weixin_login()):
             continue
         records.append(
             {
@@ -365,6 +366,28 @@ def bootstrap_legacy_instances(
             f"channel_instances record bound to '{default_id or 'default'}'"
         )
     return records
+
+
+def _legacy_weixin_login() -> bool:
+    """Whether the legacy single Weixin channel holds a scan login.
+
+    Its token lives in the default credentials file, and config.json usually
+    has no weixin keys at all, so the flat keys alone would leave a logged-in
+    channel out of the roster. Not applied where channels are provisioned from
+    outside: there the roster is the provisioner's to fill, and a leftover file
+    must not bring back a channel it removed.
+    """
+    try:
+        from common.utils import is_cloud_deployment
+        from config import get_weixin_credentials_path
+
+        if is_cloud_deployment():
+            return False
+        with open(get_weixin_credentials_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return isinstance(data, dict) and bool(data.get("token"))
+    except Exception:
+        return False
 
 
 def _carry_weixin_credentials_file(instance_id: str) -> None:

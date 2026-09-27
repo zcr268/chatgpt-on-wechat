@@ -15,6 +15,7 @@ from agent.protocol import (
     get_cancel_registry,
     get_steer_registry,
 )
+from agent.protocol.step_writer import StepWriter
 from bridge.agent_event_handler import AgentEventHandler
 from bridge.agent_initializer import AgentInitializer
 from bridge.bridge import Bridge
@@ -432,6 +433,11 @@ class AgentLLMModel(LLMModel):
                 session_id = getattr(self, 'session_id', None)
                 if session_id:
                     kwargs['session_id'] = session_id
+                # Only bots that declare it get the agent id: others may pass
+                # unknown kwargs straight through to their provider.
+                agent_id = getattr(self, 'agent_id', None)
+                if agent_id and getattr(self.bot, 'accepts_agent_id', False):
+                    kwargs['agent_id'] = agent_id
 
                 # Thinking mode is a global toggle independent of the channel.
                 # IM channels (WeChat/WeCom/DingTalk/Feishu) won't render the
@@ -499,6 +505,11 @@ class AgentLLMModel(LLMModel):
                 session_id = getattr(self, 'session_id', None)
                 if session_id:
                     kwargs['session_id'] = session_id
+                # Only bots that declare it get the agent id: others may pass
+                # unknown kwargs straight through to their provider.
+                agent_id = getattr(self, 'agent_id', None)
+                if agent_id and getattr(self.bot, 'accepts_agent_id', False):
+                    kwargs['agent_id'] = agent_id
 
                 # Thinking mode is a global toggle independent of the channel.
                 # IM channels (WeChat/WeCom/DingTalk/Feishu) won't render the
@@ -1195,6 +1206,14 @@ class AgentBridge:
         """Keep legacy token keys for the default agent, namespace the rest."""
         return token if agent_id == default_agent_id else f"{agent_id}::{token}"
 
+    def _has_runtime(self, agent_id: str, session_id: str) -> bool:
+        """Whether ``get_agent`` would return a cached runtime rather than build one."""
+        if not session_id:
+            return False
+        with self._agents_lock:
+            key = self._runtime_key(self._resolve_agent_id(agent_id), session_id)
+            return key in self._agent_instances
+
     def get_agent(
         self,
         session_id: str = None,
@@ -1263,9 +1282,9 @@ class AgentBridge:
         """Reload the host's transcript so every teammate sees the same history.
 
         Solo conversations keep their live in-memory list (including tool
-        chains). A team conversation is reread from the host store, with
-        colleagues' replies replayed as ``Name：`` user turns so ``assistant``
-        stays this speaker's own voice.
+        chains). A team conversation is reread from the host store: this
+        speaker's own turns keep their tool chains, and colleagues' replies are
+        replayed as ``Name：`` user turns so ``assistant`` stays its own voice.
         """
         if not session_id or not AgentInitializer._is_shared_conversation(
             session_id, host_agent_id
@@ -1395,9 +1414,9 @@ class AgentBridge:
         as the database. The operation is a no-op when the agent has not been
         instantiated yet for the session.
 
-        Tool blocks are stripped exactly as on session restore. Deleting a
-        message can orphan a tool_use from its tool_result, and replaying that
-        pair would make the provider reject the next request.
+        History is rebuilt exactly as on session restore. Deleting a message
+        can orphan a tool_use from its tool_result; a turn left like that is
+        replayed as text, since the provider would reject the broken pair.
 
         Returns:
             Number of messages now held in the agent's memory. Returns -1 if
@@ -1420,7 +1439,14 @@ class AgentBridge:
                 f"[AgentBridge] Failed to load messages for sync (session={session_id}): {e}"
             )
             return -1
-        remaining = AgentInitializer._filter_text_only_messages(remaining)
+        try:
+            remaining = AgentInitializer._restored_history(remaining)
+        except Exception as e:
+            logger.warning(
+                f"[AgentBridge] Replaying tool calls failed for session={session_id}, "
+                f"syncing text only: {e}"
+            )
+            remaining = AgentInitializer._filter_text_only_messages(remaining)
         with agent.messages_lock:
             agent.messages.clear()
             for msg in remaining:
@@ -1554,6 +1580,7 @@ class AgentBridge:
                 )
 
             # Get agent for this session (will auto-initialize if needed)
+            cached = self._has_runtime(speaker_agent_id, session_id)
             agent = self.get_agent(
                 session_id=session_id,
                 agent_id=speaker_agent_id,
@@ -1566,8 +1593,10 @@ class AgentBridge:
             # in-memory list and only restores it on first init, so a teammate
             # that already joined would miss later turns spoken by someone else
             # (and the host would miss guest replies). Reload the shared
-            # transcript with author labels before this turn is appended.
-            self._sync_shared_transcript(agent, session_id, resolved_agent_id)
+            # transcript with author labels before this turn is appended; a
+            # runtime built for this turn has only just restored it.
+            if cached:
+                self._sync_shared_transcript(agent, session_id, resolved_agent_id)
             
             # Create event handler for logging and channel communication
             event_handler = AgentEventHandler(context=context, original_callback=on_event)
@@ -1631,11 +1660,39 @@ class AgentBridge:
             # Eagerly persist the user message BEFORE running the agent so the
             # session and the user's bubble are immediately visible — even if
             # the user switches away or refreshes before the reply finishes.
-            # The reply (assistant/tool messages) is appended once the run
-            # completes; the final persist skips this already-stored user turn.
+            # The reply (assistant/tool messages) is appended step by step as
+            # the run goes; later writes skip this already-stored user turn.
             pre_persisted = self._pre_persist_user_message(
                 session_id, query, context, clear_history, resolved_agent_id
             )
+
+            channel_type = (context.get("channel_type") or "") if context else ""
+
+            def write_reply(messages: list):
+                # Stamp every reply with its author, the owner's included. In a
+                # shared conversation a guest reconstructs "who said what" from
+                # this stamp; if the owner's turns went unstamped they would read
+                # as unattributed, and a guest would mistake the owner's persona
+                # ("I am Gray…") for its own and answer in that voice.
+                messages = self._attribute_to_speaker(messages, speaker_agent_id)
+                messages = self._strip_speaker_prefix_from_messages(messages)
+                if messages:
+                    self._persist_messages(
+                        session_id,
+                        list(messages),
+                        channel_type,
+                        resolved_agent_id,
+                        create_if_missing=not pre_persisted,
+                    )
+
+            writer = StepWriter(write_reply, skip_query=pre_persisted) if session_id else None
+
+            def on_run_event(event):
+                # Store the step before announcing it: a listener hearing
+                # turn_end may rely on the step being in the transcript.
+                if writer is not None and event.get("type") == "turn_end":
+                    writer.step()
+                event_handler.handle_event(event)
 
             # Mark this session as mid-run so the self-evolution idle scan does
             # not fire concurrently when a single turn runs longer than
@@ -1652,7 +1709,7 @@ class AgentBridge:
                 # Use agent's run_stream method with event handler
                 response = agent.run_stream(
                     user_message=model_query,
-                    on_event=event_handler.handle_event,
+                    on_event=on_run_event,
                     clear_history=clear_history,
                     cancel_event=cancel_event,
                     steer_inbox=steer_inbox,
@@ -1661,7 +1718,13 @@ class AgentBridge:
                     # waiting on this run, so an empty answer stays empty and
                     # the scheduler sends no message at all.
                     allow_empty_response=bool(context and context.get("is_scheduled_task")),
+                    on_executor=writer.bind if writer is not None else None,
                 )
+            except Exception:
+                # Keep the steps finished before the failure.
+                if writer is not None:
+                    writer.step()
+                raise
             finally:
                 # Clear the mid-run flag so idle scans can review this session.
                 try:
@@ -1692,31 +1755,14 @@ class AgentBridge:
             if cancel_event is not None and cancel_event.is_set():
                 run_status = "cancelled"
 
-            # Persist new messages generated during this run
-            if session_id:
-                channel_type = (context.get("channel_type") or "") if context else ""
+            # Persist what this run added beyond the steps already stored
+            if writer is not None:
                 new_messages = list(getattr(agent, '_last_run_new_messages', []))
                 # The leading user turn was already persisted eagerly above;
                 # drop it here so it isn't stored twice.
                 if pre_persisted and new_messages and new_messages[0].get("role") == "user":
                     new_messages = new_messages[1:]
-                # Stamp every reply with its author, the owner's included. In a
-                # shared conversation a guest reconstructs "who said what" from
-                # this stamp; if the owner's turns went unstamped they would read
-                # as unattributed, and a guest would mistake the owner's persona
-                # ("I am Gray…") for its own and answer in that voice.
-                new_messages = self._attribute_to_speaker(
-                    new_messages, speaker_agent_id
-                )
-                new_messages = self._strip_speaker_prefix_from_messages(new_messages)
-                if new_messages:
-                    self._persist_messages(
-                        session_id,
-                        list(new_messages),
-                        channel_type,
-                        resolved_agent_id,
-                        create_if_missing=not pre_persisted,
-                    )
+                writer.finish(new_messages)
             
             # Record this user turn for the self-evolution idle trigger. Skip
             # scheduler-injected / scheduled-task sessions so internal runs do

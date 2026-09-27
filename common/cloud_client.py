@@ -528,7 +528,7 @@ class CloudClient(LinkAIClient):
                 return
             service = get_agent_admin_service()
             service.update_agent(current.id, **fields)
-            self._reload_agents(service)
+            self._reload_agents(service, changed_agent_ids=[current.id])
             logger.info(f"[CloudClient] Agent '{current.id}' updated: {list(fields)}")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to update agent '{agent_id}': {e}", exc_info=True)
@@ -541,14 +541,23 @@ class CloudClient(LinkAIClient):
             from agent.admin import get_agent_admin_service
             service = get_agent_admin_service()
             service.delete_agent(agent_id)
-            self._reload_agents(service)
+            self._reload_agents(service, changed_agent_ids=[agent_id])
             logger.info(f"[CloudClient] Agent '{agent_id}' deleted")
         except Exception as e:
             logger.error(f"[CloudClient] Failed to delete agent '{agent_id}': {e}", exc_info=True)
 
     def _handle_agent_create(self, agent_id: str, data: dict):
         """Add a new agent and re-point the live runtime, so it can answer
-        without a restart. A no-op when agent support is unavailable."""
+        without a restart. A no-op when agent support is unavailable.
+
+        The console may send the same registration again, e.g. after a
+        reconnect to make sure an agent it created while this instance was
+        offline exists; an agent that already exists takes it as an update,
+        and its asset modes are left as they are."""
+        if self._agent_exists(agent_id):
+            logger.info(f"[CloudClient] Agent '{agent_id}' already exists, applying as update")
+            self._handle_agent_update(agent_id, data)
+            return
         name = str(data.get("name") or agent_id).strip()
         description = str(data.get("description") or "").strip()
         model = data.get("model")
@@ -582,11 +591,26 @@ class CloudClient(LinkAIClient):
             logger.error(f"[CloudClient] Failed to create agent '{agent_id}': {e}", exc_info=True)
 
     @staticmethod
-    def _reload_agents(service):
-        """Re-point the running runtime at the updated roster."""
+    def _agent_exists(agent_id: str) -> bool:
+        # Addressed lookup, so the reserved default alias names the existing
+        # default agent rather than a new agent to create.
+        try:
+            from agent.registry import get_agent_registry
+            get_agent_registry().get_addressed(agent_id, require_enabled=False)
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _reload_agents(service, changed_agent_ids=None):
+        """Re-point the running runtime at the updated roster.
+
+        ``changed_agent_ids`` are the agents whose cached runtimes are dropped:
+        a runtime keeps the model it was built with, so an edited agent would
+        otherwise answer on its old model until the process restarts."""
         try:
             from channel.web.api.agents import _reload_agent_runtime
-            _reload_agent_runtime(service)
+            _reload_agent_runtime(service, changed_agent_ids=changed_agent_ids)
         except Exception as e:
             logger.warning(f"[CloudClient] agent runtime reload skipped: {e}")
 
@@ -1137,14 +1161,34 @@ class CloudClient(LinkAIClient):
         :return: response dict
         """
         action = data.get("action", "")
-        payload = data.get("payload")
+        payload = data.get("payload") or {}
         logger.info(f"[CloudClient] on_skill: action={action}")
 
-        svc = self.skill_service
+        agent_id = payload.get("agent_id") or payload.get("agentId")
+        try:
+            svc = self._skill_service_for(agent_id)
+        except KeyError:
+            return self._agent_not_found(action, agent_id)
         if svc is None:
             return {"action": action, "code": 500, "message": "SkillService not available", "payload": None}
 
         return svc.dispatch(action, payload)
+
+    def _skill_service_for(self, agent_id):
+        """A SkillService over the requested agent's skills: its own set when it
+        has one, else the shared set. Falls back to the process-wide service when
+        no agent is requested, so single-agent installs are unaffected."""
+        workspace = self._agent_workspace(agent_id)
+        if workspace is None:
+            return self.skill_service
+        try:
+            from agent.skills.manager import SkillManager
+            from agent.skills.service import SkillService
+            from common.state_dir import skills_dir
+            return SkillService(SkillManager(custom_dir=str(skills_dir(base=workspace))))
+        except Exception as e:
+            logger.error(f"[CloudClient] Failed to build SkillService for agent: {e}")
+            return None
 
     # ------------------------------------------------------------------
     # memory callback
@@ -1853,8 +1897,75 @@ def build_website_prompt(workspace_dir: str) -> list:
         "",
     ]
 
+# Held open for the life of the process; the OS drops the lock when it exits.
+_connection_lock_handle = None
+
+
+def _claim_connection(deployment_id: str) -> bool:
+    """Whether this process may open the console connection for *deployment_id*.
+
+    The console keeps a single connection per client and gives it to whichever
+    process logged in last. A second instance started on the same host (for
+    example from a shell tool, inheriting the environment) would silently take
+    over every request, so only the first process to take a per-deployment lock
+    connects. Where file locking is unavailable the check is skipped rather than
+    blocking the connection.
+    """
+    global _connection_lock_handle
+    if _connection_lock_handle is not None:
+        return True
+    import re
+    import tempfile
+    safe_id = re.sub(r"[^A-Za-z0-9_.-]", "_", str(deployment_id))
+    path = os.path.join(tempfile.gettempdir(), f"cow-console-{safe_id}.lock")
+    try:
+        handle = open(path, "a+")
+    except OSError as e:
+        logger.warning(f"[Console] Connection lock unavailable, continuing without it: {e}")
+        return True
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(0)
+            try:
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            except OSError:
+                handle.close()
+                logger.warning(
+                    "[Console] Another process already holds the console connection "
+                    "for this deployment; not connecting from this one"
+                )
+                return False
+        else:
+            import fcntl
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                handle.seek(0)
+                holder = handle.read().strip()
+                handle.close()
+                logger.warning(
+                    f"[Console] Another process{f' (pid {holder})' if holder else ''} already "
+                    f"holds the console connection for this deployment; not connecting from this one"
+                )
+                return False
+            handle.seek(0)
+            handle.truncate()
+            handle.write(str(os.getpid()))
+            handle.flush()
+    except Exception as e:
+        handle.close()
+        logger.warning(f"[Console] Connection lock unavailable, continuing without it: {e}")
+        return True
+    _connection_lock_handle = handle
+    return True
+
+
 def start(channel, channel_mgr=None):
-    if not get_deployment_id():
+    deployment_id = get_deployment_id()
+    if not deployment_id:
+        return
+    if not _claim_connection(deployment_id):
         return
 
     global chat_client

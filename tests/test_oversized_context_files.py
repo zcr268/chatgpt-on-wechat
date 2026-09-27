@@ -2,6 +2,7 @@
 
 - index.md past a size is injected as titles only, then cut, and the prompt says so
 - the root index.md / log.md are left out of the vector index
+- MEMORY.md past the byte cap keeps its newest entries, not just the hint
 - a system prompt that alone fills the budget still keeps the previous turn
 """
 
@@ -14,6 +15,11 @@ from agent.prompt.builder import (
     _INDEX_MAX_CHARS,
     _build_knowledge_section,
     _compact_knowledge_index,
+)
+from agent.prompt.workspace import (
+    _MEMORY_MAX_BYTES,
+    _MEMORY_MAX_LINES,
+    _truncate_memory_content,
 )
 from agent.protocol.agent_stream import AgentStreamExecutor
 
@@ -192,6 +198,44 @@ class TestSystemPromptFillingTheBudget(unittest.TestCase):
         texts = [m["content"][0]["text"] for m in ex.messages]
         self.assertNotIn("first", texts)
         self.assertEqual(texts, ["second", "two", "third"])
+
+
+class TestMemoryFileTruncation(unittest.TestCase):
+    """MEMORY.md is cut down to its newest entries, never down to the hint."""
+
+    @staticmethod
+    def _body(result):
+        """What the model actually reads, with the hint line taken off."""
+        return result.split("\n\n", 1)[1]
+
+    def test_a_memory_file_over_the_byte_cap_keeps_its_newest_entries(self):
+        # Over the 25 KB budget on bytes, under it on lines: only the byte cap
+        # is in play, so nothing here is rescued by the line cap.
+        content = "\n".join(f"entry {i:03d} " + "x" * 280 for i in range(100))
+        self.assertGreater(len(content.encode("utf-8")), _MEMORY_MAX_BYTES)
+        self.assertLessEqual(len(content.split("\n")), _MEMORY_MAX_LINES)
+
+        result = _truncate_memory_content(content)
+
+        body = self._body(result)
+        self.assertLessEqual(len(body.encode("utf-8")), _MEMORY_MAX_BYTES)
+        self.assertIn("entry 099", body)     # newest entries are what survives
+        self.assertNotIn("entry 000", body)  # the oldest are the ones dropped
+        self.assertIn("use `memory_search`", result)
+
+    def test_a_memory_file_within_the_budget_is_untouched(self):
+        content = "\n".join(f"entry {i}" for i in range(20))
+        self.assertEqual(_truncate_memory_content(content), content)
+
+    def test_the_line_cap_keeps_the_newest_lines(self):
+        content = "\n".join(f"entry {i:03d}" for i in range(_MEMORY_MAX_LINES + 50))
+        self.assertLess(len(content.encode("utf-8")), _MEMORY_MAX_BYTES)
+
+        result = _truncate_memory_content(content)
+
+        self.assertIn(f"entry {_MEMORY_MAX_LINES + 49:03d}", result)
+        self.assertNotIn("entry 000", result)
+        self.assertIn("older entries truncated", result)
 
 
 if __name__ == "__main__":

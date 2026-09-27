@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Loader2, Check, X, Lightbulb, ListFilter, Layers3, Shield, Share2 } from 'lucide-react'
-import type { MessageStep, SubStep } from '../types'
+import {
+  ChevronRight, Loader2, Check, X, Lightbulb, ListFilter, Layers3, Shield, Share2, CircleStop, CircleAlert, Hourglass,
+} from 'lucide-react'
+import type { MessageStep, RunState, SubStep } from '../types'
 import { t } from '../i18n'
 import Markdown from './Markdown'
 import { handoffTarget } from '../lib/handoff'
@@ -250,5 +252,25 @@ const MessageSteps: React.FC<{ steps: MessageStep[] }> = ({ steps }) => {
   )
 }
 
-export { ThinkingStep, RetrievalStep, ToolStep }
+type ReplyStatusKind = 'cancelled' | RunState
+
+const REPLY_STATUS = {
+  cancelled: { Icon: CircleStop, label: 'msg_cancelled' },
+  interrupted: { Icon: CircleAlert, label: 'reply_interrupted' },
+  running: { Icon: Hourglass, label: 'reply_running' },
+} as const
+
+/** Line closing a reply's steps: stopped by the user, cut off before its answer, or still running. */
+const ReplyStatus: React.FC<{ kind: ReplyStatusKind }> = ({ kind }) => {
+  const { Icon, label } = REPLY_STATUS[kind]
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-content-tertiary">
+      <Icon size={12} className="flex-shrink-0" />
+      <span>{t(label)}</span>
+    </div>
+  )
+}
+
+export { ThinkingStep, RetrievalStep, ToolStep, ReplyStatus }
+export type { ReplyStatusKind }
 export default MessageSteps

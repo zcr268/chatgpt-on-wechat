@@ -181,6 +181,8 @@ export interface ChatMessage {
   extras?: Record<string, unknown>
   isStreaming?: boolean
   isCancelled?: boolean
+  /** A reply that never reached its answer: cut off (a crash, a quit) or still running. */
+  runState?: RunState
   error?: string
   /** request_id of a server-pushed (scheduler) message, used to dedupe polls. */
   pushRequestId?: string
@@ -358,6 +360,8 @@ export interface StreamEvent {
   permission_denied?: boolean
   /** `tool_end`: the mode that refused the call. */
   permission_mode?: string
+  /** `error`: why the stream ended, e.g. `unknown_request` once the backend restarted. */
+  reason?: string
   /** `subagent_step` event fields: which step of which card, and how it went. */
   card_id?: string
   step_id?: string
@@ -480,7 +484,11 @@ export interface HistoryMessage {
   artifacts?: Artifact[]
   /** Per-message sequence number used by delete/regenerate APIs. */
   _seq?: number
+  /** Set on an assistant turn whose run stopped short of its answer. */
+  run_state?: RunState
 }
+
+export type RunState = 'interrupted' | 'running'
 
 export interface HistoryPage {
   messages: HistoryMessage[]
@@ -867,6 +875,69 @@ export interface SkillInfo {
   source?: string
   enabled: boolean
   category?: string
+  ships_with_install?: boolean
+  deletable?: boolean
+}
+
+export type McpTransport = 'stdio' | 'sse' | 'streamable-http'
+export type McpServerStatus = 'pending' | 'ready' | 'failed' | 'needs_auth' | 'disabled' | 'idle' | 'unknown'
+
+export interface McpServerConfig {
+  name: string
+  type?: McpTransport | string
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  url?: string
+  headers?: Record<string, string>
+  scope?: string
+  tool_name_prefix?: string
+  disabled?: boolean
+  timeout?: number
+  status?: McpServerStatus | string
+}
+
+export interface McpServersResult {
+  status: string
+  servers: McpServerConfig[]
+  path?: string
+  hint?: string
+  message?: string
+}
+
+export interface McpTestResult {
+  status: string
+  ok: boolean
+  tools: Array<{ name: string; description?: string }>
+  error?: string | null
+  needs_auth?: boolean
+  message?: string
+}
+
+export type SkillMarketSource = 'hub' | 'github' | 'clawhub'
+
+/** One skill found in a staged fetch or upload, shown for review before installing. */
+export interface SkillPreviewItem {
+  name: string
+  display_name: string
+  description: string
+  source: string
+  skill_md: string
+  skill_md_truncated: boolean
+  has_skill_md: boolean
+  files: string[]
+  file_count: number
+  size: number
+  /** A skill with this name is already installed and would be replaced. */
+  exists: boolean
+}
+
+export interface SkillPreviewResult {
+  status: string
+  message?: string
+  token?: string
+  skills?: SkillPreviewItem[]
+  messages?: string[]
 }
 
 /** Response of GET /api/skills/content: a skill's definition file. */

@@ -209,7 +209,17 @@ function sendMessage() {
     postWithRetry(0);
 }
 
-function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
+function reloadHistoryView() {
+    messagesDiv.innerHTML = '';
+    historyPage = 0;
+    historyHasMore = false;
+    historyLoading = false;
+    loadHistory(1);
+}
+
+// `resume` ({ el, afterSeq }) picks up a reply already in flight: events up to
+// afterSeq are skipped, and `el`, the bubble of its stored steps, is written on.
+function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems, resume) {
     let botEl = null;
     let stepsEl = null;    // .agent-steps  (thinking summaries + tool indicators)
     let contentEl = null;  // .answer-content (final streaming answer)
@@ -223,7 +233,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
     let mainDone = false;
     let completedBotSeq = null;
     let cancelled = false;
-    let lastSeq = 0;
+    let lastSeq = (resume && resume.afterSeq) || 0;
 
     // Who the bubble currently being written belongs to. A delegation hands the
     // floor to a teammate partway through the turn: the teammate's reply gets
@@ -345,6 +355,28 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
         contentEl = botEl.querySelector('.answer-content');
         mediaEl = botEl.querySelector('.media-content');
     }
+
+    // Write on in a bubble rendered from this reply's stored steps. Its
+    // actions stay hidden until the answer lands, as in a live bubble.
+    function adoptBotEl(el) {
+        const box = el.querySelector('.msg-content');
+        if (!box) return;
+        botEl = el;
+        botEl.dataset.requestId = requestId;
+        contentEl = box.querySelector('.answer-content');
+        mediaEl = box.querySelector('.media-content');
+        stepsEl = box.querySelector('.agent-steps');
+        if (!stepsEl) {
+            stepsEl = document.createElement('div');
+            stepsEl.className = 'agent-steps';
+            box.insertBefore(stepsEl, contentEl);
+        }
+        box.querySelectorAll('.agent-status-step').forEach(status => status.remove());
+        contentEl.classList.add('sse-streaming');
+        botEl.querySelectorAll('.copy-msg-btn, .speak-msg-btn, .regenerate-msg-btn')
+            .forEach(btn => { btn.style.display = 'none'; });
+    }
+    if (resume && resume.el) adoptBotEl(resume.el);
 
     // Holds the live EventSource so terminal events (done/voice_attach/error)
     // can close it. During replay there is no live connection (null).
@@ -685,11 +717,8 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                     currentReasoningEl = null;
                     reasoningText = '';
                 }
-                if (!botEl.querySelector('.agent-cancelled-tag')) {
-                    const tag = document.createElement('div');
-                    tag.className = 'agent-cancelled-tag text-xs text-amber-600 dark:text-amber-400 mt-1';
-                    tag.textContent = (currentLang === 'zh') ? '已中止' : 'Cancelled';
-                    stepsEl.appendChild(tag);
+                if (!stepsEl.querySelector('.agent-status-step')) {
+                    stepsEl.insertAdjacentHTML('beforeend', replyStatusHtml('cancelled'));
                 }
                 resetSendBtnSendMode();
 
@@ -704,7 +733,14 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 resetSendBtnSendMode();
 
                 const finalTextRaw = item.content || accumulatedText;
-                const finalText = localizeCancelMarker(finalTextRaw);
+                // A stopped reply is already marked by its status line.
+                const finalText = cancelled && isCancelMarker(finalTextRaw)
+                    ? ''
+                    : localizeCancelMarker(finalTextRaw);
+                // Steps that finished after the stop was pressed land below
+                // the status line; it belongs at the end.
+                const statusEl = stepsEl && stepsEl.querySelector('.agent-status-step');
+                if (statusEl) stepsEl.appendChild(statusEl);
 
                 if (!botEl && finalText) {
                     if (loadingEl) { loadingEl.remove(); loadingEl = null; }
@@ -785,13 +821,7 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 delete activeStreams[requestId];
                 clearOwnerRequest();
                 resetSendBtnSendMode();
-                if (isActive()) {
-                    messagesDiv.innerHTML = '';
-                    historyPage = 0;
-                    historyHasMore = false;
-                    historyLoading = false;
-                    loadHistory(1);
-                }
+                if (isActive()) reloadHistoryView();
 
             } else if (item.type === 'error') {
                 done = true;
@@ -802,12 +832,16 @@ function startSSE(requestId, loadingEl, timestamp, titleInfo, replayItems) {
                 if (loadingEl) { loadingEl.remove(); loadingEl = null; }
                 if (contentEl) contentEl.classList.remove('sse-streaming');
                 // After a stop the stream is expected to end; the bubble is
-                // already tagged "已中止", so don't stack a failure on top.
+                // already marked stopped, so don't stack a failure on top.
                 // An unknown request after "done" only means its log was
                 // reclaimed: the reply is persisted and already on screen.
+                // Before "done" the service restarted mid-reply: what it
+                // stored shows up, marked interrupted, once history reloads.
                 const unknown = item.reason === 'unknown_request';
-                if (!cancelled && !(unknown && mainDone)) {
-                    addBotMessage(t(unknown ? 'error_reply_interrupted' : 'error_send'), new Date());
+                if (unknown && !mainDone && !cancelled) {
+                    if (isActive()) reloadHistoryView();
+                } else if (!cancelled && !unknown) {
+                    addBotMessage(t('error_send'), new Date());
                 }
                 resetSendBtnSendMode();
             }
