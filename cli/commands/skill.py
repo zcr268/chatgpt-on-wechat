@@ -348,6 +348,35 @@ def _install_local(path: str, result: InstallResult, agent_id: str = None):
     _batch_install_skills(discovered, path, skills_dir, "local", result, agent_id=agent_id)
 
 
+def _write_skills_config(config: dict, skills_dir: str) -> None:
+    """Persist skills_config.json through a sibling file, then swap it in.
+
+    Serialising straight into skills_config.json truncates it before the new
+    bytes are there, so anything that fails halfway through -- a full disk, the
+    process being killed -- leaves a half-written document behind.
+    ``load_skills_config`` cannot parse that and answers ``{}``, so the next
+    install, enable or uninstall writes its own baseline back over the file and
+    every other skill's entry is gone with it. Building the result beside the
+    file and renaming it into place means a failed save leaves the previous
+    document untouched.
+    """
+    config_path = os.path.join(skills_dir, "skills_config.json")
+    os.makedirs(skills_dir, exist_ok=True)
+    tmp_path = f"{config_path}.tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, config_path)
+    except BaseException:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
+
+
 def _register_installed_skill(name: str, source: str = "cowhub", display_name: str = "", agent_id: str = None):
     """Register a newly installed skill into skills_config.json.
 
@@ -368,8 +397,7 @@ def _register_installed_skill(name: str, source: str = "cowhub", display_name: s
         if display_name and not config[name].get("display_name"):
             config[name]["display_name"] = display_name
             try:
-                with open(config_path, "w", encoding="utf-8") as f:
-                    json.dump(config, f, indent=4, ensure_ascii=False)
+                _write_skills_config(config, skills_dir)
             except Exception:
                 pass
         return
@@ -389,8 +417,7 @@ def _register_installed_skill(name: str, source: str = "cowhub", display_name: s
     config[name] = entry
 
     try:
-        with open(config_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
+        _write_skills_config(config, skills_dir)
     except Exception:
         pass
 
@@ -723,11 +750,8 @@ def _merge_builtin_into_config(config: dict, builtin_dir: str, skills_dir: str):
             }
             dirty = True
     if dirty:
-        config_path = os.path.join(skills_dir, "skills_config.json")
         try:
-            os.makedirs(skills_dir, exist_ok=True)
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
+            _write_skills_config(config, skills_dir)
         except Exception:
             pass
 
@@ -1611,8 +1635,7 @@ def uninstall(name, yes):
             with open(config_path, "r", encoding="utf-8") as f:
                 config = json.load(f)
             config.pop(name, None)
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
+            _write_skills_config(config, skills_dir)
         except Exception:
             pass
 
@@ -1664,8 +1687,7 @@ def _set_enabled(name, enabled):
         sys.exit(1)
 
     config[name]["enabled"] = enabled
-    with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4, ensure_ascii=False)
+    _write_skills_config(config, skills_dir)
 
     state = "enabled" if enabled else "disabled"
     icon = "✓" if enabled else "✗"
