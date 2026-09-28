@@ -872,6 +872,14 @@ class ApiClient {
     })
   }
 
+  /** Install straight from a remote spec (e.g. an https archive URL), without staging. */
+  async installSkill(spec: string): Promise<ApiResult & { installed?: string[] }> {
+    return this.request('/api/skills', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'install', spec }),
+    })
+  }
+
   async deleteSkill(name: string): Promise<ApiResult> {
     return this.request('/api/skills', {
       method: 'POST',

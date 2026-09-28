@@ -6,7 +6,7 @@ import http from 'http'
 import { PythonBackend, BackendError } from './python-manager'
 import { buildAppMenu } from './menu'
 import { createTray, destroyTray, getTray } from './tray'
-import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage } from './updater'
+import { initUpdater, checkForUpdates, startDownload, quitAndInstall, setUpdateLanguage, setUpdateFeedQuery } from './updater'
 import { setupThemeIPC, loadAppConfig } from './themes'
 import { setupHttpRelayIPC } from './http-relay'
 import {
@@ -661,6 +661,9 @@ function setupIPC() {
   ipcMain.handle('update-download', (_event, lang?: string) => {
     setUpdateLanguage(lang)
     startDownload()
+  })
+  ipcMain.handle('update-feed-query', (_event, params: unknown) => {
+    setUpdateFeedQuery(params)
   })
   ipcMain.handle('update-install', () => {
     // Let the window actually close so the app can fully quit — otherwise the

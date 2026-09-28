@@ -52,6 +52,9 @@ export interface ElectronAPI {
   checkForUpdate?: (lang?: string) => Promise<void>
   downloadUpdate?: (lang?: string) => Promise<void>
   installUpdate?: () => Promise<void>
+  // Extra query parameters appended to the update feed URL; {} clears them.
+  // Unused by the standard build.
+  setUpdateFeedQuery?: (params: Record<string, string>) => Promise<void>
   onUpdateStatus?: (callback: (status: UpdateStatus) => void) => () => void
   // Override the window/Dock/taskbar icon and title at runtime (cached across
   // launches). Used by product extensions; unused by the standard build.
