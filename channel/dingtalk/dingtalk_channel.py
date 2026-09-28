@@ -804,8 +804,8 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
                 file_cache.clear(session_id)
         
         context = self._compose_context(cmsg.ctype, cmsg.content, isgroup=True, msg=cmsg)
-        context['no_need_at'] = True
         if context:
+            context['no_need_at'] = True
             from agent.team_addressing import stamp_speaker_from_channel
             stamp_speaker_from_channel(self, context, cmsg.content)
             self._maybe_attach_dingtalk_stream(context)
