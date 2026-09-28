@@ -3,6 +3,7 @@
 import os
 import re
 import sys
+import threading
 import json
 import hashlib
 import shutil
@@ -359,10 +360,19 @@ def _write_skills_config(config: dict, skills_dir: str) -> None:
     every other skill's entry is gone with it. Building the result beside the
     file and renaming it into place means a failed save leaves the previous
     document untouched.
+
+    The sibling is named the way ``agent/skills/manager.py`` names its own --
+    dot-prefixed and unique per writer -- because that is the shape
+    ``agent/evolution/executor.py`` lists in ``_WATCH_IGNORE_PREFIXES``: the
+    workspace scanner must not read an in-flight replacement as a real change,
+    and two overlapping saves must not rename each other's partial file.
     """
     config_path = os.path.join(skills_dir, "skills_config.json")
     os.makedirs(skills_dir, exist_ok=True)
-    tmp_path = f"{config_path}.tmp"
+    tmp_path = os.path.join(
+        skills_dir,
+        f".skills_config.json.{os.getpid()}.{threading.get_ident()}.tmp",
+    )
     try:
         with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)

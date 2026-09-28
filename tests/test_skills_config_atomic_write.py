@@ -55,7 +55,11 @@ def test_a_failed_merge_write_keeps_the_existing_records(tmp_path, monkeypatch):
         _fail_halfway(patch)
         _merge(skills_dir, tmp_path)
         assert json.loads(config_path.read_text(encoding="utf-8")) == EXISTING
-        assert not (skills_dir / "skills_config.json.tmp").exists()
+        # nothing of the aborted replacement is left beside the file
+        assert sorted(p.name for p in skills_dir.iterdir()) == [
+            "alpha",
+            "skills_config.json",
+        ]
 
     _merge(skills_dir, tmp_path)  # control: without a failure the write still happens
     assert json.loads(config_path.read_text(encoding="utf-8"))["alpha"]["source"] == "custom"
