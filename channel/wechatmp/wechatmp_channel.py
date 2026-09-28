@@ -39,6 +39,39 @@ _IMAGE_SIGNATURES = (
     (b"GIF89a", "gif"),
     (b"BM", "bmp"),
 )
+_MAX_REMOTE_MEDIA_BYTES = 10 * 1024 * 1024
+_MAX_REMOTE_MEDIA_SECONDS = 60
+
+
+def _download_remote_media(url, media_type):
+    """Bound a remote download before handing it to the WeChat upload API."""
+    response = None
+    try:
+        deadline = time.monotonic() + _MAX_REMOTE_MEDIA_SECONDS
+        response = requests.get(url, stream=True, timeout=(5, 30))
+        response.raise_for_status()
+        try:
+            content_length = int(response.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > _MAX_REMOTE_MEDIA_BYTES:
+            raise ValueError("remote media exceeds 10 MB")
+
+        storage = io.BytesIO()
+        for block in response.iter_content(chunk_size=8192):
+            if time.monotonic() > deadline:
+                raise ValueError("remote media download timed out")
+            if storage.tell() + len(block) > _MAX_REMOTE_MEDIA_BYTES:
+                raise ValueError("remote media exceeds 10 MB")
+            storage.write(block)
+        storage.seek(0)
+        return storage
+    except (requests.RequestException, OSError, ValueError) as exc:
+        logger.warning("[wechatmp] {} download failed: {}".format(media_type, type(exc).__name__))
+        return None
+    finally:
+        if response is not None:
+            response.close()
 
 
 def _sniff_image_type(storage) -> str:
@@ -179,9 +212,9 @@ class WechatMPChannel(ChatChannel):
                     with open(local_path, "rb") as f:
                         image_storage.write(f.read())
                 else:
-                    pic_res = requests.get(img_url, stream=True, timeout=60)
-                    for block in pic_res.iter_content(1024):
-                        image_storage.write(block)
+                    image_storage = _download_remote_media(img_url, "image")
+                    if image_storage is None:
+                        return
                 image_storage.seek(0)
                 image_type = _sniff_image_type(image_storage)
                 filename = receiver + "-" + str(context["msg"].msg_id) + "." + image_type
@@ -212,11 +245,9 @@ class WechatMPChannel(ChatChannel):
                 self.cache_dict[receiver].append(("image", media_id))
             elif reply.type == ReplyType.VIDEO_URL:  # 从网络下载视频
                 video_url = reply.content
-                video_res = requests.get(video_url, stream=True, timeout=60)
-                video_storage = io.BytesIO()
-                for block in video_res.iter_content(1024):
-                    video_storage.write(block)
-                video_storage.seek(0)
+                video_storage = _download_remote_media(video_url, "video")
+                if video_storage is None:
+                    return
                 video_type = 'mp4'
                 filename = receiver + "-" + str(context["msg"].msg_id) + "." + video_type
                 content_type = "video/" + video_type
@@ -309,9 +340,9 @@ class WechatMPChannel(ChatChannel):
                     with open(local_path, "rb") as f:
                         image_storage.write(f.read())
                 else:
-                    pic_res = requests.get(img_url, stream=True, timeout=60)
-                    for block in pic_res.iter_content(1024):
-                        image_storage.write(block)
+                    image_storage = _download_remote_media(img_url, "image")
+                    if image_storage is None:
+                        return
                 image_storage.seek(0)
                 image_type = _sniff_image_type(image_storage)
                 filename = receiver + "-" + str(context["msg"].msg_id) + "." + image_type
@@ -340,11 +371,9 @@ class WechatMPChannel(ChatChannel):
                 logger.info("[wechatmp] Do send image to {}".format(receiver))
             elif reply.type == ReplyType.VIDEO_URL:  # 从网络下载视频
                 video_url = reply.content
-                video_res = requests.get(video_url, stream=True, timeout=60)
-                video_storage = io.BytesIO()
-                for block in video_res.iter_content(1024):
-                    video_storage.write(block)
-                video_storage.seek(0)
+                video_storage = _download_remote_media(video_url, "video")
+                if video_storage is None:
+                    return
                 video_type = 'mp4'
                 filename = receiver + "-" + str(context["msg"].msg_id) + "." + video_type
                 content_type = "video/" + video_type
