@@ -1174,42 +1174,8 @@ class AgentInitializer:
     def _get_runtime_info(self, workspace_root: str):
         """Get runtime information with dynamic time support"""
         from config import conf
-        
-        def get_current_time():
-            """Get current time dynamically - called each time system prompt is accessed"""
-            now = datetime.datetime.now()
-            
-            # Get timezone info
-            try:
-                offset = -time.timezone if not time.daylight else -time.altzone
-                hours = offset // 3600
-                minutes = (offset % 3600) // 60
-                timezone_name = f"UTC{hours:+03d}:{minutes:02d}" if minutes else f"UTC{hours:+03d}"
-            except Exception:
-                timezone_name = "UTC"
-            
-            # Weekday: English name in en, Chinese mapping otherwise
-            weekday_en = now.strftime("%A")
-            try:
-                from common import i18n
-                is_en = i18n.get_language() == "en"
-            except Exception:
-                is_en = False
-            if is_en:
-                weekday = weekday_en
-            else:
-                weekday_map = {
-                    'Monday': '星期一', 'Tuesday': '星期二', 'Wednesday': '星期三',
-                    'Thursday': '星期四', 'Friday': '星期五', 'Saturday': '星期六', 'Sunday': '星期日'
-                }
-                weekday = weekday_map.get(weekday_en, weekday_en)
+        from agent.tools.current_time.current_time import current_time_info
 
-            return {
-                'time': now.strftime("%Y-%m-%d %H:%M:%S"),
-                'weekday': weekday,
-                'timezone': timezone_name
-            }
-        
         def get_model():
             """Get current model name dynamically from config"""
             return conf().get("model", "unknown")
@@ -1218,7 +1184,7 @@ class AgentInitializer:
             "_get_model": get_model,
             "workspace": workspace_root,
             "channel": ", ".join(conf().get("channel_type")) if isinstance(conf().get("channel_type"), list) else conf().get("channel_type", "unknown"),
-            "_get_current_time": get_current_time  # Dynamic time function
+            "_get_current_time": current_time_info  # Dynamic time function
         }
     
     def _migrate_config_to_env(self, workspace_root: str):

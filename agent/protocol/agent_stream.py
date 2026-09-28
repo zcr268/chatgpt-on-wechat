@@ -111,6 +111,26 @@ def _truncate_reasoning_for_storage(text: str) -> str:
     return head + _REASONING_TRUNCATE_MARKER.format(omitted=omitted) + tail
 
 
+def _cache_hit_tokens(usage: Dict[str, Any]) -> int:
+    """Prompt tokens served from the provider's prefix cache.
+
+    DeepSeek reports ``prompt_cache_hit_tokens``, OpenAI-style endpoints
+    ``prompt_tokens_details.cached_tokens`` and Claude-style ones
+    ``cache_read_input_tokens``.
+    """
+    details = usage.get("prompt_tokens_details")
+    cached = details.get("cached_tokens") if isinstance(details, dict) else None
+    try:
+        return int(
+            usage.get("prompt_cache_hit_tokens")
+            or cached
+            or usage.get("cache_read_input_tokens")
+            or 0
+        )
+    except (TypeError, ValueError):
+        return 0
+
+
 # Cap for the 429 incremental backoff. The base curve is 30 + retry_count*15,
 # which without a cap crosses the web channel's 600s SSE idle timeout by the
 # 8th retry; capping each wait at 60s keeps the cumulative sleep in bounds.
@@ -1792,6 +1812,9 @@ class AgentStreamExecutor:
                     "prompt_tokens": int(stream_usage.get("prompt_tokens") or 0),
                     "completion_tokens": int(stream_usage.get("completion_tokens") or 0),
                     "total_tokens": int(stream_usage.get("total_tokens") or 0),
+                    # Server-side prefix cache hits; providers that don't
+                    # report it leave this at 0, which reads as "unknown".
+                    "prompt_cache_hit_tokens": _cache_hit_tokens(stream_usage),
                     # History estimate at capture time (freshness fingerprint).
                     "_est_history": est_history,
                 }
@@ -1804,6 +1827,7 @@ class AgentStreamExecutor:
             if self.agent.last_usage:
                 real_in = self.agent.last_usage.get("prompt_tokens", 0)
                 real_out = self.agent.last_usage.get("completion_tokens", 0)
+                cache_hit = self.agent.last_usage.get("prompt_cache_hit_tokens", 0)
                 # Rough estimate of what we sent this turn (system + tools +
                 # history), the same numbers the usage chart shows.
                 est_sys = self.agent._estimate_text_tokens(self.system_prompt or "")
@@ -1812,8 +1836,10 @@ class AgentStreamExecutor:
                 )
                 est_in = est_sys + est_hist
                 ratio = (est_in / real_in) if real_in else 0
+                hit_ratio = (cache_hit / real_in) if real_in else 0
                 logger.info(
                     f"[Usage] real input={real_in} output={real_out} | "
+                    f"cache_hit={cache_hit} ({hit_ratio:.0%}) | "
                     f"estimate input~={est_in} (sys~={est_sys} hist~={est_hist}) | "
                     f"est/real={ratio:.2f}"
                 )
