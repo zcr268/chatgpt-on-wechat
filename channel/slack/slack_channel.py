@@ -17,6 +17,7 @@ Implementation note:
 
 import os
 import re
+import tempfile
 import threading
 
 import requests
@@ -336,21 +337,29 @@ class SlackChannel(ChatChannel):
 
     def _download_file(self, url: str, name: str):
         """Download a Slack private file (requires bot token auth) to local tmp dir."""
+        local_path = None
         try:
             headers = {"Authorization": f"Bearer {self.bot_token}"}
-            resp = requests.get(url, headers=headers, timeout=60, stream=True)
-            resp.raise_for_status()
-            tmp_dir = SlackMessage.get_tmp_dir()
-            # Sanitize the name and keep it unique-ish via the url tail
-            safe_name = re.sub(r"[^\w.\-]", "_", name)
-            local_path = os.path.join(tmp_dir, safe_name)
-            with open(local_path, "wb") as fp:
-                for chunk in resp.iter_content(chunk_size=8192):
-                    if chunk:
-                        fp.write(chunk)
+            with requests.get(url, headers=headers, timeout=60, stream=True) as resp:
+                resp.raise_for_status()
+                tmp_dir = SlackMessage.get_tmp_dir()
+                safe_name = re.sub(r"[^\w.\-]", "_", name) or "file"
+                # A name alone is not unique across messages or users.
+                with tempfile.NamedTemporaryFile(
+                    mode="wb", dir=tmp_dir, prefix="slack_", suffix=f"_{safe_name}", delete=False
+                ) as fp:
+                    local_path = fp.name
+                    for chunk in resp.iter_content(chunk_size=8192):
+                        if chunk:
+                            fp.write(chunk)
             logger.debug(f"[Slack] downloaded {name} -> {local_path}")
             return local_path
         except Exception as e:
+            if local_path:
+                try:
+                    os.remove(local_path)
+                except OSError:
+                    pass
             logger.error(f"[Slack] download_file failed ({name}): {e}")
             return None
 
