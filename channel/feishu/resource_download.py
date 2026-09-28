@@ -51,4 +51,7 @@ def download_resource(url, headers, params, path, max_bytes):
         return False
     finally:
         if temporary_path and os.path.exists(temporary_path):
-            os.unlink(temporary_path)
+            try:
+                os.unlink(temporary_path)
+            except OSError:
+                logger.warning(f"[FeiShu] Could not remove incomplete download: {temporary_path}")
