@@ -77,4 +77,4 @@ desktop/resources/bin/
 .fuxi/
 
 # Persistent Agent Mail credentials and npm runtime created by the optional compose overlay.
-docker/cow-data/agent-mail/
+docker/agent-mail-data/

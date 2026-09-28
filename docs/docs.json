@@ -96,7 +96,6 @@
                   "guide/quick-start",
                   "guide/desktop",
                   "guide/manual-install",
-                  "guide/agent-mail",
                   "guide/upgrade"
                 ]
               }
@@ -264,6 +263,17 @@
                 "pages": [
                   "multi-agent/team",
                   "multi-agent/subagent"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "Extensions",
+            "groups": [
+              {
+                "group": "Third-party Integrations",
+                "pages": [
+                  "extensions/agent-mail"
                 ]
               }
             ]
@@ -518,6 +528,17 @@
             ]
           },
           {
+            "tab": "扩展",
+            "groups": [
+              {
+                "group": "三方集成",
+                "pages": [
+                  "zh/extensions/agent-mail"
+                ]
+              }
+            ]
+          },
+          {
             "tab": "版本",
             "groups": [
               {
@@ -761,6 +782,17 @@
                 "pages": [
                   "ja/multi-agent/team",
                   "ja/multi-agent/subagent"
+                ]
+              }
+            ]
+          },
+          {
+            "tab": "拡張",
+            "groups": [
+              {
+                "group": "サードパーティ連携",
+                "pages": [
+                  "ja/extensions/agent-mail"
                 ]
               }
             ]

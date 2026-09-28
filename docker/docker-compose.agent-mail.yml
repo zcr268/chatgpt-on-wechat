@@ -2,10 +2,14 @@ services:
   chatgpt-on-wechat:
     user: root
     volumes:
-      - ./cow-data/agent-mail/config:/home/agent/.agently-cli
-      - ./cow-data/agent-mail/share:/home/agent/.local/share/agently-cli
-      - ./cow-data/agent-mail/npm-global:/home/agent/.npm-global
+      - ./agent-mail-data/config:/home/agent/.agently-cli
+      - ./agent-mail-data/share:/home/agent/.local/share/agently-cli
+      - ./agent-mail-data/npm-global:/home/agent/.npm-global
       - ./agent-mail/entrypoint.sh:/docker-entrypoint-init.d/agent-mail-entrypoint.sh:ro
     entrypoint: ["/bin/bash", "/docker-entrypoint-init.d/agent-mail-entrypoint.sh"]
     environment:
       PATH: /home/agent/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+      # Mirrors can be switched for faster downloads, e.g.
+      # https://npmmirror.com/mirrors/node and https://registry.npmmirror.com
+      NODE_MIRROR: 'https://nodejs.org/dist'
+      NPM_CONFIG_REGISTRY: 'https://registry.npmjs.org'
