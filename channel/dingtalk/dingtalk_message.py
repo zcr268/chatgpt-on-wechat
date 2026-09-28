@@ -1,6 +1,7 @@
 import hashlib
 import os
 import re
+import tempfile
 
 import requests
 from dingtalk_stream import ChatbotMessage
@@ -9,9 +10,39 @@ from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 # -*- coding=utf-8 -*-
 from common.log import logger
-from common.tmp_dir import TmpDir
 from common import state_dir
-from config import conf
+
+MAX_INBOUND_MEDIA_BYTES = 50 * 1024 * 1024
+
+
+def _save_download(response, file_path):
+    """Publish a complete, size-limited response without buffering it in memory."""
+    temp_path = None
+    try:
+        length = response.headers.get("Content-Length") if hasattr(response, "headers") else None
+        try:
+            if length is not None and int(length) > MAX_INBOUND_MEDIA_BYTES:
+                logger.warning("[DingTalk] Refusing oversized inbound media")
+                return False
+        except (TypeError, ValueError):
+            pass  # A bad header cannot bypass the streamed byte limit below.
+
+        with tempfile.NamedTemporaryFile(dir=os.path.dirname(file_path), delete=False) as out:
+            temp_path = out.name
+            size = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                size += len(chunk)
+                if size > MAX_INBOUND_MEDIA_BYTES:
+                    logger.warning("[DingTalk] Refusing oversized inbound media")
+                    return False
+                out.write(chunk)
+        os.replace(temp_path, file_path)
+        temp_path = None
+        return True
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.unlink(temp_path)
+        response.close()
 
 def _extract_file_payload(event):
     """Pull downloadCode/fileName out of a ChatbotMessage.
@@ -278,13 +309,14 @@ def download_image_file(image_url, temp_dir, file_name=None, default_ext=".png")
                         dest_name = _media_filename(file_hash, file_name, default_ext)
                         file_path = os.path.join(temp_dir, dest_name)
                         
-                        with open(file_path, 'wb') as file:
-                            file.write(image_response.content)
+                        if not _save_download(image_response, file_path):
+                            return None
                         
                         logger.info(f"[DingTalk] Downloaded media to {file_path}")
                         return file_path
                     else:
                         logger.error(f"[DingTalk] Failed to download image from URL: {image_response.status_code}")
+                        image_response.close()
                         return None
                 else:
                     logger.error(f"[DingTalk] Failed to get download URL: {download_response.status_code}, {download_response.text}")
@@ -307,14 +339,13 @@ def download_image_file(image_url, temp_dir, file_name=None, default_ext=".png")
         try:
             response = requests.get(image_url, headers=headers, stream=True, timeout=60 * 5)
             if response.status_code == 200:
-                dest_name = _safe_filename(file_name) if file_name else image_url.split("/")[-1].split("?")[0]
+                dest_name = _safe_filename(file_name or image_url.split("/")[-1].split("?")[0])
                 dest_name = dest_name or f"download{default_ext or '.bin'}"
                 file_path = os.path.join(temp_dir, dest_name)
-                with open(file_path, 'wb') as file:
-                    file.write(response.content)
-                return file_path
+                return file_path if _save_download(response, file_path) else None
             else:
-                logger.info(f"[Dingtalk] Failed to download image file, {response.content}")
+                logger.info(f"[Dingtalk] Failed to download image file, status={response.status_code}")
+                response.close()
                 return None
         except Exception as e:
             logger.error(f"[Dingtalk] Exception downloading image: {e}")
