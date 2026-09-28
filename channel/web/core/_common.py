@@ -11,11 +11,13 @@ before, the handlers and the channel had to share a module to share a helper.
 """
 
 import base64
+import errno
 import hashlib
 import hmac
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 import uuid
@@ -107,6 +109,63 @@ def _read_config_file_for_write() -> dict:
         with open(config_path, "r", encoding="utf-8-sig") as f:
             return json.load(f)
     return read_config_template()
+
+
+def _write_config_file_for_write(config_path: str, data: dict) -> None:
+    """Write ``data`` to ``config_path`` without truncating the old file first.
+
+    Every console save reads config.json, changes a few keys and writes the whole
+    dict back. Writing straight into ``config_path`` truncates it before the new
+    bytes are there, so anything that fails while serialising -- a value json
+    cannot encode, a full disk, the process being killed -- leaves a half-written
+    file. That is worse here than for a cache: ``load_config`` treats an
+    unparseable user config as corruption, and on the desktop client the self-heal
+    path quarantines the file and replaces it with config-template.json, so every
+    API key, channel credential and custom provider goes with it. A source
+    deployment instead raises and never starts. Building the result beside the
+    file and replacing it means a failed save leaves whatever was there before.
+    """
+    # A unique temp name per save: the console handlers run on a thread pool
+    # without a lock, and a shared name would let two overlapping saves truncate
+    # and rename each other's file.
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=".config.", suffix=".tmp", dir=os.path.dirname(config_path) or "."
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        # mkstemp creates the file 0600 and os.replace swaps the inode, so carry
+        # over the mode config.json already had (e.g. a user-tightened 0600).
+        try:
+            os.chmod(tmp_path, os.stat(config_path).st_mode & 0o7777)
+        except OSError:
+            pass
+        try:
+            os.replace(tmp_path, config_path)
+        except OSError as e:
+            # Some targets cannot be renamed over even though they can be
+            # written: a single-file bind mount (EBUSY / EXDEV), or on Windows a
+            # file another handle still has open (PermissionError). The document
+            # is already fully serialised, so writing it in place can no longer
+            # leave a half-encoded file behind.
+            if not (isinstance(e, PermissionError) or e.errno in (errno.EBUSY, errno.EXDEV)):
+                raise
+            logger.warning(f"[WebChannel] Atomic replace of config.json failed ({e}), writing in place")
+            with open(tmp_path, "r", encoding="utf-8") as src:
+                text = src.read()
+            with open(config_path, "w", encoding="utf-8") as dst:
+                dst.write(text)
+                dst.flush()
+                os.fsync(dst.fileno())
+            os.remove(tmp_path)
+    except Exception:
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def _get_web_password() -> str:
