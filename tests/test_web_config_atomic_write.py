@@ -19,6 +19,9 @@ file exactly as it was.
 import errno
 import importlib
 import json
+import os
+import stat
+import threading
 
 import pytest
 
@@ -65,13 +68,17 @@ def test_a_save_that_cannot_serialise_keeps_the_previous_config(tmp_path):
     assert config_path.read_text(encoding="utf-8") == original
 
 
+def _leftovers(tmp_path):
+    return sorted(p.name for p in tmp_path.iterdir() if p.name != "config.json")
+
+
 def test_a_save_that_fails_leaves_no_temp_file_behind(tmp_path):
     config_path, _ = _an_existing_config(tmp_path)
 
     with pytest.raises(TypeError):
         _the_write_helper()._write_config_file_for_write(str(config_path), {"half": object()})
 
-    assert not (tmp_path / "config.json.tmp").exists()
+    assert _leftovers(tmp_path) == []
 
 
 def test_a_save_that_succeeds_replaces_the_file(tmp_path):
@@ -82,7 +89,65 @@ def test_a_save_that_succeeds_replaces_the_file(tmp_path):
     )
 
     assert json.loads(config_path.read_text(encoding="utf-8"))["model"] == "gpt-4o"
-    assert not (tmp_path / "config.json.tmp").exists()
+    assert _leftovers(tmp_path) == []
+
+
+def test_overlapping_saves_do_not_trip_over_each_other(tmp_path):
+    """Console handlers run on a thread pool with no lock around the write, so
+    two saves can be mid-flight at once. Each must land whole and neither may
+    fail because the other touched its temp file."""
+    config_path, _ = _an_existing_config(tmp_path)
+    helper = _the_write_helper()._write_config_file_for_write
+    bulk = {f"key_{i}": "v" * 200 for i in range(2000)}
+    errors = []
+
+    def save(tag, barrier):
+        barrier.wait()
+        try:
+            helper(str(config_path), dict(bulk, tag=tag))
+        except Exception as e:  # pragma: no cover - the assertion reports it
+            errors.append(e)
+
+    for _ in range(10):
+        barrier = threading.Barrier(2)
+        threads = [threading.Thread(target=save, args=(tag, barrier)) for tag in ("a", "b")]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        assert json.loads(config_path.read_text(encoding="utf-8"))["tag"] in ("a", "b")
+
+    assert errors == []
+    assert _leftovers(tmp_path) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_a_save_keeps_the_mode_the_file_already_had(tmp_path):
+    """Replacing the file swaps its inode, so a config.json the user locked down
+    to 0600 must not come back readable by everyone."""
+    config_path, _ = _an_existing_config(tmp_path)
+    os.chmod(config_path, 0o600)
+
+    _the_write_helper()._write_config_file_for_write(str(config_path), {"model": "gpt-4o"})
+
+    assert stat.S_IMODE(os.stat(config_path).st_mode) == 0o600
+
+
+def test_a_target_that_cannot_be_renamed_over_is_written_in_place(tmp_path, monkeypatch):
+    """A config.json bind-mounted on its own cannot be replaced by rename (EBUSY);
+    the save must still land rather than fail every time."""
+    config_path, _ = _an_existing_config(tmp_path)
+    common = _the_write_helper()
+
+    def busy(src, dst):
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(common.os, "replace", busy)
+
+    common._write_config_file_for_write(str(config_path), {"model": "gpt-4o"})
+
+    assert json.loads(config_path.read_text(encoding="utf-8")) == {"model": "gpt-4o"}
+    assert _leftovers(tmp_path) == []
 
 
 # ---------------------------------------------------------------------------

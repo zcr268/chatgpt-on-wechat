@@ -11,11 +11,13 @@ before, the handlers and the channel had to share a module to share a helper.
 """
 
 import base64
+import errno
 import hashlib
 import hmac
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 import uuid
@@ -119,17 +121,44 @@ def _write_config_file_for_write(config_path: str, data: dict) -> None:
     deployment instead raises and never starts. Building the result beside the
     file and replacing it means a failed save leaves whatever was there before.
     """
-    tmp_path = f"{config_path}.tmp"
+    # A unique temp name per save: the console handlers run on a thread pool
+    # without a lock, and a shared name would let two overlapping saves truncate
+    # and rename each other's file.
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=".config.", suffix=".tmp", dir=os.path.dirname(config_path) or "."
+    )
     try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp_path, config_path)
+        # mkstemp creates the file 0600 and os.replace swaps the inode, so carry
+        # over the mode config.json already had (e.g. a user-tightened 0600).
+        try:
+            os.chmod(tmp_path, os.stat(config_path).st_mode & 0o7777)
+        except OSError:
+            pass
+        try:
+            os.replace(tmp_path, config_path)
+        except OSError as e:
+            # Some targets cannot be renamed over even though they can be
+            # written: a single-file bind mount (EBUSY / EXDEV), or on Windows a
+            # file another handle still has open (PermissionError). The document
+            # is already fully serialised, so writing it in place can no longer
+            # leave a half-encoded file behind.
+            if not (isinstance(e, PermissionError) or e.errno in (errno.EBUSY, errno.EXDEV)):
+                raise
+            logger.warning(f"[WebChannel] Atomic replace of config.json failed ({e}), writing in place")
+            with open(tmp_path, "r", encoding="utf-8") as src:
+                text = src.read()
+            with open(config_path, "w", encoding="utf-8") as dst:
+                dst.write(text)
+                dst.flush()
+                os.fsync(dst.fileno())
+            os.remove(tmp_path)
     except Exception:
         try:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
+            os.remove(tmp_path)
         except OSError:
             pass
         raise
