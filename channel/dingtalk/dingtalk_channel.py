@@ -1060,6 +1060,25 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
                 self._reply_markdown_or_text(reply.content, incoming_message)
             return
 
+        # ERROR carries a failed turn from the bridge and INFO carries godcmd and
+        # plugin answers; both reach send() through ChatChannel._send_reply's last
+        # else, so without this branch the user got silence instead of the message.
+        elif reply.type in (ReplyType.ERROR, ReplyType.INFO):
+            text = str(reply.content) if reply.content is not None else ""
+            if not text:
+                logger.warning(f"[DingTalk] Empty {reply.type} reply, nothing to send")
+                return
+            logger.info(f"[DingTalk] Sending {reply.type} reply as text, length={len(text)}")
+            self._reply_markdown_or_text(text, incoming_message)
+            return
+
+        else:
+            # In-memory IMAGE, VIDEO_URL and the WeChat-only card types need an
+            # upload or a payload this channel does not implement. Log them: a
+            # silent return leaves no trace of why nothing arrived.
+            logger.warning(f"[DingTalk] Unsupported reply type: {reply.type}, not sent")
+            return
+
     def _reply_markdown_or_text(self, content: str, incoming_message) -> None:
         """Reply through the session webhook as a markdown message.
 
