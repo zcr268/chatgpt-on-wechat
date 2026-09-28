@@ -234,6 +234,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "memory_search": "search memory",
             "memory_get": "read memory content",
             "env_config": "manage API keys and skill config",
+            "time": "get the current date and time",
             "scheduler": "manage scheduled tasks and reminders",
             "send": "send a local file to the user (local files only; put URLs directly in the reply text)",
             "vision": "analyze images (recognition, description, OCR, etc.)",
@@ -254,6 +255,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
             "memory_search": "搜索记忆",
             "memory_get": "读取记忆内容",
             "env_config": "管理API密钥和技能配置",
+            "time": "获取当前日期和时间",
             "scheduler": "管理定时任务和提醒",
             "send": "发送本地文件给用户（仅限本地文件，URL直接放在回复文本中）",
             "vision": "分析图片内容（识别、描述、OCR文字提取等）",
@@ -266,7 +268,7 @@ def _build_tooling_section(tools: List[Any], language: str) -> List[str]:
         "bash", "terminal",
         "web_search", "web_fetch", "browser",
         "memory_search", "memory_get",
-        "env_config", "scheduler", "send", "vision", "subagent",
+        "env_config", "time", "scheduler", "send", "vision", "subagent",
     ]
 
     # Build name -> summary mapping for available tools
@@ -1065,9 +1067,10 @@ def _build_team_section(runtime_info: Dict[str, Any], language: str) -> List[str
 def _build_runtime_section(runtime_info: Dict[str, Any], language: str) -> List[str]:
     """Build the runtime info section.
 
-    Time is deliberately absent: it is served on demand by the
-    ``get_current_time`` tool so the system prompt stays byte-stable and
-    server-side prefix caching covers it across turns.
+    Only the date goes here: the system prompt heads every request, so a
+    clock in it would change on every turn and void the provider's prefix
+    cache for the whole history. The exact time is served on demand by the
+    ``time`` tool.
     """
     if not runtime_info:
         return []
@@ -1077,6 +1080,15 @@ def _build_runtime_section(runtime_info: Dict[str, Any], language: str) -> List[
         ("## ⚙️ Runtime info" if is_en else "## ⚙️ 运行时信息"),
         "",
     ]
+
+    if callable(runtime_info.get("_get_current_time")):
+        try:
+            time_info = runtime_info["_get_current_time"]()
+            date_label = "Current date" if is_en else "当前日期"
+            lines.append(f"{date_label}: {time_info['date']} {time_info['weekday']} ({time_info['timezone']})")
+            lines.append("")
+        except Exception as e:
+            logger.warning(f"[PromptBuilder] Failed to get dynamic time: {e}")
 
     # Add other runtime info
     model_label = "model" if is_en else "模型"

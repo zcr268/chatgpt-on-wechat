@@ -18,6 +18,7 @@ const TOOL_ICONS = {
     browser: 'fa-globe',
     env_config: 'fa-key',
     scheduler: 'fa-clock',
+    time: 'fa-calendar-day',
     memory_get: 'fa-brain',
     memory_search: 'fa-brain',
 };
