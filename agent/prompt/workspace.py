@@ -244,24 +244,32 @@ def _is_template_placeholder(content: str) -> bool:
     return False
 
 
+# The name placeholder each template (zh/en) leaves for the first conversation.
+_ONBOARDING_PLACEHOLDERS = {
+    DEFAULT_AGENT_FILENAME: ("*(在首次对话时填写", "*(filled during the first conversation"),
+    DEFAULT_USER_FILENAME: ("*(在首次对话时询问", "*(ask during the first conversation"),
+}
+
+
 def _is_onboarding_done(workspace_dir: str) -> bool:
-    """Check if AGENT.md or USER.md has been modified from the original template"""
-    agent_path = os.path.join(workspace_dir, DEFAULT_AGENT_FILENAME)
-    user_path = os.path.join(workspace_dir, DEFAULT_USER_FILENAME)
-    
-    agent_template = _get_agent_template().strip()
-    user_template = _get_user_template().strip()
-    
-    for path, template in [(agent_path, agent_template), (user_path, user_template)]:
+    """Check if AGENT.md or USER.md has had its name placeholder filled in.
+
+    BOOTSTRAP.md itself marks onboarding as pending; this only backs up an agent
+    that filled the files but forgot to delete it. Looking at the placeholder
+    rather than comparing with the template keeps the check stable across
+    template rewording, a language switch, or text added elsewhere in the file.
+    """
+    for filename, placeholders in _ONBOARDING_PLACEHOLDERS.items():
+        path = os.path.join(workspace_dir, filename)
         if not os.path.exists(path):
             continue
         try:
             with open(path, 'r', encoding='utf-8') as f:
-                content = f.read().strip()
-            if content != template:
-                return True
+                content = f.read()
         except Exception:
             continue
+        if not any(p in content for p in placeholders):
+            return True
     return False
 
 
