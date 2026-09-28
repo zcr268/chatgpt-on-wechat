@@ -107,10 +107,37 @@ class TaskStore:
             try:
                 with open(self.store_path, 'r', encoding='utf-8') as f:
                     data = json.load(f)
-                    return data.get("tasks", {})
+                if (
+                    not isinstance(data, dict)
+                    or not isinstance(data.get("tasks"), dict)
+                    or any(not isinstance(task, dict) for task in data["tasks"].values())
+                ):
+                    raise ValueError("invalid task store payload")
+                return data["tasks"]
             except Exception as e:
                 print(f"Error loading tasks: {e}")
-                return {}
+                backup_path = f"{self.store_path}.bak"
+                try:
+                    with open(backup_path, 'r', encoding='utf-8') as f:
+                        backup_text = f.read()
+                    backup = json.loads(backup_text)
+                    if (
+                        not isinstance(backup, dict)
+                        or not isinstance(backup.get("tasks"), dict)
+                        or any(not isinstance(task, dict) for task in backup["tasks"].values())
+                    ):
+                        raise ValueError("invalid task backup payload")
+                except Exception as backup_error:
+                    print(f"Error loading task backup: {backup_error}")
+                    return {}
+
+                # Repair the primary before a later save copies it into .bak.
+                # Otherwise a new task would overwrite the only good backup.
+                try:
+                    self._write_atomic(self.store_path, backup_text)
+                except Exception as restore_error:
+                    print(f"Error restoring task store from backup: {restore_error}")
+                return backup["tasks"]
     
     def save_tasks(self, tasks: Dict[str, dict]):
         """
