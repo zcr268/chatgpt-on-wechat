@@ -24,6 +24,8 @@ available_setting = {
     "open_ai_api_key": "",  # openai api key
     # openai api base; when use_azure_chatgpt is true, set the matching api base
     "open_ai_api_base": "https://api.openai.com/v1",
+    # openai api protocol: "auto" (Responses only for models that require it), "chat" (/chat/completions) or "responses" (/responses)
+    "open_ai_api_type": "auto",
     "claude_api_base": "https://api.anthropic.com/v1",  # claude api base
     "gemini_api_base": "https://generativelanguage.googleapis.com",  # gemini api base
     "custom_api_key": "",  # custom OpenAI-compatible provider api key (used when bot_type is "custom"); legacy single-provider field

@@ -113,6 +113,7 @@ class VisionProvider:
     model_override: Optional[str] = None
     use_bot: bool = False  # When True, call via bot.call_vision instead of raw HTTP
     fallback_bot: Any = None  # Bot instance for non-main-model providers
+    use_responses: bool = False  # When True, call /responses instead of /chat/completions
 
 
 class VisionAPIError(Exception):
@@ -602,11 +603,17 @@ class Vision(BaseTool):
         model_override = preferred_model if (
             preferred_model and preferred_model.lower().startswith(_OPENAI_MODEL_PREFIXES)
         ) else None
+        from models.openai import responses_adapter
+        use_responses = (
+            responses_adapter.resolve_api_type(conf().get("open_ai_api_type"))
+            == responses_adapter.API_TYPE_RESPONSES
+        )
         return VisionProvider(
             name="OpenAI",
             api_key=api_key,
             api_base=self._ensure_v1(api_base),
             model_override=model_override,
+            use_responses=use_responses,
         )
 
     def _build_linkai_provider(self, preferred_model: Optional[str] = None) -> Optional[VisionProvider]:
@@ -863,8 +870,19 @@ class Vision(BaseTool):
             **provider.extra_headers,
         }
 
+        endpoint = "/chat/completions"
+        if provider.use_responses:
+            from models.openai import responses_adapter
+            from models.openai_compatible_bot import OpenAICompatibleBot
+            payload = responses_adapter.build_responses_payload(
+                model=model,
+                messages=payload["messages"],
+                reasoning_effort=OpenAICompatibleBot._responses_reasoning_effort(model, {}),
+            )
+            endpoint = "/responses"
+
         resp = requests.post(
-            f"{provider.api_base}/chat/completions",
+            f"{provider.api_base}{endpoint}",
             headers=headers,
             json=payload,
             timeout=DEFAULT_TIMEOUT,
@@ -875,9 +893,12 @@ class Vision(BaseTool):
 
         data = resp.json()
 
-        if "error" in data:
+        if data.get("error"):
             msg = data["error"].get("message", "Unknown API error")
             raise VisionAPIError(f"API error - {msg}")
+
+        if provider.use_responses:
+            data = responses_adapter.responses_to_chat_completion(data)
 
         content = ""
         choices = data.get("choices", [])

@@ -60,6 +60,7 @@ class OpenAIBot(Bot, OpenAIImage, OpenAICompatibleBot):
             'default_top_p': conf().get("top_p", 1.0),
             'default_frequency_penalty': conf().get("frequency_penalty", 0.0),
             'default_presence_penalty': conf().get("presence_penalty", 0.0),
+            'api_type': conf().get("open_ai_api_type"),
         }
 
     def _get_http_client(self) -> OpenAIHTTPClient:
