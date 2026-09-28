@@ -152,3 +152,16 @@ def test_invalid_backup_is_not_used_for_recovery(tmp_path):
 
     assert store.load_tasks() == {}
     assert store_path.read_text(encoding="utf-8") == "{broken json"
+
+
+def test_valid_primary_takes_precedence_over_older_backup(tmp_path):
+    store_path = tmp_path / "tasks.json"
+    backup_path = tmp_path / "tasks.json.bak"
+    _write_store(store_path, {"task-1": _task("task-1"), "task-2": _task("task-2")})
+    _write_store(backup_path, {"task-1": _task("task-1")})
+    store = TaskStore(str(store_path))
+
+    assert set(store.load_tasks()) == {"task-1", "task-2"}
+    assert set(json.loads(store_path.read_text(encoding="utf-8"))["tasks"]) == {
+        "task-1", "task-2"
+    }
