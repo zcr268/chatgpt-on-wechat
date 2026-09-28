@@ -17,6 +17,23 @@ from channel.feishu.feishu_channel import FeiShuChanel
 FILE_URL = "https://cdn.example.com/report.pdf"
 
 
+class DownloadResponse:
+    def __init__(self, status_code=200, content=b"pdf-bytes", headers=None, interrupt=False):
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {}
+        self.interrupt = interrupt
+        self.closed = False
+
+    def iter_content(self, chunk_size):
+        yield self.content
+        if self.interrupt:
+            raise OSError("connection lost")
+
+    def close(self):
+        self.closed = True
+
+
 def _channel():
     # _upload_file_url does not touch instance state, and the class is wrapped
     # by @singleton, so build a bare instance from the undecorated class instead
@@ -38,7 +55,7 @@ def _ok_upload(file_key="file_v2_report"):
 
 def test_download_is_bounded_and_uploaded_from_memory(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    response = SimpleNamespace(status_code=200, content=b"pdf-bytes")
+    response = DownloadResponse()
     post = _ok_upload()
 
     with patch("channel.feishu.feishu_channel.requests.get", return_value=response) as get:
@@ -48,6 +65,8 @@ def test_download_is_bounded_and_uploaded_from_memory(tmp_path, monkeypatch):
     assert result == "file_v2_report"
     # Both legs of the round trip are bounded.
     assert get.call_args.kwargs["timeout"] == (5, 30)
+    assert get.call_args.kwargs["stream"] is True
+    assert response.closed
     assert post.calls[0]["timeout"] == (5, 30)
     # The downloaded bytes are the multipart payload; nothing is staged on disk.
     assert post.calls[0]["files"]["file"] == ("report.pdf", b"pdf-bytes")
@@ -58,7 +77,7 @@ def test_query_string_stays_out_of_the_name_and_type(tmp_path, monkeypatch):
     # os.path.basename() on the whole URL kept the query string, so the suffix
     # was ".pdf?token=secret" and file_type silently fell back to 'stream'.
     monkeypatch.chdir(tmp_path)
-    response = SimpleNamespace(status_code=200, content=b"pdf-bytes")
+    response = DownloadResponse()
     post = _ok_upload()
 
     with patch("channel.feishu.feishu_channel.requests.get", return_value=response):
@@ -72,7 +91,7 @@ def test_failed_download_returns_none_and_uploads_nothing(tmp_path, monkeypatch)
     # The caller checks the return value (`if not file_key: logger.warning(...)`),
     # so a non-200 has to arrive as None.
     monkeypatch.chdir(tmp_path)
-    response = SimpleNamespace(status_code=404, content=b"<html>404</html>")
+    response = DownloadResponse(status_code=404, content=b"<html>404</html>")
     post = _ok_upload()
 
     with patch("channel.feishu.feishu_channel.requests.get", return_value=response):
@@ -86,7 +105,7 @@ def test_failed_download_returns_none_and_uploads_nothing(tmp_path, monkeypatch)
 
 def test_api_error_code_returns_none(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    response = SimpleNamespace(status_code=200, content=b"pdf-bytes")
+    response = DownloadResponse()
 
     def post(url, files=None, data=None, headers=None, timeout=None):
         return SimpleNamespace(
@@ -103,7 +122,7 @@ def test_api_error_code_returns_none(tmp_path, monkeypatch):
 @pytest.mark.parametrize("failure", [RuntimeError("connection reset"), OSError("broken pipe")])
 def test_upload_failure_leaves_nothing_behind(tmp_path, monkeypatch, failure):
     monkeypatch.chdir(tmp_path)
-    response = SimpleNamespace(status_code=200, content=b"pdf-bytes")
+    response = DownloadResponse()
 
     with patch("channel.feishu.feishu_channel.requests.get", return_value=response):
         with patch("channel.feishu.feishu_channel.requests.post", side_effect=failure):
@@ -113,3 +132,17 @@ def test_upload_failure_leaves_nothing_behind(tmp_path, monkeypatch, failure):
 
     assert result is None
     assert list(tmp_path.iterdir()) == []
+
+
+def test_file_stream_over_limit_is_not_uploaded(monkeypatch):
+    response = DownloadResponse(content=b"oversize")
+    post = _ok_upload()
+
+    with patch("channel.feishu.feishu_channel.MAX_REMOTE_FILE_BYTES", 4):
+        with patch("channel.feishu.feishu_channel.requests.get", return_value=response):
+            with patch("channel.feishu.feishu_channel.requests.post", side_effect=post):
+                result = _channel()._upload_file_url(FILE_URL, "token")
+
+    assert result is None
+    assert post.calls == []
+    assert response.closed
