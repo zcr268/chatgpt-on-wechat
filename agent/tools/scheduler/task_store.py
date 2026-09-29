@@ -21,6 +21,17 @@ def _lock_for_path(store_path: str):
         return _store_locks.setdefault(normalized_path, threading.RLock())
 
 
+def _read_tasks(path: str):
+    """Return ``(raw_text, tasks)`` from a store file, raising if it is unusable."""
+    with open(path, 'r', encoding='utf-8') as f:
+        text = f.read()
+    data = json.loads(text)
+    tasks = data.get("tasks") if isinstance(data, dict) else None
+    if not isinstance(tasks, dict) or any(not isinstance(task, dict) for task in tasks.values()):
+        raise ValueError(f"invalid task store payload: {path}")
+    return text, tasks
+
+
 class _DescStr:
     """Sort a string descending inside an otherwise-ascending sort key tuple.
 
@@ -80,39 +91,23 @@ class TaskStore:
                 return {}
             
             try:
-                with open(self.store_path, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                if (
-                    not isinstance(data, dict)
-                    or not isinstance(data.get("tasks"), dict)
-                    or any(not isinstance(task, dict) for task in data["tasks"].values())
-                ):
-                    raise ValueError("invalid task store payload")
-                return data["tasks"]
+                return _read_tasks(self.store_path)[1]
             except Exception as e:
                 print(f"Error loading tasks: {e}")
-                backup_path = f"{self.store_path}.bak"
-                try:
-                    with open(backup_path, 'r', encoding='utf-8') as f:
-                        backup_text = f.read()
-                    backup = json.loads(backup_text)
-                    if (
-                        not isinstance(backup, dict)
-                        or not isinstance(backup.get("tasks"), dict)
-                        or any(not isinstance(task, dict) for task in backup["tasks"].values())
-                    ):
-                        raise ValueError("invalid task backup payload")
-                except Exception as backup_error:
-                    print(f"Error loading task backup: {backup_error}")
-                    return {}
 
-                # Repair the primary before a later save copies it into .bak.
-                # Otherwise a new task would overwrite the only good backup.
-                try:
-                    self._write_atomic(self.store_path, backup_text)
-                except Exception as restore_error:
-                    print(f"Error restoring task store from backup: {restore_error}")
-                return backup["tasks"]
+            try:
+                backup_text, tasks = _read_tasks(f"{self.store_path}.bak")
+            except Exception as e:
+                print(f"Error loading task backup: {e}")
+                return {}
+
+            # Repair the primary before a later save copies it into .bak.
+            # Otherwise a new task would overwrite the only good backup.
+            try:
+                write_text_atomic(self.store_path, backup_text)
+            except Exception as e:
+                print(f"Error restoring task store from backup: {e}")
+            return tasks
     
     def save_tasks(self, tasks: Dict[str, dict]):
         """

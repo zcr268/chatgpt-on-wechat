@@ -7,6 +7,7 @@ import requests
 
 from bridge.reply import Reply, ReplyType
 from channel.wechatmp import wechatmp_channel
+from common import media_download
 
 
 class FakeResponse:
@@ -129,7 +130,7 @@ def test_remote_media_stops_a_slow_stream(monkeypatch):
     monkeypatch.setattr(wechatmp_channel.requests, "get", lambda *args, **kwargs: response)
     times = iter([0, 61])
     monkeypatch.setattr(
-        wechatmp_channel,
+        media_download,
         "time",
         SimpleNamespace(monotonic=lambda: next(times)),
     )

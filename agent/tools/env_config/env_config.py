@@ -8,6 +8,7 @@ from typing import Dict, Any
 from pathlib import Path
 
 from agent.tools.base_tool import BaseTool, ToolResult
+from common.atomic_write import write_text_atomic
 from common.log import logger
 from common.utils import expand_path
 
@@ -109,36 +110,6 @@ class EnvConfig(BaseTool):
                         env_vars[key.strip()] = value.strip()
         return env_vars
     
-    @staticmethod
-    def _write_atomic(path: str, text: str) -> None:
-        """Write ``text`` to ``path`` through a sibling file, then swap it in.
-
-        ``open(path, "w")`` truncates before a single byte is written, so any
-        failure after that point -- a value the codec cannot encode, a full
-        disk, the process being killed -- leaves the file empty. For this file
-        that means every stored credential is gone, and the next read reports
-        "nothing is configured" instead of an error. Building the text first,
-        writing it beside the file and replacing it means a failed save leaves
-        whatever was there before. Same shape as TaskStore._write_atomic and the
-        other stores that already do this.
-        """
-        temporary = f"{path}.tmp"
-        try:
-            # The whole payload is built before this point, so an unwritable
-            # value fails here -- with the original file still untouched.
-            with open(temporary, "w", encoding="utf-8") as handle:
-                handle.write(text)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        except Exception:
-            try:
-                if os.path.exists(temporary):
-                    os.remove(temporary)
-            except OSError:
-                pass
-            raise
-
     def _restrict_to_owner(self) -> None:
         """Keep the credentials file readable by its owner only.
 
@@ -158,7 +129,7 @@ class EnvConfig(BaseTool):
             "",
         ]
         lines.extend(f"{key}={value}" for key, value in sorted(env_vars.items()))
-        self._write_atomic(self.env_path, "\n".join(lines) + "\n")
+        write_text_atomic(self.env_path, "\n".join(lines) + "\n")
         self._restrict_to_owner()
     
     def _reload_env(self):

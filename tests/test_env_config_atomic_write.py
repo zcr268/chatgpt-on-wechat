@@ -25,6 +25,7 @@ import stat
 import pytest
 
 from agent.tools.env_config.env_config import EnvConfig
+from common.atomic_write import write_text_atomic
 
 HEADER = (
     "# Environment variables for agent skills\n"
@@ -76,7 +77,7 @@ def test_a_write_that_cannot_serialise_keeps_the_previous_file(tool):
         handle.write("KEEP=me\n")
 
     with pytest.raises(UnicodeEncodeError):
-        EnvConfig._write_atomic(tool.env_path, f"KEEP=me\nBAD={_unencodable_value()}\n")
+        write_text_atomic(tool.env_path, f"KEEP=me\nBAD={_unencodable_value()}\n")
 
     assert _text(tool) == "KEEP=me\n"
 
@@ -88,13 +89,13 @@ def test_a_write_that_fails_at_the_swap_keeps_the_previous_file(tool, monkeypatc
     monkeypatch.setattr(os, "fsync", _a_disk_that_fills_up_at_the_swap)
 
     with pytest.raises(OSError):
-        EnvConfig._write_atomic(tool.env_path, "GONE=1\n")
+        write_text_atomic(tool.env_path, "GONE=1\n")
 
     assert _text(tool) == "KEEP=me\n"
 
 
 def test_a_write_leaves_no_temp_file_behind(tool):
-    EnvConfig._write_atomic(tool.env_path, "A_KEY=1\n")
+    write_text_atomic(tool.env_path, "A_KEY=1\n")
 
     assert sorted(entry.name for entry in os.scandir(tool.env_dir)) == [".env"]
 

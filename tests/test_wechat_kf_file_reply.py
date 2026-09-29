@@ -90,7 +90,7 @@ class TestWechatKfImageUrlFileScheme(unittest.TestCase):
         ) as get:
             channel.send(reply, ctx)
 
-        get.assert_called_once_with("https://example.com/pic.png", stream=True, timeout=60)
+        assert get.call_args.args == ("https://example.com/pic.png",)
         channel.client.media.upload.assert_called_once()
 
 

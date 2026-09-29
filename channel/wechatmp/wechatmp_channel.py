@@ -17,6 +17,7 @@ from channel.chat_channel import ChatChannel
 from channel.wechatmp.common import *
 from channel.wechatmp.wechatmp_client import WechatMPClient
 from common.log import logger
+from common.media_download import download_bytes
 from common.singleton import singleton
 from common.utils import split_string_by_utf8_length, remove_markdown_symbol
 from config import conf
@@ -45,33 +46,13 @@ _MAX_REMOTE_MEDIA_SECONDS = 60
 
 def _download_remote_media(url, media_type):
     """Bound a remote download before handing it to the WeChat upload API."""
-    response = None
     try:
-        deadline = time.monotonic() + _MAX_REMOTE_MEDIA_SECONDS
-        response = requests.get(url, stream=True, timeout=(5, 30))
-        response.raise_for_status()
-        try:
-            content_length = int(response.headers.get("Content-Length", 0))
-        except (TypeError, ValueError):
-            content_length = 0
-        if content_length > _MAX_REMOTE_MEDIA_BYTES:
-            raise ValueError("remote media exceeds 10 MB")
-
-        storage = io.BytesIO()
-        for block in response.iter_content(chunk_size=8192):
-            if time.monotonic() > deadline:
-                raise ValueError("remote media download timed out")
-            if storage.tell() + len(block) > _MAX_REMOTE_MEDIA_BYTES:
-                raise ValueError("remote media exceeds 10 MB")
-            storage.write(block)
-        storage.seek(0)
-        return storage
+        return io.BytesIO(download_bytes(
+            url, _MAX_REMOTE_MEDIA_BYTES, timeout=(5, 30), max_seconds=_MAX_REMOTE_MEDIA_SECONDS,
+        ))
     except (requests.RequestException, OSError, ValueError) as exc:
         logger.warning("[wechatmp] {} download failed: {}".format(media_type, type(exc).__name__))
         return None
-    finally:
-        if response is not None:
-            response.close()
 
 
 def _sniff_image_type(storage) -> str:

@@ -36,6 +36,7 @@ from channel.file_cache import get_file_cache
 from channel.wechat_kf.wechat_kf_cursor_store import CursorStore
 from channel.wechat_kf.wechat_kf_message import WechatKfMessage
 from common.log import logger
+from common.media_download import download_bytes
 from common.singleton import singleton
 from common.utils import (
     compress_imgfile,
@@ -58,37 +59,6 @@ SYNC_MSG_LIMIT = 1000
 _MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
 _MAX_REMOTE_VIDEO_BYTES = 10 * 1024 * 1024
 _MAX_REMOTE_MEDIA_SECONDS = 60
-
-
-def _download_reply_media(url: str, max_bytes: int) -> Optional[io.BytesIO]:
-    """Download a bounded media reply, closing the HTTP response in every case."""
-    response = None
-    try:
-        deadline = time.monotonic() + _MAX_REMOTE_MEDIA_SECONDS
-        response = requests.get(url, stream=True, timeout=(5, 30))
-        response.raise_for_status()
-        try:
-            content_length = int(response.headers.get("Content-Length", 0))
-        except (TypeError, ValueError):
-            content_length = 0
-        if content_length > max_bytes:
-            raise ValueError("remote media is too large")
-
-        storage = io.BytesIO()
-        for block in response.iter_content(chunk_size=8192):
-            if time.monotonic() > deadline:
-                raise ValueError("remote media download timed out")
-            if storage.tell() + len(block) > max_bytes:
-                raise ValueError("remote media is too large")
-            storage.write(block)
-        storage.seek(0)
-        return storage
-    except (requests.RequestException, OSError, ValueError) as exc:
-        logger.warning("[wechat_kf] remote media download failed: {}".format(type(exc).__name__))
-        return None
-    finally:
-        if response is not None:
-            response.close()
 
 
 @singleton
@@ -178,14 +148,16 @@ class WechatKfChannel(ChatChannel):
         ``bridge/agent_bridge.py::_create_file_reply``), which ``requests``
         cannot fetch.
         """
-        if path_or_url.startswith("file://"):
-            try:
+        try:
+            if path_or_url.startswith("file://"):
                 with open(path_or_url[7:], "rb") as f:
                     return io.BytesIO(f.read())
-            except OSError as e:
-                logger.error("[wechat_kf] cannot read local media {}: {}".format(path_or_url, e))
-                return None
-        return _download_reply_media(path_or_url, max_bytes)
+            return io.BytesIO(download_bytes(
+                path_or_url, max_bytes, timeout=(5, 30), max_seconds=_MAX_REMOTE_MEDIA_SECONDS,
+            ))
+        except (requests.RequestException, OSError, ValueError) as e:
+            logger.warning("[wechat_kf] cannot load media: {}".format(type(e).__name__))
+            return None
 
     def send(self, reply: Reply, context: Context):
         receiver = context["receiver"]
@@ -306,17 +278,11 @@ class WechatKfChannel(ChatChannel):
             if text_content:
                 self._send_text(external_userid, open_kfid, text_content)
                 time.sleep(0.3)
+            local_path = file_path[7:] if file_path.startswith("file://") else file_path
             try:
-                if file_path.startswith("file://"):
-                    local_path = file_path[7:]
-                    with open(local_path, "rb") as f:
-                        data = f.read()
-                    name = os.path.basename(local_path)
-                else:
-                    with open(file_path, "rb") as f:
-                        data = f.read()
-                    name = os.path.basename(file_path)
-                response = self.client.media.upload("file", (name, data))
+                with open(local_path, "rb") as f:
+                    data = f.read()
+                response = self.client.media.upload("file", (os.path.basename(local_path), data))
             except (OSError, WeChatClientException) as e:
                 logger.error("[wechat_kf] upload file failed: {}".format(e))
                 return
