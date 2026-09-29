@@ -170,19 +170,25 @@ def _download_repo_zip(spec: str, branch: str = "main", host: str = "github", ti
     resp.raise_for_status()
 
     tmp_dir = tempfile.mkdtemp(prefix="cow-skill-")
-    zip_path = os.path.join(tmp_dir, "repo.zip")
-    with open(zip_path, "wb") as f:
-        f.write(resp.content)
+    try:
+        zip_path = os.path.join(tmp_dir, "repo.zip")
+        with open(zip_path, "wb") as f:
+            f.write(resp.content)
 
-    extract_dir = os.path.join(tmp_dir, "extracted")
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        _safe_extractall(zf, extract_dir)
+        extract_dir = os.path.join(tmp_dir, "extracted")
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            _safe_extractall(zf, extract_dir)
 
-    # GitHub zips have a single top-level dir like "repo-main/"
-    top_items = [d for d in os.listdir(extract_dir) if not d.startswith(".")]
-    if len(top_items) == 1 and os.path.isdir(os.path.join(extract_dir, top_items[0])):
-        return tmp_dir, os.path.join(extract_dir, top_items[0])
-    return tmp_dir, extract_dir
+        # GitHub zips have a single top-level dir like "repo-main/"
+        top_items = [d for d in os.listdir(extract_dir) if not d.startswith(".")]
+        if len(top_items) == 1 and os.path.isdir(os.path.join(extract_dir, top_items[0])):
+            return tmp_dir, os.path.join(extract_dir, top_items[0])
+        return tmp_dir, extract_dir
+    except Exception:
+        # The directory is only handed back through the return value, so a caller
+        # cannot clean it up after this function raises; do it here.
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
 
 
 def _download_github_dir(owner, repo, branch, subpath, dest_dir):
