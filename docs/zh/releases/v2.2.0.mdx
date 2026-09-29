@@ -85,7 +85,7 @@ Thanks @liuns-yang (#3191)
 - **企业微信**：企微应用支持文件和视频回复（Thanks @c020627 #3249），支持回复本地生成的图片（Thanks @Lesereingrape），回调接口校验企业 ID（Thanks @c020627 #3159）；企微智能机器人群消息正确识别为 @ 消息（Thanks @c020627 #3193）。
 - **微信客服**：支持发送本地媒体文件，文件回复同时发送附带文字（Thanks @c020627 #3262）；修复消息拉取游标未及时推进的问题（Thanks @rudycelekli #3258）。
 - **微信**：修复多 Agent 场景下多个通道实例的管理问题，通道实例变更后保留登录状态。
-- **视频回复**：Discord、Slack、Telegram、飞书、钉钉、微信客服在回复本地生成的视频时直接上传发送，不再丢弃或只发送文件路径（Thanks @Lesereingrape #3289, #3299、@c020627 #3297）。
+- **视频回复**：Discord、Slack、Telegram、飞书、钉钉、微信客服、微信公众号在回复本地生成的视频时直接上传发送，不再丢弃或只发送文件路径（Thanks @Lesereingrape #3289, #3299, #3321、@c020627 #3297）。
 - **Slack / Telegram**：Telegram 正确渲染 `~~~` 代码块（Thanks @huiq777 #3287）；Slack 同名文件不再互相覆盖（Thanks @rudycelekli #3265）。
 - **微信公众号**：兼容 Python 3.13（Thanks @c020627 #3214）。
 
@@ -122,7 +122,7 @@ Thanks @liuns-yang (#3191)
   - 阿里云、Edge、ElevenLabs 等语音服务失败时返回错误提示，不再静默丢弃回复（Thanks @c020627 #3243, #3263, #3278）。
   - 修复 WAV 文件句柄未关闭的问题（Thanks @aniruddhaadak80 #3286）。
 - **定时任务**：跨夏令时切换时保持本地执行时间（Thanks @liuns-yang #3189, #3204）；定时执行技能产出的文件直接投递，而非发送文件路径（Thanks @c020627 #3253）。
-- **备份**：支持将备份输出到不同的文件系统（Thanks @zyc2022 #3200、@chen1070109514 #3246）。
+- **备份**：支持将备份输出到不同的文件系统（Thanks @zyc2022 #3200、@chen1070109514 #3246）；恢复多 Agent 备份时沿用本机现有的 Agent 工作区路径（Thanks @Lesereingrape #3319）。
 - **插件**：配置为空或不完整时插件仍可正常启动（Thanks @c020627 #3224）；Midjourney 图片序号输入有误时给出提示（Thanks @Lesereingrape #3291）；角色插件自定义角色未填写描述时返回帮助信息（Thanks @Lesereingrape #3296）；管理员命令设置插件优先级、切换模型时参数有误会给出提示（Thanks @Lesereingrape #3303, #3305）；`plugins.json` 中单个插件配置项缺失或格式错误时自动补全默认值，不再导致全部插件加载失败（Thanks @Lesereingrape #3314）；修复总结插件的文件命名与句柄关闭问题（Thanks @c020627 #3215）。
 - **Agent 管理**：删除 Agent 时同步清理其项目数据（Thanks @c020627 #3216）。
 - **消息处理**：修复消息上下文参数在不同会话间共享的问题（Thanks @c020627 #3222）；文件缓存有效期按最近一个文件计算（Thanks @c020627 #3218）；修复限流器阻塞程序退出、速率为 0 时异常的问题（Thanks @aniruddhaadak80 #3285）；不支持的回复类型会在错误提示中显示原始类型，插件丢弃回复后语音会话不再报错（Thanks @Bdysj #3306, #3307）；修复非默认 Agent 下 `#reset`、飞书消息撤回和删除会话无法清除排队消息的问题（Thanks @Lesereingrape #3316）。
