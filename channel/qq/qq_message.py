@@ -1,11 +1,14 @@
 import os
 import re
+import tempfile
 import requests
 
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from common.log import logger
 from common import state_dir
+
+MAX_QQ_ATTACHMENT_BYTES = 100 * 1024 * 1024
 
 
 def _get_tmp_dir() -> str:
@@ -58,14 +61,38 @@ def _download_attachment(att: dict, msg_id: str, idx: int) -> str:
         fname = f"qq_{msg_id}_{idx}"
     # Keep filenames unique per message so two attachments never clobber.
     local_path = os.path.join(tmp_dir, f"qq_{msg_id}_{idx}_{fname}")
+    temporary_path = None
     try:
-        resp = requests.get(url, timeout=60)
-        resp.raise_for_status()
-        with open(local_path, "wb") as f:
-            f.write(resp.content)
+        with requests.get(url, timeout=60, stream=True) as resp:
+            resp.raise_for_status()
+            length = resp.headers.get("Content-Length")
+            if length:
+                try:
+                    advertised_size = int(length)
+                except ValueError:
+                    advertised_size = 0
+                if advertised_size > MAX_QQ_ATTACHMENT_BYTES:
+                    raise ValueError("QQ attachment exceeds the download limit")
+
+            with tempfile.NamedTemporaryFile(dir=tmp_dir, prefix=".qq_", delete=False) as f:
+                temporary_path = f.name
+                size = 0
+                for chunk in resp.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    size += len(chunk)
+                    if size > MAX_QQ_ATTACHMENT_BYTES:
+                        raise ValueError("QQ attachment exceeds the download limit")
+                    f.write(chunk)
+        os.replace(temporary_path, local_path)
         logger.info(f"[QQ] Attachment downloaded: {local_path}")
         return local_path
     except Exception as e:
+        if temporary_path:
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
         logger.error(f"[QQ] Failed to download attachment: {e}")
         return ""
 
@@ -222,6 +249,6 @@ class QQMessage(ChatMessage):
 
         origin_note = ""
         if self.origin_ctype == ContextType.VOICE:
-            origin_note = f", origin=VOICE (VOICE->TEXT via official ASR)"
+            origin_note = ", origin=VOICE (VOICE->TEXT via official ASR)"
         logger.debug(f"[QQ] Message parsed: type={event_type}, ctype={self.ctype}{origin_note}, "
                      f"from={self.from_user_id}, content_len={len(self.content)}")
