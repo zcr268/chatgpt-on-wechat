@@ -52,6 +52,10 @@ logging.getLogger("Lark").setLevel(logging.WARNING)
 
 URL_VERIFICATION = "url_verification"
 
+# Total wall-clock budget for a remote video download; the socket timeout
+# alone does not stop a server that keeps trickling bytes.
+_MAX_REMOTE_VIDEO_SECONDS = 300
+
 # Lazy import of the lark_oapi SDK. The full `import lark_oapi` pulls in 10k+
 # files and takes 4-10s, so we defer the actual import to where it is needed.
 # In desktop mode the SDK is not bundled; the first import downloads a trimmed
@@ -1979,9 +1983,13 @@ class FeiShuChanel(ChatChannel):
                 file_name = os.path.basename(urlparse(video_url).path) or "video.mp4"
                 temp_file = str(state_dir.tmp_dir() / f"{uuid.uuid4()}_{file_name}")
                 try:
-                    result = download_to_file(video_url, temp_file, MAX_FILE_BYTES, timeout=(5, 60))
+                    result = download_to_file(
+                        video_url, temp_file, MAX_FILE_BYTES, timeout=(5, 60),
+                        max_seconds=_MAX_REMOTE_VIDEO_SECONDS,
+                    )
                 except Exception as e:
-                    logger.error(f"[FeiShu] download video failed: {e}")
+                    # The exception text can carry the full (possibly signed) URL.
+                    logger.error(f"[FeiShu] download video failed: {type(e).__name__}")
                     return None
                 logger.info(f"[FeiShu] Video downloaded, size={result.size} bytes")
                 local_path = temp_file
