@@ -153,9 +153,24 @@ class DingTalkMessage(ChatMessage):
                 self.content = "\n".join(content_parts) if content_parts else "[富文本消息]"
                 logger.info(f"[DingTalk] Received richText with {len(image_paths)} image(s): {self.content}")
             else:
-                self.ctype = ContextType.IMAGE
-                self.content = "[未找到图片]"
-                logger.debug(f"[DingTalk] messageType: {self.message_type}, imageList isEmpty")
+                # A richText message may be pure formatted text: the image list is
+                # empty, but the text still has to reach the agent. An IMAGE context
+                # without image_path is consumed and dropped by the channel, so
+                # keeping the placeholder here would answer the user with nothing.
+                text_content = ""
+                if self.message_type == 'richText' and self.rich_text_content:
+                    text_list = event.get_text_list()
+                    if text_list:
+                        text_content = "".join(text_list).strip()
+
+                if text_content:
+                    self.ctype = ContextType.TEXT
+                    self.content = text_content
+                    logger.info(f"[DingTalk] Received richText without images: {self.content}")
+                else:
+                    self.ctype = ContextType.IMAGE
+                    self.content = "[未找到图片]"
+                    logger.debug(f"[DingTalk] messageType: {self.message_type}, imageList isEmpty")
 
         elif self.message_type == "file":
             self.ctype = ContextType.FILE
