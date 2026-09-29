@@ -97,6 +97,24 @@ class PluginManager:
         if not isinstance(stored, dict) or not isinstance(stored.get("plugins"), dict):
             logger.warning("Plugin config %s has no \"plugins\" mapping, ignoring it" % path)
             return None
+        entries = stored["plugins"]
+        for name in list(entries):
+            entry = entries[name]
+            if not isinstance(entry, dict):
+                logger.warning("Plugin entry %s in %s is not an object, ignoring it" % (name, path))
+                del entries[name]
+                continue
+            # Both keys are read with a bare subscript from here on -- the sort
+            # below and scan_plugins -- so a hand-edited entry that lost one of
+            # them takes every plugin down with it. Fall back to the values the
+            # plugin's own registration uses (register/desire_priority).
+            priority = entry.get("priority")
+            if isinstance(priority, bool) or not isinstance(priority, (int, float)):
+                logger.warning("Plugin entry %s in %s has no numeric priority, using 0" % (name, path))
+                entry["priority"] = 0
+            if not isinstance(entry.get("enabled"), bool):
+                logger.warning("Plugin entry %s in %s has no enabled flag, using true" % (name, path))
+                entry["enabled"] = True
         return stored
 
     def load_config(self):
