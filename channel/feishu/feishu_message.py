@@ -2,9 +2,57 @@ from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 import json
 import os
+import tempfile
 import requests
 from common.log import logger
 from common import state_dir, utils
+
+MAX_FEISHU_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _download_image(url, headers, params, image_path):
+    """Save a Feishu image only after a bounded download completes."""
+    temporary_path = None
+    try:
+        with requests.get(
+            url=url, headers=headers, params=params, timeout=(5, 30), stream=True
+        ) as response:
+            if response.status_code != 200:
+                logger.error(f"[FeiShu] Image download failed: status={response.status_code}")
+                return False
+            length = response.headers.get("Content-Length")
+            if length:
+                try:
+                    advertised_size = int(length)
+                except ValueError:
+                    advertised_size = 0
+                if advertised_size > MAX_FEISHU_IMAGE_BYTES:
+                    raise ValueError("Feishu image exceeds the download limit")
+
+            with tempfile.NamedTemporaryFile(
+                mode="wb", dir=os.path.dirname(image_path), prefix=".feishu_", delete=False
+            ) as handle:
+                temporary_path = handle.name
+                size = 0
+                for chunk in response.iter_content(chunk_size=64 * 1024):
+                    if not chunk:
+                        continue
+                    size += len(chunk)
+                    if size > MAX_FEISHU_IMAGE_BYTES:
+                        raise ValueError("Feishu image exceeds the download limit")
+                    handle.write(chunk)
+        os.replace(temporary_path, image_path)
+        temporary_path = None
+        return True
+    except Exception as exc:
+        logger.error(f"[FeiShu] Image download failed: {exc}")
+        return False
+    finally:
+        if temporary_path:
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
 
 
 class FeishuMessage(ChatMessage):
@@ -40,16 +88,11 @@ class FeishuMessage(ChatMessage):
             url = f"https://open.feishu.cn/open-apis/im/v1/messages/{msg.get('message_id')}/resources/{image_key}"
             headers = {"Authorization": "Bearer " + access_token}
             params = {"type": "image"}
-            response = requests.get(url=url, headers=headers, params=params)
-            
-            if response.status_code == 200:
-                with open(image_path, "wb") as f:
-                    f.write(response.content)
+            if _download_image(url, headers, params, image_path):
                 logger.info(f"[FeiShu] Downloaded single image, key={image_key}, path={image_path}")
                 self.content = image_path
                 self.image_path = image_path  # 保存图片路径
             else:
-                logger.error(f"[FeiShu] Failed to download single image, key={image_key}, status={response.status_code}")
                 self.content = f"[图片下载失败: {image_key}]"
                 self.image_path = None
         elif msg_type == "post":
@@ -99,28 +142,16 @@ class FeishuMessage(ChatMessage):
                 # 如果包含图片，下载并在文本中引用本地路径
                 tmp_dir = str(state_dir.tmp_dir())
                 
-                # 保存图片路径映射
+                # Save only paths whose downloads completed successfully.
                 self.image_paths = {}
-                for image_key in image_keys:
+                for image_key in dict.fromkeys(image_keys):
                     image_path = os.path.join(tmp_dir, f"{image_key}.png")
-                    self.image_paths[image_key] = image_path
-                
-                def _download_images():
-                    for image_key, image_path in self.image_paths.items():
-                        url = f"https://open.feishu.cn/open-apis/im/v1/messages/{self.msg_id}/resources/{image_key}"
-                        headers = {"Authorization": "Bearer " + access_token}
-                        params = {"type": "image"}
-                        response = requests.get(url=url, headers=headers, params=params)
-                        if response.status_code == 200:
-                            with open(image_path, "wb") as f:
-                                f.write(response.content)
-                            logger.info(f"[FeiShu] Image downloaded from post message, key={image_key}, path={image_path}")
-                        else:
-                            logger.error(f"[FeiShu] Failed to download image from post, key={image_key}, status={response.status_code}")
-                
-                # 立即下载图片，不使用延迟下载
-                # 因为 TEXT 类型消息不会调用 prepare()
-                _download_images()
+                    url = f"https://open.feishu.cn/open-apis/im/v1/messages/{self.msg_id}/resources/{image_key}"
+                    headers = {"Authorization": "Bearer " + access_token}
+                    params = {"type": "image"}
+                    if _download_image(url, headers, params, image_path):
+                        self.image_paths[image_key] = image_path
+                        logger.info(f"[FeiShu] Image downloaded from post message, key={image_key}, path={image_path}")
                 
                 # 构建消息内容：文本 + 图片路径
                 content_parts = []
