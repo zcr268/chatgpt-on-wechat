@@ -31,6 +31,8 @@ OFFICE_ZIP_MARKERS = {
     b"ppt/": ".pptx",
 }
 
+MAX_ENCRYPTED_MEDIA_BYTES = 50 * 1024 * 1024
+
 
 def _guess_ext_from_bytes(data: bytes) -> str:
     """Guess file extension from file content magic bytes."""
@@ -57,21 +59,39 @@ def _decrypt_media(url: str, aeskey: str) -> bytes:
     Download and decrypt AES-256-CBC encrypted media from wecom bot.
     Returns decrypted bytes.
     """
-    resp = requests.get(url, timeout=30)
-    resp.raise_for_status()
-    encrypted = resp.content
-
     key = base64.b64decode(aeskey + "=" * (-len(aeskey) % 4))
     if len(key) != 32:
         raise ValueError(f"Invalid AES key length: {len(key)}, expected 32")
 
+    resp = requests.get(url, stream=True, timeout=(5, 30))
+    try:
+        resp.raise_for_status()
+        length = resp.headers.get("Content-Length")
+        try:
+            declared_size = int(length) if length is not None else None
+        except (TypeError, ValueError):
+            declared_size = None  # The streamed byte limit still applies.
+        if declared_size is not None and declared_size > MAX_ENCRYPTED_MEDIA_BYTES:
+            raise ValueError("Encrypted media is too large")
+
+        encrypted = bytearray()
+        for chunk in resp.iter_content(chunk_size=8192):
+            encrypted.extend(chunk)
+            if len(encrypted) > MAX_ENCRYPTED_MEDIA_BYTES:
+                raise ValueError("Encrypted media is too large")
+    finally:
+        resp.close()
+
+    if not encrypted or len(encrypted) % AES.block_size:
+        raise ValueError("Invalid encrypted media length")
+
     iv = key[:16]
     cipher = AES.new(key, AES.MODE_CBC, iv)
-    decrypted = cipher.decrypt(encrypted)
+    decrypted = cipher.decrypt(bytes(encrypted))
 
     pad_len = decrypted[-1]
-    if pad_len > 32:
-        raise ValueError(f"Invalid PKCS7 padding length: {pad_len}")
+    if not 1 <= pad_len <= 32 or decrypted[-pad_len:] != bytes([pad_len]) * pad_len:
+        raise ValueError("Invalid PKCS7 padding")
     return decrypted[:-pad_len]
 
 
