@@ -82,7 +82,7 @@ def _break_writes(monkeypatch, root):
         if "w" in mode:
             path = Path(file)
             name = path.name
-            if name.endswith(".md") or name.endswith(".md.tmp"):
+            if name.endswith(".md") or (name.endswith(".tmp") and ".md." in name):
                 if str(path.resolve()).startswith(root_prefix):
                     return _TruncatingHandle(handle)
         return handle
@@ -98,7 +98,7 @@ def test_an_interrupted_distillation_keeps_the_existing_memory(workspace, monkey
     assert manager.deep_dream(force=True) is False
 
     assert (workspace / "MEMORY.md").read_text(encoding="utf-8") == OLD_MEMORY
-    assert not (workspace / "MEMORY.md.tmp").exists()
+    assert list(workspace.glob("*.tmp")) == []
 
 
 def test_an_interrupted_diary_write_keeps_the_previous_diary(workspace, monkeypatch):

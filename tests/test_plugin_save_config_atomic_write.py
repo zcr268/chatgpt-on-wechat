@@ -14,6 +14,7 @@ store and the same shape that ``PluginManager.save_config`` was given a sibling
 file and ``os.replace`` for.
 """
 
+import builtins
 import errno
 import io
 import json
@@ -48,7 +49,7 @@ def _an_installed_plugin(tmp_path, monkeypatch):
 def _a_disk_that_fills_up(monkeypatch):
     """Every write-mode open gets half the document out, then reports ENOSPC.
 
-    ``io.open`` covers the plain ``open(..., "w")`` shape and ``os.fdopen`` the
+    ``open``/``io.open`` cover the plain ``open(..., "w")`` shape and ``os.fdopen`` the
     descriptor one, so the injection follows whichever the writer uses.
     """
 
@@ -73,6 +74,7 @@ def _a_disk_that_fills_up(monkeypatch):
         return _sabotaged(handle) if "w" in mode else handle
 
     monkeypatch.setattr(io, "open", open_for_write)
+    monkeypatch.setattr(builtins, "open", open_for_write)
     monkeypatch.setattr(os, "fdopen", fdopen)
 
 

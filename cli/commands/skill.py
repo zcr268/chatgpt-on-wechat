@@ -3,7 +3,6 @@
 import os
 import re
 import sys
-import threading
 import json
 import hashlib
 import shutil
@@ -19,6 +18,7 @@ import click
 import requests
 
 from cli.utils import (
+    _ensure_project_on_path,
     get_skills_dir,
     get_builtin_skills_dir,
     load_skills_config,
@@ -350,41 +350,11 @@ def _install_local(path: str, result: InstallResult, agent_id: str = None):
 
 
 def _write_skills_config(config: dict, skills_dir: str) -> None:
-    """Persist skills_config.json through a sibling file, then swap it in.
+    _ensure_project_on_path()
+    from common.atomic_write import write_json_atomic
 
-    Serialising straight into skills_config.json truncates it before the new
-    bytes are there, so anything that fails halfway through -- a full disk, the
-    process being killed -- leaves a half-written document behind.
-    ``load_skills_config`` cannot parse that and answers ``{}``, so the next
-    install, enable or uninstall writes its own baseline back over the file and
-    every other skill's entry is gone with it. Building the result beside the
-    file and renaming it into place means a failed save leaves the previous
-    document untouched.
-
-    The sibling is named the way ``agent/skills/manager.py`` names its own --
-    dot-prefixed and unique per writer -- because that is the shape
-    ``agent/evolution/executor.py`` lists in ``_WATCH_IGNORE_PREFIXES``: the
-    workspace scanner must not read an in-flight replacement as a real change,
-    and two overlapping saves must not rename each other's partial file.
-    """
-    config_path = os.path.join(skills_dir, "skills_config.json")
     os.makedirs(skills_dir, exist_ok=True)
-    tmp_path = os.path.join(
-        skills_dir,
-        f".skills_config.json.{os.getpid()}.{threading.get_ident()}.tmp",
-    )
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, config_path)
-    except BaseException:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-        raise
+    write_json_atomic(os.path.join(skills_dir, "skills_config.json"), config)
 
 
 def _register_installed_skill(name: str, source: str = "cowhub", display_name: str = "", agent_id: str = None):

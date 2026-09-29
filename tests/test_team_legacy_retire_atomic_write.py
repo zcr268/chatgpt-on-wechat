@@ -10,6 +10,7 @@ deployment raises and never starts. ``team.write``, twenty lines above and
 writing the same kind of file, already saves through a sibling and swaps it in.
 """
 
+import builtins
 import errno
 import io
 import json
@@ -36,7 +37,7 @@ def _an_existing_config(tmp_path):
 def _a_disk_that_fills_up(monkeypatch):
     """Every write-mode open gets half the document out, then reports ENOSPC.
 
-    ``io.open`` covers the ``Path.write_text`` shape and ``os.fdopen`` the
+    ``open``/``io.open`` cover the ``Path.write_text`` shape and ``os.fdopen`` the
     descriptor one, so the injection follows whichever the writer uses.
     """
 
@@ -61,6 +62,7 @@ def _a_disk_that_fills_up(monkeypatch):
         return _sabotaged(handle) if "w" in mode else handle
 
     monkeypatch.setattr(io, "open", open_for_write)
+    monkeypatch.setattr(builtins, "open", open_for_write)
     monkeypatch.setattr(os, "fdopen", fdopen)
 
 

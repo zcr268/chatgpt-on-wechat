@@ -15,7 +15,6 @@ Does NOT match:
   /开头但不是已知命令
 """
 
-import json
 import os
 import threading
 
@@ -23,6 +22,7 @@ import plugins
 from plugins import Plugin, Event, EventContext, EventAction
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
+from common.atomic_write import write_json_atomic
 from common.log import logger
 from common.i18n import t as _t
 from config import conf
@@ -83,40 +83,6 @@ _HUB_OFF_MSG = (
 
 # Help lines that point at the skill hub, dropped when it is turned off.
 _HUB_HELP_PREFIXES = ("/skill list --remote", "/skill search", "/skill install")
-
-
-def _write_json_atomically(config_path: str, data) -> None:
-    """Serialise *data* beside *config_path*, then rename it into place.
-
-    ``open(path, "w")`` truncates before it writes, so a crash, a ``kill``, or
-    a full disk between the truncate and the final flush leaves a half-written
-    file behind. For ``config.json`` that is not recoverable: ``load_config``
-    deliberately re-raises on a parse error outside the packaged desktop build
-    (``config.py``), so the next start dies on "Initialization Failed" with no
-    way out for the user.
-
-    The sibling carries a leading dot and a per-writer suffix, matching the
-    other stores here (``agent/skills/manager.py``, ``channel/web/core/_common.py``):
-    the workspace scanner skips dot-prefixed files, so an in-flight replacement
-    is never mistaken for a real change, and two overlapping saves cannot
-    rename each other's half-written file.
-    """
-    tmp_path = os.path.join(
-        os.path.dirname(config_path),
-        f".{os.path.basename(config_path)}.{os.getpid()}.{threading.get_ident()}.tmp",
-    )
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, config_path)
-    except BaseException:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-        raise
 
 
 @plugins.register(
@@ -882,7 +848,7 @@ class CowCliPlugin(Plugin):
             with open(config_path, "r", encoding="utf-8-sig") as f:
                 file_config = _json.load(f)
             file_config.update(updates)
-            _write_json_atomically(config_path, file_config)
+            write_json_atomic(config_path, file_config)
         except Exception as e:
             return _t(f"写入 config.json 失败: {e}", f"Failed to write config.json: {e}")
 
@@ -1332,7 +1298,7 @@ class CowCliPlugin(Plugin):
                 with open(config_path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                 config.pop(name, None)
-                _write_json_atomically(config_path, config)
+                write_json_atomic(config_path, config)
             except Exception:
                 pass
 
@@ -1453,7 +1419,7 @@ class CowCliPlugin(Plugin):
             return _t(f"技能 '{name}' 未在配置中找到", f"Skill '{name}' not found in config")
 
         config[name]["enabled"] = enabled
-        _write_json_atomically(config_path, config)
+        write_json_atomic(config_path, config)
 
         icon = "✅" if enabled else "⬚"
         if enabled:
@@ -1891,7 +1857,7 @@ class CowCliPlugin(Plugin):
             with open(config_path, "r", encoding="utf-8-sig") as f:
                 file_config = _json.load(f)
             file_config["knowledge"] = enabled
-            _write_json_atomically(config_path, file_config)
+            write_json_atomic(config_path, file_config)
         except Exception as e:
             return _t(f"⚠️ 内存中已切换，但写入 config.json 失败: {e}", f"⚠️ Switched in memory, but failed to write config.json: {e}")
 

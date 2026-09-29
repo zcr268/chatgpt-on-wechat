@@ -1,11 +1,11 @@
 # encoding:utf-8
 
-import json
 import os
 
 import plugins
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
+from common.atomic_write import write_json_atomic
 from common.log import logger
 from plugins import *
 
@@ -14,33 +14,6 @@ from .lib.WordsSearch import WordsSearch
 # Written to config.json when it is missing or does not carry one, and used as
 # the fallback for a config that is empty or only half-filled in.
 DEFAULT_CONFIG = {"action": "ignore"}
-
-
-def _write_config_atomically(config_path: str, conf: dict) -> None:
-    """Write *conf* beside the file, then rename it into place.
-
-    The repair that calls this runs precisely because the file on disk is
-    already unreadable, so truncating it first can turn "empty" into
-    "unparseable" -- and ``activate_plugins`` answers a plugin that fails to
-    initialise by persisting ``enabled=false``, the outcome this fallback
-    exists to avoid. A write that dies halfway now leaves whatever the user
-    had, so the plugin still starts from the defaults held in memory.
-    """
-    tmp_path = f"{config_path}.tmp"
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(conf, f, indent=4)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, config_path)
-    except BaseException:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
 
 
 @plugins.register(
@@ -68,7 +41,7 @@ class Banwords(Plugin):
                 conf = {**DEFAULT_CONFIG, **(conf if isinstance(conf, dict) else {})}
                 config_path = os.path.join(curdir, "config.json")
                 try:
-                    _write_config_atomically(config_path, conf)
+                    write_json_atomic(config_path, conf)
                 except OSError as e:
                     # Repairing the file on disk is a convenience; the defaults
                     # above are enough to run. Raising here would reach

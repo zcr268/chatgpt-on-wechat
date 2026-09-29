@@ -7,6 +7,7 @@ import os
 import threading
 from datetime import datetime
 from typing import Dict, List, Optional
+from common.atomic_write import write_text_atomic
 from common.utils import expand_path
 
 
@@ -66,32 +67,6 @@ class TaskStore:
         """Ensure the storage directory exists"""
         store_dir = os.path.dirname(self.store_path)
         os.makedirs(store_dir, exist_ok=True)
-
-    @staticmethod
-    def _write_atomic(path: str, text: str) -> None:
-        """Write ``text`` to ``path`` through a sibling file, then swap it in.
-
-        Writing straight into ``path`` truncates it first, so anything that
-        fails while serialising -- a value json cannot encode, a full disk --
-        leaves it empty and every stored task is gone on the next load, which
-        swallows the decode error and reports no tasks at all. Building the
-        result beside the file and replacing it means a failed save leaves
-        whatever was there before.
-        """
-        temporary = f"{path}.tmp"
-        try:
-            with open(temporary, "w", encoding="utf-8") as handle:
-                handle.write(text)
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary, path)
-        except Exception:
-            try:
-                if os.path.exists(temporary):
-                    os.remove(temporary)
-            except OSError:
-                pass
-            raise
     
     def load_tasks(self) -> Dict[str, dict]:
         """
@@ -133,7 +108,7 @@ class TaskStore:
                     try:
                         with open(self.store_path, 'r', encoding='utf-8') as src:
                             previous = src.read()
-                        self._write_atomic(backup_path, previous)
+                        write_text_atomic(backup_path, previous)
                     except Exception:
                         pass
 
@@ -144,7 +119,7 @@ class TaskStore:
                     "tasks": tasks
                 }
 
-                self._write_atomic(
+                write_text_atomic(
                     self.store_path, json.dumps(data, ensure_ascii=False, indent=2)
                 )
             except Exception as e:

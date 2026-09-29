@@ -6,6 +6,7 @@ import json
 import os
 import sys
 
+from common.atomic_write import write_json_atomic
 from common.log import logger
 from common.singleton import singleton
 from common.sorted_dict import SortedDict
@@ -73,21 +74,7 @@ class PluginManager:
         and load_config has no guard around that. See load_config for why a
         damaged store must not be allowed to abort the load.
         """
-        cfg_path = os.path.join(_plugins_data_dir(), "plugins.json")
-        temporary = f"{cfg_path}.tmp"
-        try:
-            with open(temporary, "w", encoding="utf-8") as f:
-                json.dump(self.pconf, f, indent=4, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temporary, cfg_path)
-        except Exception:
-            try:
-                if os.path.exists(temporary):
-                    os.remove(temporary)
-            except OSError:
-                pass
-            raise
+        write_json_atomic(os.path.join(_plugins_data_dir(), "plugins.json"), self.pconf)
 
     @staticmethod
     def _read_plugin_store(path: str):

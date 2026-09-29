@@ -155,4 +155,4 @@ def test_a_failed_save_leaves_no_temp_file_behind(store, monkeypatch):
     with pytest.raises(OSError):
         manager.save_config()
 
-    assert not (data_cfg.parent / "plugins.json.tmp").exists()
+    assert list(data_cfg.parent.glob("*.tmp")) == []

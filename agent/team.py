@@ -20,11 +20,10 @@ first write migrates them and clears the old keys.
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional
 
+from common.atomic_write import write_text_atomic
 from common.log import logger
 from common.utils import expand_path
 
@@ -150,20 +149,7 @@ def write(settings: Mapping[str, Any], roster: Mapping[str, Any]) -> Path:
     )
     if bootstrapped:
         payload["channel_instances"] = bootstrapped
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{FILE_NAME}.", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=4, ensure_ascii=False)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_name, path)
-    except Exception:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+    write_text_atomic(path, json.dumps(payload, indent=4, ensure_ascii=False) + "\n")
     return path
 
 
@@ -233,32 +219,6 @@ def adopt_legacy_channels(settings: Mapping[str, Any]) -> Optional[Path]:
     return written
 
 
-def _write_atomically(path: Path, payload: str) -> None:
-    """Put ``payload`` into ``path`` through a sibling file, then swap it in.
-
-    The same reason ``write()`` above does it: opening ``path`` for writing cuts
-    it short before the new bytes are there, so anything that stops the write
-    leaves a partial config.json behind. ``load_config`` then reads it as
-    corruption, and on the desktop client the self-heal path quarantines the
-    file and reinitialises from config-template.json, which takes every API key,
-    channel credential and custom provider with it; a source deployment raises
-    instead of starting at all.
-    """
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_name, path)
-    except Exception:
-        try:
-            os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
-
-
 def retire_legacy(config_path: Optional[Path]) -> None:
     """Take the roster keys out of ``config.json``, once the file has them.
 
@@ -278,7 +238,7 @@ def retire_legacy(config_path: Optional[Path]) -> None:
             return
         for key in TEAM_KEYS:
             settings.pop(key, None)
-        _write_atomically(
+        write_text_atomic(
             path, json.dumps(settings, indent=4, ensure_ascii=False) + "\n"
         )
     except (OSError, ValueError) as e:

@@ -1,6 +1,5 @@
 # encoding:utf-8
 
-import json
 import os
 import random
 import string
@@ -12,6 +11,7 @@ from bridge.bridge import Bridge
 from bridge.context import ContextType
 from bridge.reply import Reply, ReplyType
 from common import const
+from common.atomic_write import write_json_atomic
 from config import conf, load_config, global_config
 from plugins import *
 
@@ -176,33 +176,6 @@ def get_help_text(isadmin, isgroup):
 DEFAULT_CONFIG = {"password": "", "admin_users": []}
 
 
-def _write_config_atomically(config_path: str, conf: dict) -> None:
-    """Write *conf* beside the file, then rename it into place.
-
-    The repair that calls this runs precisely because the file on disk is
-    already unreadable, so truncating it first can turn "empty" into
-    "unparseable" -- and ``activate_plugins`` answers a plugin that fails to
-    initialise by persisting ``enabled=false``, the outcome this fallback
-    exists to avoid. A write that dies halfway now leaves whatever the user
-    had, so the plugin still starts from the defaults held in memory.
-    """
-    tmp_path = f"{config_path}.tmp"
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(conf, f, indent=4)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp_path, config_path)
-    except BaseException:
-        try:
-            os.remove(tmp_path)
-        except OSError:
-            pass
-        raise
-
-
-
-
 @plugins.register(
     name="Godcmd",
     desire_priority=999,
@@ -226,7 +199,7 @@ class Godcmd(Plugin):
         if not isinstance(gconf, dict) or not all(k in gconf for k in DEFAULT_CONFIG):
             gconf = {**DEFAULT_CONFIG, **(gconf if isinstance(gconf, dict) else {})}
             try:
-                _write_config_atomically(config_path, gconf)
+                write_json_atomic(config_path, gconf)
             except OSError as e:
                 # Repairing the file on disk is a convenience; the defaults above
                 # are enough to run. Raising here would reach activate_plugins,
