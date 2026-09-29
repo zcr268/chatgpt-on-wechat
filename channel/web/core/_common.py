@@ -125,12 +125,27 @@ def _write_config_file_for_write(config_path: str, data: dict) -> None:
     deployment instead raises and never starts. Building the result beside the
     file and replacing it means a failed save leaves whatever was there before.
     """
+    # Write through a symlinked config.json rather than replacing the link.
+    config_path = os.path.realpath(config_path)
     # A unique temp name per save: the console handlers run on a thread pool
     # without a lock, and a shared name would let two overlapping saves truncate
     # and rename each other's file.
-    fd, tmp_path = tempfile.mkstemp(
-        prefix=".config.", suffix=".tmp", dir=os.path.dirname(config_path) or "."
-    )
+    try:
+        fd, tmp_path = tempfile.mkstemp(
+            prefix=".config.", suffix=".tmp", dir=os.path.dirname(config_path) or "."
+        )
+    except PermissionError as e:
+        # A writable config.json in a directory that is not: nothing to rename
+        # beside it, so serialise fully first and write in place.
+        if not os.path.isfile(config_path):
+            raise
+        text = json.dumps(data, indent=4, ensure_ascii=False)
+        logger.warning(f"[WebChannel] Cannot create a temp file beside config.json ({e}), writing in place")
+        with open(config_path, "w", encoding="utf-8") as dst:
+            dst.write(text)
+            dst.flush()
+            os.fsync(dst.fileno())
+        return
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4, ensure_ascii=False)
