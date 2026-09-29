@@ -50,6 +50,38 @@ from config import conf
 logging.getLogger("Lark").setLevel(logging.WARNING)
 
 URL_VERIFICATION = "url_verification"
+MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
+MAX_REMOTE_FILE_BYTES = 50 * 1024 * 1024
+
+
+def _download_remote_bytes(url, max_bytes):
+    """Return a bounded remote body for multipart upload, or None on failure."""
+    response = None
+    try:
+        response = requests.get(url, stream=True, timeout=(5, 30))
+        if response.status_code != 200:
+            logger.error(f"[FeiShu] remote media download failed: status={response.status_code}")
+            return None
+        length = response.headers.get("Content-Length")
+        try:
+            declared_size = int(length) if length is not None else None
+        except (TypeError, ValueError):
+            declared_size = None
+        if declared_size is not None and declared_size > max_bytes:
+            raise ValueError("remote media exceeds download limit")
+
+        body = bytearray()
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            body.extend(chunk)
+            if len(body) > max_bytes:
+                raise ValueError("remote media exceeds download limit")
+        return bytes(body)
+    except Exception as exc:
+        logger.error(f"[FeiShu] remote media download failed: {exc}")
+        return None
+    finally:
+        if response is not None:
+            response.close()
 
 # Lazy import of the lark_oapi SDK. The full `import lark_oapi` pulls in 10k+
 # files and takes 4-10s, so we defer the actual import to where it is needed.
@@ -1876,12 +1908,11 @@ class FeiShuChanel(ChatChannel):
         # build starts, and not necessarily writable there -- and that file was
         # only removed after a successful upload, so a failed upload left it
         # behind in the working directory.
-        response = requests.get(img_url, timeout=(5, 30))
-        if response.status_code != 200:
+        image_bytes = _download_remote_bytes(img_url, MAX_REMOTE_IMAGE_BYTES)
+        if image_bytes is None:
             # Without this the staged file is never created and the `open` below
             # raised FileNotFoundError, skipping the caller's
             # `if not reply_content: logger.warning("upload image failed")` path.
-            logger.error(f"[FeiShu] download image failed, status={response.status_code}")
             return None
 
         suffix = utils.get_path_suffix(img_url)
@@ -1894,7 +1925,7 @@ class FeiShuChanel(ChatChannel):
         }
         upload_response = requests.post(
             upload_url,
-            files={"image": (f"image.{suffix or 'img'}", response.content)},
+            files={"image": (f"image.{suffix or 'img'}", image_bytes)},
             data=data,
             headers=headers,
             timeout=(5, 15),
@@ -2168,9 +2199,8 @@ class FeiShuChanel(ChatChannel):
         # `with open(...)` body, so the handle was still held when os.remove ran
         # — that raises on Windows, after the file had already been uploaded.
         try:
-            response = requests.get(file_url, timeout=(5, 30))
-            if response.status_code != 200:
-                logger.error(f"[FeiShu] download file failed, status={response.status_code}")
+            file_bytes = _download_remote_bytes(file_url, MAX_REMOTE_FILE_BYTES)
+            if file_bytes is None:
                 return None
 
             # Take the name off the URL path: a query string would otherwise end
@@ -2191,7 +2221,7 @@ class FeiShuChanel(ChatChannel):
 
             upload_response = requests.post(
                 upload_url,
-                files={"file": (file_name, response.content)},
+                files={"file": (file_name, file_bytes)},
                 data=data,
                 headers=headers,
                 timeout=(5, 30)
