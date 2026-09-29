@@ -10,6 +10,8 @@ import json
 import logging
 import os
 import time
+from urllib.parse import unquote, urlparse
+
 import requests
 
 import dingtalk_stream
@@ -21,6 +23,7 @@ from dingtalk_stream.card_replier import CardReplier
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
+from channel.chat_message import safe_filename
 from common import state_dir
 from common.media_download import MAX_FILE_BYTES, MediaTooLargeError, download_to_file
 from channel.dingtalk.dingtalk_message import DingTalkMessage
@@ -33,6 +36,8 @@ from common.log import logger
 from common.singleton import singleton
 from common.time_check import time_checker
 from config import conf
+
+_MAX_REMOTE_FILE_SECONDS = 300
 
 
 def _markdown_preview_title(markdown: str, limit: int = 30) -> str:
@@ -447,17 +452,25 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         if file_path.startswith("http://") or file_path.startswith("https://"):
             try:
                 import uuid
-                file_name = os.path.basename(file_path) or f"media_{uuid.uuid4()}"
+                # Query strings may carry tokens and characters Windows rejects
+                # in file names; keep only the sanitized last path segment.
+                file_name = (
+                    safe_filename(unquote(os.path.basename(urlparse(file_path).path)))
+                    or f"media_{uuid.uuid4()}"
+                )
                 temp_file = os.path.join(str(state_dir.tmp_dir()), file_name)
                 try:
-                    download_to_file(file_path, temp_file, MAX_FILE_BYTES, timeout=(5, 60))
+                    download_to_file(
+                        file_path, temp_file, MAX_FILE_BYTES,
+                        timeout=(5, 60), max_seconds=_MAX_REMOTE_FILE_SECONDS,
+                    )
                 except MediaTooLargeError:
-                    logger.error(f"[DingTalk] Downloaded file exceeds size limit: {file_path}")
+                    logger.error("[DingTalk] Remote file exceeds size limit, skipped upload")
                     return None
                 file_path = temp_file
                 logger.info(f"[DingTalk] Downloaded file to {file_path}")
             except Exception as e:
-                logger.error(f"[DingTalk] Error downloading file: {e}")
+                logger.error(f"[DingTalk] Error downloading file: {type(e).__name__}")
                 return None
         
         if not os.path.exists(file_path):

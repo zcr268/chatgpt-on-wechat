@@ -79,6 +79,15 @@ def test_http_url_over_size_limit_rejected(monkeypatch, tmp_path):
     assert _channel().upload_media("https://evil.example/huge.bin", "file") is None
 
 
+def test_http_url_query_string_stays_out_of_the_file_name(monkeypatch, tmp_path):
+    get = FakeResp(content=b"<media data>")
+    post = FakeResp(json_data={"errcode": 0, "media_id": "mid-3"})
+    _stub(monkeypatch, get, post, tmp_path)
+    url = "https://cdn.example/dir/%E6%8A%A5%E5%91%8A.pdf?token=secret&x=a/b"
+    assert _channel().upload_media(url, "file") == "mid-3"
+    assert [p.name for p in tmp_path.iterdir()] == ["报告.pdf"]
+
+
 def test_local_file_url_still_uploaded(monkeypatch, tmp_path):
     local = tmp_path / "clip.mp4"
     local.write_bytes(b"<media data>")
