@@ -1,5 +1,5 @@
 # encoding:utf-8
-"""Slack and Telegram upload a local ``ReplyType.VIDEO`` instead of posting its path.
+"""Slack, Telegram, Feishu and DingTalk upload a local ``ReplyType.VIDEO`` instead of posting its path.
 
 ``ChatChannel`` hands an agent-produced video over as
 ``Reply(ReplyType.VIDEO, "file://" + path)``; without a VIDEO branch the reply
