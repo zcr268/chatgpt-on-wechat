@@ -1,5 +1,7 @@
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
+from channel.chat_message import safe_filename
+from channel.feishu.resource_download import MAX_AUDIO_BYTES, MAX_FILE_BYTES, download_resource
 import json
 import os
 import tempfile
@@ -176,7 +178,7 @@ class FeishuMessage(ChatMessage):
             # 否则相对路径 ./tmp 在 agent 工作区里 read 时会找不到。
             tmp_dir = str(state_dir.tmp_dir())
             self.content = os.path.join(
-                tmp_dir, f"{file_key}.{utils.get_path_suffix(file_name)}"
+                tmp_dir, f"{safe_filename(file_key) or 'file'}.{utils.get_path_suffix(file_name)}"
             )
 
             def _download_file():
@@ -188,12 +190,7 @@ class FeishuMessage(ChatMessage):
                 params = {
                     "type": "file"
                 }
-                response = requests.get(url=url, headers=headers, params=params)
-                if response.status_code == 200:
-                    with open(self.content, "wb") as f:
-                        f.write(response.content)
-                else:
-                    logger.info(f"[FeiShu] Failed to download file, key={file_key}, res={response.text}")
+                download_resource(url, headers, params, self.content, MAX_FILE_BYTES)
             self._prepare_fn = _download_file
         elif msg_type == "audio":
             # 飞书用户发送的语音消息类型为 "audio"，文件为 opus 编码格式。
@@ -205,7 +202,7 @@ class FeishuMessage(ChatMessage):
 
             # 落到工作空间 tmp 下（绝对路径），保证语音 STT 流程可读到
             tmp_dir = str(state_dir.tmp_dir())
-            self.content = os.path.join(tmp_dir, f"{file_key}.opus")
+            self.content = os.path.join(tmp_dir, f"{safe_filename(file_key) or 'audio'}.opus")
             logger.info(f"[FeiShu] audio message: file_key={file_key}, save_path={self.content}")
 
             def _download_audio():
@@ -218,14 +215,10 @@ class FeishuMessage(ChatMessage):
                     "type": "file"
                 }
                 try:
-                    response = requests.get(url=url, headers=headers, params=params)
-                    logger.info(f"[FeiShu] download audio response: status={response.status_code}, size={len(response.content)} bytes")
-                    if response.status_code == 200:
-                        with open(self.content, "wb") as f:
-                            f.write(response.content)
+                    if download_resource(url, headers, params, self.content, MAX_AUDIO_BYTES):
                         logger.info(f"[FeiShu] audio saved to: {self.content}")
                     else:
-                        logger.error(f"[FeiShu] Failed to download audio, key={file_key}, status={response.status_code}, res={response.text}")
+                        logger.error(f"[FeiShu] Failed to download audio, key={file_key}")
                 except Exception as e:
                     logger.error(f"[FeiShu] Exception downloading audio, key={file_key}: {e}", exc_info=True)
             self._prepare_fn = _download_audio
