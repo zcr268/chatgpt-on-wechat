@@ -337,7 +337,9 @@ class Godcmd(Plugin):
                         bot.sessions.clear_session(session_id)
                         if Bridge().chat_bots.get(bottype):
                             Bridge().chat_bots.get(bottype).sessions.clear_session(session_id)
-                        channel.cancel_session(session_id)
+                        channel.cancel_session(
+                            session_id, agent_id=e_context["context"].get("agent_id")
+                        )
                         ok, result = True, "会话已重置"
                     else:
                         ok, result = False, "当前对话机器人不支持重置会话"
