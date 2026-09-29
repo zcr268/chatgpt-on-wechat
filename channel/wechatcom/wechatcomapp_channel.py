@@ -25,6 +25,38 @@ from config import conf
 from voice.audio_convert import any_to_amr, split_audio
 
 MAX_UTF8_LEN = 2048
+MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
+
+
+def _download_remote_image(url):
+    """Read an image reply with a strict cap before handing it to Pillow/upload."""
+    response = None
+    try:
+        response = requests.get(url, stream=True, timeout=60)
+        response.raise_for_status()
+        length = response.headers.get("Content-Length")
+        try:
+            declared_size = int(length) if length is not None else None
+        except (TypeError, ValueError):
+            declared_size = None
+        if declared_size is not None and declared_size > MAX_REMOTE_IMAGE_BYTES:
+            raise ValueError("remote image exceeds download limit")
+
+        image = io.BytesIO()
+        size = 0
+        for block in response.iter_content(8192):
+            size += len(block)
+            if size > MAX_REMOTE_IMAGE_BYTES:
+                raise ValueError("remote image exceeds download limit")
+            image.write(block)
+        image.seek(0)
+        return image
+    except Exception as exc:
+        logger.error(f"[wechatcom] image download failed: {exc}")
+        return None
+    finally:
+        if response is not None:
+            response.close()
 
 
 def _media_tmp_path(prefix: str, ext: str = "") -> str:
@@ -146,10 +178,9 @@ class WechatComAppChannel(ChatChannel):
             logger.info("[wechatcom] sendVoice={}, receiver={}".format(reply.content, receiver))
         elif reply.type == ReplyType.IMAGE_URL:  # 从网络下载图片
             img_url = reply.content
-            pic_res = requests.get(img_url, stream=True, timeout=60)
-            image_storage = io.BytesIO()
-            for block in pic_res.iter_content(1024):
-                image_storage.write(block)
+            image_storage = _download_remote_image(img_url)
+            if image_storage is None:
+                return
             sz = fsize(image_storage)
             if sz >= 10 * 1024 * 1024:
                 logger.info("[wechatcom] image too large, ready to compress, sz={}".format(sz))

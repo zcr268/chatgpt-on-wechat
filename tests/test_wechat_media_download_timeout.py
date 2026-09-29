@@ -45,6 +45,7 @@ class TestWechatComAppImageDownload(unittest.TestCase):
 
     def test_image_url_download_is_bounded(self):
         response = MagicMock()
+        response.headers = {}
         response.iter_content.return_value = [b"png-bytes"]
         channel = self._channel()
 
@@ -60,6 +61,45 @@ class TestWechatComAppImageDownload(unittest.TestCase):
         self.assertEqual(get.call_args.args[0], "https://example.com/pic.png")
         self.assertTrue(get.call_args.kwargs["stream"])
         self.assertEqual(get.call_args.kwargs["timeout"], 60)
+        response.close.assert_called_once()
+
+    def test_oversized_image_is_not_uploaded(self):
+        response = MagicMock()
+        response.headers = {"Content-Length": str(20 * 1024 * 1024 + 1)}
+        channel = self._channel()
+
+        with patch("channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response):
+            channel.send(Reply(ReplyType.IMAGE_URL, "https://example.com/huge.png"), {"receiver": "user-1"})
+
+        response.iter_content.assert_not_called()
+        response.close.assert_called_once()
+        channel.client.media.upload.assert_not_called()
+
+    def test_streamed_overflow_is_not_uploaded(self):
+        response = MagicMock()
+        response.headers = {}
+        response.iter_content.return_value = [b"small", b"overflow"]
+        channel = self._channel()
+
+        with patch("channel.wechatcom.wechatcomapp_channel.MAX_REMOTE_IMAGE_BYTES", 8), \
+                patch("channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response):
+            channel.send(Reply(ReplyType.IMAGE_URL, "https://example.com/huge.png"), {"receiver": "user-1"})
+
+        response.close.assert_called_once()
+        channel.client.media.upload.assert_not_called()
+
+    def test_http_error_body_is_not_uploaded(self):
+        import requests
+
+        response = MagicMock()
+        response.raise_for_status.side_effect = requests.HTTPError("404")
+        channel = self._channel()
+
+        with patch("channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response):
+            channel.send(Reply(ReplyType.IMAGE_URL, "https://example.com/missing.png"), {"receiver": "user-1"})
+
+        response.close.assert_called_once()
+        channel.client.media.upload.assert_not_called()
 
 
 class TestWechatChannelsBoundEveryRequest(unittest.TestCase):
