@@ -920,7 +920,7 @@ class FeiShuChanel(ChatChannel):
                 return
             msg_type = "image"
             content_key = "image_key"
-        elif reply.type == ReplyType.FILE:
+        elif reply.type in (ReplyType.FILE, ReplyType.VIDEO):
             # 如果有附加的文本内容，先发送文本
             if hasattr(reply, 'text_content') and reply.text_content:
                 logger.info(f"[FeiShu] Sending text before file: {reply.text_content[:50]}...")
@@ -934,7 +934,10 @@ class FeiShuChanel(ChatChannel):
             if file_path.startswith("file://"):
                 file_path = file_path[7:]
 
-            is_video = file_path.lower().endswith(('.mp4', '.avi', '.mov', '.wmv', '.flv'))
+            # ReplyType.VIDEO 已说明内容就是视频，不能只靠扩展名判断：
+            # 生成的临时文件名可能没有已知的视频后缀。
+            is_video = reply.type == ReplyType.VIDEO or file_path.lower().endswith(
+                ('.mp4', '.avi', '.mov', '.wmv', '.flv'))
 
             if is_video:
                 # 视频上传（包含duration信息）
