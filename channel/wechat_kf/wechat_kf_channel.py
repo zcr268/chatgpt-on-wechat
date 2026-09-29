@@ -256,7 +256,11 @@ class WechatKfChannel(ChatChannel):
             self._send_image(external_userid, open_kfid, response["media_id"])
             logger.info("[wechat_kf] sendImage, receiver={}".format(receiver))
 
-        elif reply.type == ReplyType.VIDEO_URL:
+        # VIDEO is how ChatChannel hands over a locally generated video
+        # (channel/chat_channel.py: Reply(ReplyType.VIDEO, "file://" + path)),
+        # VIDEO_URL a remote one. `_read_media` takes both: it reads file://
+        # paths from disk and size-caps http(s) downloads.
+        elif reply.type in (ReplyType.VIDEO_URL, ReplyType.VIDEO):
             video_url = reply.content
             video_storage = self._read_media(video_url, _MAX_REMOTE_VIDEO_BYTES)
             if video_storage is None:
