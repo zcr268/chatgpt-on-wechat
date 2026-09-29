@@ -189,6 +189,7 @@ export class PythonBackend extends EventEmitter {
       if (typeof cfg.clientSource === 'string' && cfg.clientSource.trim()) env.COW_CLIENT_SOURCE = cfg.clientSource.trim()
       if (typeof cfg.appName === 'string' && cfg.appName.trim()) env.COW_APP_NAME = cfg.appName.trim()
       if (cfg.skillHub === false) env.COW_SKILL_HUB = '0'
+      if (typeof cfg.agentName === 'string' && cfg.agentName.trim()) env.DEFAULT_AGENT_NAME = cfg.agentName.trim()
       return env
     } catch {
       return {}
