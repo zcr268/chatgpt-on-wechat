@@ -295,7 +295,7 @@ class Godcmd(Plugin):
                             model = conf().get("model") or const.GPT35
                             ok, result = True, "模型设置为: " + str(model)
                     else:
-                        ok, result = False, "请提供一个模型名称"
+                        ok, result = False, "只能指定一个模型名称"
                 elif cmd == "id":
                     ok, result = True, user
                 elif cmd == "set_openai_api_key":

@@ -1,14 +1,12 @@
 # encoding:utf-8
 """
-Regression test for channel/qq/qq_message.py::_safe_filename.
+Regression test for QQ attachment filenames.
 
-The QQ channel carries a private copy of the canonical filename guard
-(channel/chat_message.py::safe_filename) but it drifted: it never capped the
-name at 180 chars. A sender-supplied filename longer than the filesystem's
-path-component limit makes _download_attachment's download_to_file() call raise
-OSError(ENAMETOOLONG) and the attachment is silently replaced with a
-"[... download failed]" placeholder. Pin the copy back in sync with the
-canonical/dingtalk guards: cap at 180 chars (and harden basename + "."/"..").
+A sender-supplied filename longer than the filesystem's path-component limit
+made _download_attachment's download_to_file() call raise
+OSError(ENAMETOOLONG) and the attachment was silently replaced with a
+"[... download failed]" placeholder. QQ now uses the shared
+channel/chat_message.py::safe_filename, which caps the name at 180 chars.
 """
 import os
 import sys
@@ -22,7 +20,7 @@ from channel.qq import qq_message
 
 class TestQqSafeFilename(unittest.TestCase):
     def test_overlong_name_is_capped_at_180(self):
-        result = qq_message._safe_filename("a" * 500)
+        result = qq_message.safe_filename("a" * 500)
         self.assertLessEqual(len(result), 180)
 
     def test_overlong_attachment_path_stays_within_limit(self):
@@ -43,4 +41,8 @@ class TestQqSafeFilename(unittest.TestCase):
         self.assertLessEqual(len(fname), 180)
 
     def test_normal_name_passthrough(self):
-        self.assertEqual(qq_message._safe_filename("report-2026.pdf"), "report-2026.pdf")
+        self.assertEqual(qq_message.safe_filename("report-2026.pdf"), "report-2026.pdf")
+
+    def test_dot_names_are_rejected(self):
+        self.assertEqual(qq_message.safe_filename(".."), "")
+        self.assertEqual(qq_message.safe_filename("."), "")

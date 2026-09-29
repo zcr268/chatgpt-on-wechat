@@ -1,12 +1,11 @@
 import hashlib
 import os
-import re
 
 import requests
 from dingtalk_stream import ChatbotMessage
 
 from bridge.context import ContextType
-from channel.chat_message import ChatMessage
+from channel.chat_message import ChatMessage, safe_filename
 # -*- coding=utf-8 -*-
 from common.log import logger
 from common import state_dir
@@ -38,18 +37,8 @@ def _extract_file_payload(event):
     return download_code, file_name
 
 
-def _safe_filename(name):
-    if not name:
-        return ""
-    name = os.path.basename(str(name).replace("\\", "/"))
-    name = re.sub(r"[^\w.\- ]+", "_", name).strip(" .")
-    if name in (".", ".."):
-        return ""
-    return name[:180]
-
-
 def _media_filename(file_hash, file_name, default_ext):
-    safe = _safe_filename(file_name) if file_name else ""
+    safe = safe_filename(file_name) if file_name else ""
     if safe:
         return f"{file_hash}_{safe}"
     ext = default_ext or ".bin"
@@ -309,7 +298,7 @@ def download_image_file(image_url, temp_dir, file_name=None, default_ext=".png")
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
         }
         
-        dest_name = _safe_filename(file_name or image_url.split("/")[-1].split("?")[0])
+        dest_name = safe_filename(file_name or image_url.split("/")[-1].split("?")[0])
         dest_name = dest_name or f"download{default_ext or '.bin'}"
         file_path = os.path.join(temp_dir, dest_name)
         try:

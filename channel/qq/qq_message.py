@@ -1,8 +1,7 @@
 import os
-import re
 
 from bridge.context import ContextType
-from channel.chat_message import ChatMessage
+from channel.chat_message import ChatMessage, safe_filename
 from common.log import logger
 from common import state_dir
 from common.media_download import MAX_FILE_BYTES, download_to_file
@@ -37,21 +36,6 @@ def _attachment_kind(content_type: str) -> str:
     return "file"
 
 
-def _safe_filename(name: str) -> str:
-    """Strip path separators / odd chars so a server-provided filename can't
-    escape the tmp dir or collide with control characters, and cap its length
-    at 180 chars so an over-long sender filename can't trip a filesystem
-    path-length error. Mirrors the canonical guard in channel/chat_message.py
-    and the dingtalk channel's private copy."""
-    if not name:
-        return ""
-    name = os.path.basename(str(name).replace("\\", "/"))
-    name = re.sub(r"[^\w.\- ]+", "_", name).strip(" .")
-    if name in (".", ".."):
-        return ""
-    return name[:180]
-
-
 def _download_attachment(att: dict, msg_id: str, idx: int) -> str:
     """Download one non-image attachment to the tmp dir, returning its local
     path (or '' on failure). The extension is taken from the server filename
@@ -60,7 +44,7 @@ def _download_attachment(att: dict, msg_id: str, idx: int) -> str:
     if not url:
         return ""
     tmp_dir = _get_tmp_dir()
-    fname = _safe_filename(att.get("filename", ""))
+    fname = safe_filename(att.get("filename", ""))
     if not fname:
         fname = f"qq_{msg_id}_{idx}"
     # Keep filenames unique per message so two attachments never clobber.
