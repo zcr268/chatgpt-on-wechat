@@ -355,7 +355,7 @@ const ChatPage: React.FC<ChatPageProps> = ({ baseUrl }) => {
                       // Fill the input (don't auto-send) so the user can tweak it first.
                       inputResetRef.current?.(prompt, [])
                     }}
-                    className="group text-left bg-surface border border-default rounded-xl p-3.5 cursor-pointer hover:border-accent hover:shadow-sm transition-all"
+                    className="group flex flex-col justify-start text-left bg-surface border border-default rounded-xl p-3.5 cursor-pointer hover:border-accent hover:shadow-sm transition-all"
                   >
                     <div className="flex items-center gap-2 mb-1.5">
                       <span
