@@ -8,8 +8,12 @@ import Markdown from '../../components/Markdown'
 import { Btn, Field, Modal, TextInput } from '../settings/primitives'
 import { SegTabs } from './SegTabs'
 import { parseSkillFrontmatter } from './frontmatter'
+import { product } from '@product'
 
 type Tab = 'market' | 'upload'
+
+const uploadOnly = product.skills?.uploadOnly === true
+const initialTab: Tab = uploadOnly ? 'upload' : 'market'
 type Step = 'input' | 'preview' | 'done'
 type UploadFile = { file: File; path: string }
 
@@ -116,7 +120,7 @@ interface SkillAddModalProps {
 }
 
 const SkillAddModal: React.FC<SkillAddModalProps> = ({ open, onClose, onInstalled }) => {
-  const [tab, setTab] = useState<Tab>('market')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [source, setSource] = useState<SkillMarketSource>('hub')
   const [value, setValue] = useState('')
   const [step, setStep] = useState<Step>('input')
@@ -132,7 +136,7 @@ const SkillAddModal: React.FC<SkillAddModalProps> = ({ open, onClose, onInstalle
 
   useEffect(() => {
     if (!open) return
-    setTab('market')
+    setTab(initialTab)
     setSource('hub')
     setValue('')
     setStep('input')
@@ -279,18 +283,20 @@ const SkillAddModal: React.FC<SkillAddModalProps> = ({ open, onClose, onInstalle
     <Modal open={open} size="lg" title={t('skill_add')} onClose={close} footer={footer}>
       {step === 'input' && (
         <>
-          <SegTabs<Tab>
-            value={tab}
-            onChange={(next) => {
-              if (busy) return
-              setTab(next)
-              setError('')
-            }}
-            tabs={[
-              { value: 'market', label: t('skill_add_tab_market'), icon: Store },
-              { value: 'upload', label: t('skill_add_tab_upload'), icon: Upload },
-            ]}
-          />
+          {!uploadOnly && (
+            <SegTabs<Tab>
+              value={tab}
+              onChange={(next) => {
+                if (busy) return
+                setTab(next)
+                setError('')
+              }}
+              tabs={[
+                { value: 'market', label: t('skill_add_tab_market'), icon: Store },
+                { value: 'upload', label: t('skill_add_tab_upload'), icon: Upload },
+              ]}
+            />
+          )}
           {tab === 'market' ? (
             <>
               <Field label={t('skill_source')}>

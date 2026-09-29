@@ -165,6 +165,11 @@ const ChatInput = forwardRef<ChatInputHandle, ChatInputProps>(function ChatInput
   const startRecording = async () => {
     let stream: MediaStream
     try {
+      const granted = await window.electronAPI?.requestMicAccess?.()
+      if (granted === false) {
+        flashMicError(t('mic_permission_denied'))
+        return
+      }
       stream = await navigator.mediaDevices.getUserMedia({ audio: true })
     } catch (e) {
       // Surface the concrete failure name so a denied/missing-device/insecure

@@ -29,6 +29,8 @@ export interface ElectronAPI {
   onMenuAction?: (callback: (action: string) => void) => () => void
   // Current app version string (e.g. "0.0.5").
   getAppVersion?: () => Promise<string>
+  // OS-level microphone access (prompts once on macOS; true elsewhere).
+  requestMicAccess?: () => Promise<boolean>
   // Launch-at-login toggle (macOS + Windows). get returns the effective state;
   // set returns the real outcome so the UI can surface refusals/errors.
   getLoginItemEnabled?: () => Promise<boolean>

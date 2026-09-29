@@ -771,14 +771,17 @@ app.whenReady().then(async () => {
 
   // On macOS the Chromium-layer handler above isn't enough: getUserMedia also
   // needs system-level (TCC) microphone authorization, which only the native
-  // askForMediaAccess prompt can grant. Request it up front so the first mic
-  // click surfaces the system dialog instead of failing with a denied error.
-  if (process.platform === 'darwin') {
-    const micStatus = systemPreferences.getMediaAccessStatus('microphone')
-    if (micStatus === 'not-determined') {
-      systemPreferences.askForMediaAccess('microphone').catch(() => {})
+  // askForMediaAccess prompt can grant. The renderer asks for it right before
+  // the first recording, so the system dialog only appears when mic is used.
+  ipcMain.handle('mic-request-access', async () => {
+    if (process.platform !== 'darwin') return true
+    try {
+      if (systemPreferences.getMediaAccessStatus('microphone') === 'granted') return true
+      return await systemPreferences.askForMediaAccess('microphone')
+    } catch {
+      return false
     }
-  }
+  })
 
   setupIPC()
   setupThemeIPC()

@@ -38,6 +38,7 @@ import McpEditorModal from './skills/McpEditorModal'
 import SkillAddModal from './skills/SkillAddModal'
 import { parseSkillFrontmatter } from './skills/frontmatter'
 import { MCP_TRANSPORT_LABELS, mcpTransport } from './skills/mcpConfig'
+import { product } from '@product'
 
 interface SkillsPageProps {
   baseUrl: string
@@ -463,16 +464,18 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
                 count={skills.length}
                 action={
                   <>
-                    <a
-                      href={SKILL_HUB_URL}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-btn text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-2 transition-colors"
-                    >
-                      <Compass size={12} />
-                      {t('skills_hub_btn')}
-                      <ExternalLink size={10} className="opacity-60" />
-                    </a>
+                    {!product.skills?.uploadOnly && (
+                      <a
+                        href={SKILL_HUB_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-btn text-xs text-content-tertiary hover:text-content-secondary hover:bg-surface-2 transition-colors"
+                      >
+                        <Compass size={12} />
+                        {t('skills_hub_btn')}
+                        <ExternalLink size={10} className="opacity-60" />
+                      </a>
+                    )}
                     <ActionBtn onClick={() => setAddingSkill(true)}>
                       <Plus size={12} />
                       {t('skill_add')}
@@ -482,7 +485,7 @@ const SkillsPage: React.FC<SkillsPageProps> = ({ baseUrl }) => {
               >
                 {skillError && <p className="mb-3 text-sm text-danger">{skillError}</p>}
                 {skills.length === 0 ? (
-                  <EmptyState icon={Zap} title={t('skills_empty')} hint={t('skills_empty_hint')} tone="accent" />
+                  <EmptyState icon={Zap} title={t('skills_empty')} hint={t(product.skills?.uploadOnly ? 'skills_empty_hint_upload' : 'skills_empty_hint')} tone="accent" />
                 ) : (
                   <div className="grid gap-3 sm:grid-cols-2">
                     {skills.map((skill) => (

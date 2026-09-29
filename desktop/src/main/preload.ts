@@ -68,6 +68,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Current app version (e.g. "0.0.5"), shown in the NavRail footer.
   getAppVersion: () => ipcRenderer.invoke('get-app-version'),
 
+  // Ask for OS-level microphone access (prompts once on macOS; true elsewhere).
+  requestMicAccess: () => ipcRenderer.invoke('mic-request-access') as Promise<boolean>,
+
   // Launch-at-login toggle (macOS + Windows). get returns the effective state;
   // set returns the real outcome so the UI can surface refusals/errors.
   getLoginItemEnabled: () => ipcRenderer.invoke('get-login-item') as Promise<boolean>,
