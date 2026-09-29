@@ -888,7 +888,13 @@ class ApiClient {
   }
 
   async getMcpServers(): Promise<McpServersResult> {
-    return this.request('/api/mcp/servers')
+    const res: McpServersResult = await this.request('/api/mcp/servers')
+    // A broken mcp.json answers 200 with status "error"; surface it instead of
+    // rendering an empty list that looks like the configuration was lost.
+    if (res && res.status === 'error') {
+      throw new Error(res.message || 'failed to load MCP servers')
+    }
+    return res
   }
 
   async saveMcpServers(servers: McpServerConfig[]): Promise<McpServersResult> {
