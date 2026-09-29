@@ -43,7 +43,7 @@ from channel.feishu.feishu_scheduler_card import (
 from common import state_dir, utils
 from common.expired_dict import ExpiredDict
 from common.log import logger
-from common.media_download import MAX_FILE_BYTES, MAX_IMAGE_BYTES, download_bytes
+from common.media_download import MAX_FILE_BYTES, MAX_IMAGE_BYTES, download_bytes, download_to_file
 from common.singleton import singleton
 from config import conf
 
@@ -1969,26 +1969,21 @@ class FeiShuChanel(ChatChannel):
                     logger.error(f"[FeiShu] local video file not found: {local_path}")
                     return None
             else:
-                # For HTTP URLs, download first
-                logger.info(f"[FeiShu] Downloading video from URL: {video_url}")
-                response = requests.get(video_url, timeout=(5, 60))
-                if response.status_code != 200:
-                    logger.error(f"[FeiShu] download video failed, status={response.status_code}")
-                    return None
-
-                # Stage under the Agent's managed tmp dir. A bare name lands in
-                # the process CWD, which a packaged desktop build does not
-                # control and may not be able to write to. The duration probe
-                # below needs a real file, so this one cannot upload from memory
-                # the way the image and file paths do.
+                # For HTTP URLs, download first. Route through the shared
+                # bounded helper so a huge or endless response is capped at
+                # MAX_FILE_BYTES (same contract as the image/file paths above).
+                # The file is staged under the Agent's managed tmp dir; a bare
+                # name lands in the process CWD, which a packaged desktop build
+                # does not control and may not be able to write to.
                 import uuid
                 file_name = os.path.basename(urlparse(video_url).path) or "video.mp4"
                 temp_file = str(state_dir.tmp_dir() / f"{uuid.uuid4()}_{file_name}")
-
-                with open(temp_file, "wb") as file:
-                    file.write(response.content)
-
-                logger.info(f"[FeiShu] Video downloaded, size={len(response.content)} bytes")
+                try:
+                    result = download_to_file(video_url, temp_file, MAX_FILE_BYTES, timeout=(5, 60))
+                except Exception as e:
+                    logger.error(f"[FeiShu] download video failed: {e}")
+                    return None
+                logger.info(f"[FeiShu] Video downloaded, size={result.size} bytes")
                 local_path = temp_file
 
             # Get video duration
