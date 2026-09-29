@@ -9,6 +9,7 @@ Handles memory persistence when conversation context is trimmed or overflows:
 - Deep Dream: periodically distills daily memories → refined MEMORY.md + dream diary
 """
 
+import os
 import threading
 from typing import Optional, Callable, Any, List, Dict
 from pathlib import Path
@@ -188,6 +189,31 @@ def _is_empty_sentinel(text: str) -> bool:
         return True
     s = text.strip()
     return s == "" or s == "无" or s.lower() == "none"
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` through a sibling file, then swap it in.
+
+    Both callers replace a file the user only has one copy of. Writing straight
+    into ``path`` truncates it first, so anything that fails halfway -- a full
+    disk, the process being killed -- leaves a partial file behind and the
+    previous content is unrecoverable. Building the text beside the file and
+    replacing it means a failed save leaves whatever was there before.
+    """
+    temporary = f"{path}.tmp"
+    try:
+        with open(temporary, "w", encoding="utf-8") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+        except OSError:
+            pass
+        raise
 
 
 
@@ -557,7 +583,7 @@ class MemoryFlushManager:
         try:
             main_file = self.get_main_memory_file(user_id)
             old_size = len(memory_content)
-            main_file.write_text(new_memory + "\n", encoding="utf-8")
+            _write_text_atomic(main_file, new_memory + "\n")
             logger.info(
                 f"[DeepDream] Updated MEMORY.md "
                 f"({old_size} → {len(new_memory)} chars)"
@@ -646,10 +672,7 @@ class MemoryFlushManager:
 
         today = datetime.now().strftime("%Y-%m-%d")
         diary_file = dreams_dir / f"{today}.md"
-        diary_file.write_text(
-            f"# Dream Diary: {today}\n\n{content}\n",
-            encoding="utf-8",
-        )
+        _write_text_atomic(diary_file, f"# Dream Diary: {today}\n\n{content}\n")
         logger.info(f"[DeepDream] Wrote dream diary to {diary_file}")
 
     # ---- Internal helpers ----
