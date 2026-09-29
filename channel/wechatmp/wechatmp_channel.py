@@ -55,6 +55,21 @@ def _download_remote_media(url, media_type):
         return None
 
 
+def _local_media_stream(storage):
+    """Open a local ``file://`` payload for upload, or pass a stream through.
+
+    ``ChatChannel`` hands a locally produced media reply over as
+    ``Reply(type, "file://" + path)`` (channel/chat_channel.py), and every other
+    channel reads that content as a path. This channel read it as an already
+    open handle, so ``.seek`` raised ``AttributeError`` before the upload.
+    """
+    if not isinstance(storage, str):
+        return storage
+    path = storage[len("file://"):] if storage.startswith("file://") else storage
+    with open(path, "rb") as f:
+        return io.BytesIO(f.read())
+
+
 def _sniff_image_type(storage) -> str:
     """Image type of an open binary stream: "png", "jpeg", "gif", "bmp", "webp".
 
@@ -243,7 +258,7 @@ class WechatMPChannel(ChatChannel):
                 self.cache_dict[receiver].append(("video", media_id))
 
             elif reply.type == ReplyType.VIDEO:  # 从文件读取视频
-                video_storage = reply.content
+                video_storage = _local_media_stream(reply.content)
                 video_storage.seek(0)
                 video_type = 'mp4'
                 filename = receiver + "-" + str(context["msg"].msg_id) + "." + video_type
@@ -367,7 +382,7 @@ class WechatMPChannel(ChatChannel):
                 self.client.message.send_video(receiver, response["media_id"])
                 logger.info("[wechatmp] Do send video to {}".format(receiver))
             elif reply.type == ReplyType.VIDEO:  # 从文件读取视频
-                video_storage = reply.content
+                video_storage = _local_media_stream(reply.content)
                 video_storage.seek(0)
                 video_type = 'mp4'
                 filename = receiver + "-" + str(context["msg"].msg_id) + "." + video_type

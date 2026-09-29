@@ -1,5 +1,5 @@
 # encoding:utf-8
-"""Slack, Telegram, Feishu and DingTalk upload a local ``ReplyType.VIDEO`` instead of posting its path.
+"""Slack, Telegram, Feishu, DingTalk and wechatmp upload a local ``ReplyType.VIDEO`` instead of posting its path.
 
 ``ChatChannel`` hands an agent-produced video over as
 ``Reply(ReplyType.VIDEO, "file://" + path)``; without a VIDEO branch the reply
@@ -9,6 +9,8 @@ import asyncio
 import json
 import sys
 import types
+
+import pytest
 
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
@@ -172,3 +174,45 @@ def test_dingtalk_still_sends_a_plain_file():
 
     assert uploads == [("file:///srv/cow/notes.txt", "file")], uploads
     assert [key for key, _ in sent] == ["sampleFile"], sent
+
+
+# wechatmp read the same reply as an open handle, so the "file://" path raised
+# AttributeError before any upload was attempted. ChatChannel's send wrapper
+# retried twice and swallowed it, which left the user with the text answer and
+# no video. Both of its send modes share the branch.
+
+
+def _wechatmp_channel(passive):
+    from collections import defaultdict
+    from unittest.mock import Mock
+
+    from channel.wechatmp import wechatmp_channel as mod
+
+    ch = mod.WechatMPChannel.__wrapped__.__new__(mod.WechatMPChannel.__wrapped__)
+    ch.passive_reply = passive
+    ch.cache_dict = defaultdict(list)
+    ch.client = Mock()
+    ch.client.material.add.return_value = {"media_id": "media-1"}
+    ch.client.media.upload.return_value = {"media_id": "media-1"}
+    return ch
+
+
+@pytest.mark.parametrize("passive", [True, False])
+def test_wechatmp_uploads_a_local_video(passive, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    clip.write_bytes(b"video-bytes")
+    ch = _wechatmp_channel(passive)
+
+    ch.send(
+        Reply(ReplyType.VIDEO, f"file://{clip}"),
+        {"receiver": "u1", "msg": types.SimpleNamespace(msg_id="m1")},
+    )
+
+    upload = ch.client.material.add if passive else ch.client.media.upload
+    media_type, (filename, stream, content_type) = upload.call_args.args
+    assert (media_type, filename, content_type) == ("video", "u1-m1.mp4", "video/mp4")
+    assert stream.read() == b"video-bytes"
+    if passive:
+        assert ch.cache_dict["u1"] == [("video", "media-1")]
+    else:
+        assert ch.client.message.send_video.call_args.args == ("u1", "media-1")
