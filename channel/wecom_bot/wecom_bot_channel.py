@@ -30,6 +30,7 @@ from channel.wecom_bot.wecom_bot_message import WecomBotMessage
 from common import state_dir
 from common.expired_dict import ExpiredDict
 from common.log import logger
+from common.media_download import MAX_FILE_BYTES, MAX_IMAGE_BYTES, download_to_file
 from common.singleton import singleton
 from common.ws_client_compat import websocket_app_run_forever
 from config import conf
@@ -37,8 +38,6 @@ from config import conf
 WECOM_WS_URL = "wss://openws.work.weixin.qq.com"
 HEARTBEAT_INTERVAL = 30
 MEDIA_CHUNK_SIZE = 512 * 1024  # 512KB per chunk (before base64 encoding)
-MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
-MAX_REMOTE_FILE_BYTES = 50 * 1024 * 1024
 # Fixed URL path for the callback (webhook) HTTP server. The bot's
 # receive-message URL must point at this path, e.g. http://host:9892/wecombot
 CALLBACK_PATH = "/wecombot"
@@ -57,53 +56,33 @@ def _media_tmp_path(prefix: str, ext: str = "") -> str:
     return os.path.join(str(state_dir.tmp_dir()), f"{prefix}_{uuid.uuid4().hex[:8]}{ext}")
 
 
-def _download_remote_media(url: str, prefix: str, ext: str, max_bytes: int, read_timeout: int):
-    """Download one reply to managed tmp storage without buffering the body."""
-    response = requests.get(url, stream=True, timeout=(5, read_timeout))
-    path = None
-    try:
-        response.raise_for_status()
-        content_type = response.headers.get("Content-Type", "")
-        length = response.headers.get("Content-Length")
-        try:
-            declared_size = int(length) if length is not None else None
-        except (TypeError, ValueError):
-            declared_size = None
-        if declared_size is not None and declared_size > max_bytes:
-            raise ValueError("remote media exceeds download limit")
+def _image_ext(content_type: str) -> str:
+    if "jpeg" in content_type or "jpg" in content_type:
+        return ".jpg"
+    if "webp" in content_type:
+        return ".webp"
+    if "gif" in content_type:
+        return ".gif"
+    return ".png"
 
-        if ext is None:
-            if "jpeg" in content_type or "jpg" in content_type:
-                ext = ".jpg"
-            elif "webp" in content_type:
-                ext = ".webp"
-            elif "gif" in content_type:
-                ext = ".gif"
-            else:
-                ext = ".png"
-        elif not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", ext):
-            ext = ".bin"
 
-        path = _media_tmp_path(prefix, ext)
-        size = 0
-        with open(path, "wb") as handle:
-            for chunk in response.iter_content(chunk_size=64 * 1024):
-                size += len(chunk)
-                if size > max_bytes:
-                    raise ValueError("remote media exceeds download limit")
-                handle.write(chunk)
-        if not size:
-            raise ValueError("remote media is empty")
-        return path, size, content_type
-    except Exception:
-        if path and os.path.exists(path):
-            try:
-                os.remove(path)
-            except OSError:
-                logger.warning(f"[WecomBot] Could not remove incomplete download: {path}")
-        raise
-    finally:
-        response.close()
+def _download_remote_media(url: str, prefix: str, ext, max_bytes: int, read_timeout: int):
+    """Download one reply into managed tmp storage; returns (path, size, content_type).
+
+    ``ext=None`` means an image whose extension comes from the Content-Type.
+    """
+    path = _media_tmp_path(prefix)
+    size, content_type = download_to_file(url, path, max_bytes, timeout=(5, read_timeout))
+    if not size:
+        os.remove(path)
+        raise ValueError("remote media is empty")
+    if ext is None:
+        ext = _image_ext(content_type)
+    elif not re.fullmatch(r"\.[A-Za-z0-9]{1,8}", ext):
+        ext = ".bin"
+    final_path = path + ext
+    os.replace(path, final_path)
+    return final_path, size, content_type
 
 
 def _escape_control_chars_inside_json_strings(s: str) -> str:
@@ -973,7 +952,7 @@ class WecomBotChannel(ChatChannel):
             if local_path.startswith(("http://", "https://")):
                 try:
                     tmp_path, _, _ = _download_remote_media(
-                        local_path, "wecom_cb_img", None, MAX_REMOTE_IMAGE_BYTES, 30
+                        local_path, "wecom_cb_img", None, MAX_IMAGE_BYTES, 30
                     )
                     temp_files.append(tmp_path)
                     local_path = tmp_path
@@ -1096,7 +1075,7 @@ class WecomBotChannel(ChatChannel):
         if local_path.startswith(("http://", "https://")):
             try:
                 tmp_path, size, ct = _download_remote_media(
-                    local_path, "wecom_img", None, MAX_REMOTE_IMAGE_BYTES, 30
+                    local_path, "wecom_img", None, MAX_IMAGE_BYTES, 30
                 )
                 logger.info(f"[WecomBot] Image downloaded: size={size}, "
                             f"content-type={ct}, path={tmp_path}")
@@ -1231,7 +1210,7 @@ class WecomBotChannel(ChatChannel):
             try:
                 ext = os.path.splitext(urlparse(local_path).path)[1] or ".bin"
                 tmp_path, _, _ = _download_remote_media(
-                    local_path, "wecom_file", ext, MAX_REMOTE_FILE_BYTES, 60
+                    local_path, "wecom_file", ext, MAX_FILE_BYTES, 60
                 )
                 local_path = tmp_path
             except Exception as e:
@@ -1278,7 +1257,7 @@ class WecomBotChannel(ChatChannel):
             try:
                 ext = os.path.splitext(urlparse(local_path).path)[1] or ".mp3"
                 tmp_path, _, _ = _download_remote_media(
-                    local_path, "wecom_voice", ext, MAX_REMOTE_FILE_BYTES, 60
+                    local_path, "wecom_voice", ext, MAX_FILE_BYTES, 60
                 )
                 local_path = tmp_path
             except Exception as e:

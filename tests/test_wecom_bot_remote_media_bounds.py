@@ -61,7 +61,7 @@ def test_declared_oversize_never_opens_destination(monkeypatch, tmp_path):
     response = Response(headers={"Content-Length": "101"})
     _patch_download(monkeypatch, tmp_path, response)
 
-    with pytest.raises(ValueError, match="exceeds download limit"):
+    with pytest.raises(ValueError, match="too large"):
         channel._download_remote_media("https://example.test/file", "wecom_file", ".pdf", 100, 60)
 
     assert list(tmp_path.iterdir()) == []
@@ -72,7 +72,7 @@ def test_streamed_overflow_removes_partial_file(monkeypatch, tmp_path):
     response = Response(chunks=(b"12345", b"67890"))
     _patch_download(monkeypatch, tmp_path, response)
 
-    with pytest.raises(ValueError, match="exceeds download limit"):
+    with pytest.raises(ValueError, match="too large"):
         channel._download_remote_media("https://example.test/file", "wecom_file", ".pdf", 8, 60)
 
     assert list(tmp_path.iterdir()) == []

@@ -1,7 +1,6 @@
 import hashlib
 import os
 import re
-import tempfile
 
 import requests
 from dingtalk_stream import ChatbotMessage
@@ -11,38 +10,8 @@ from channel.chat_message import ChatMessage
 # -*- coding=utf-8 -*-
 from common.log import logger
 from common import state_dir
+from common.media_download import MAX_FILE_BYTES, download_to_file
 
-MAX_INBOUND_MEDIA_BYTES = 50 * 1024 * 1024
-
-
-def _save_download(response, file_path):
-    """Publish a complete, size-limited response without buffering it in memory."""
-    temp_path = None
-    try:
-        length = response.headers.get("Content-Length") if hasattr(response, "headers") else None
-        try:
-            if length is not None and int(length) > MAX_INBOUND_MEDIA_BYTES:
-                logger.warning("[DingTalk] Refusing oversized inbound media")
-                return False
-        except (TypeError, ValueError):
-            pass  # A bad header cannot bypass the streamed byte limit below.
-
-        with tempfile.NamedTemporaryFile(dir=os.path.dirname(file_path), delete=False) as out:
-            temp_path = out.name
-            size = 0
-            for chunk in response.iter_content(chunk_size=8192):
-                size += len(chunk)
-                if size > MAX_INBOUND_MEDIA_BYTES:
-                    logger.warning("[DingTalk] Refusing oversized inbound media")
-                    return False
-                out.write(chunk)
-        os.replace(temp_path, file_path)
-        temp_path = None
-        return True
-    finally:
-        if temp_path and os.path.exists(temp_path):
-            os.unlink(temp_path)
-        response.close()
 
 def _extract_file_payload(event):
     """Pull downloadCode/fileName out of a ChatbotMessage.
@@ -300,24 +269,13 @@ def download_image_file(image_url, temp_dir, file_name=None, default_ext=".png")
                         logger.error(f"[DingTalk] No downloadUrl in response: {download_data}")
                         return None
                     
-                    # 从 downloadUrl 下载实际图片
-                    image_response = requests.get(download_url, stream=True, timeout=60)
-                    
-                    if image_response.status_code == 200:
-                        # 生成文件名（使用 download_code 的 hash，避免特殊字符）
-                        file_hash = hashlib.md5(actual_download_code.encode()).hexdigest()[:16]
-                        dest_name = _media_filename(file_hash, file_name, default_ext)
-                        file_path = os.path.join(temp_dir, dest_name)
-                        
-                        if not _save_download(image_response, file_path):
-                            return None
-                        
-                        logger.info(f"[DingTalk] Downloaded media to {file_path}")
-                        return file_path
-                    else:
-                        logger.error(f"[DingTalk] Failed to download image from URL: {image_response.status_code}")
-                        image_response.close()
-                        return None
+                    # 生成文件名（使用 download_code 的 hash，避免特殊字符）
+                    file_hash = hashlib.md5(actual_download_code.encode()).hexdigest()[:16]
+                    dest_name = _media_filename(file_hash, file_name, default_ext)
+                    file_path = os.path.join(temp_dir, dest_name)
+                    download_to_file(download_url, file_path, MAX_FILE_BYTES, timeout=60)
+                    logger.info(f"[DingTalk] Downloaded media to {file_path}")
+                    return file_path
                 else:
                     logger.error(f"[DingTalk] Failed to get download URL: {download_response.status_code}, {download_response.text}")
                     return None
@@ -336,17 +294,12 @@ def download_image_file(image_url, temp_dir, file_name=None, default_ext=".png")
             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36'
         }
         
+        dest_name = _safe_filename(file_name or image_url.split("/")[-1].split("?")[0])
+        dest_name = dest_name or f"download{default_ext or '.bin'}"
+        file_path = os.path.join(temp_dir, dest_name)
         try:
-            response = requests.get(image_url, headers=headers, stream=True, timeout=60 * 5)
-            if response.status_code == 200:
-                dest_name = _safe_filename(file_name or image_url.split("/")[-1].split("?")[0])
-                dest_name = dest_name or f"download{default_ext or '.bin'}"
-                file_path = os.path.join(temp_dir, dest_name)
-                return file_path if _save_download(response, file_path) else None
-            else:
-                logger.info(f"[Dingtalk] Failed to download image file, status={response.status_code}")
-                response.close()
-                return None
+            download_to_file(image_url, file_path, MAX_FILE_BYTES, headers=headers, timeout=60 * 5)
+            return file_path
         except Exception as e:
             logger.error(f"[Dingtalk] Exception downloading image: {e}")
             return None

@@ -17,10 +17,8 @@ Implementation note:
 
 import os
 import re
-import tempfile
 import threading
-
-import requests
+import uuid
 
 from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
@@ -28,6 +26,7 @@ from channel.chat_channel import ChatChannel, check_prefix
 from channel.slack.slack_message import SlackMessage
 from common.expired_dict import ExpiredDict
 from common.log import logger
+from common.media_download import MAX_FILE_BYTES, download_to_file
 from common.singleton import singleton
 from config import conf
 
@@ -337,29 +336,17 @@ class SlackChannel(ChatChannel):
 
     def _download_file(self, url: str, name: str):
         """Download a Slack private file (requires bot token auth) to local tmp dir."""
-        local_path = None
+        safe_name = re.sub(r"[^\w.\-]", "_", name) or "file"
+        # A name alone is not unique across messages or users.
+        local_path = os.path.join(SlackMessage.get_tmp_dir(), f"slack_{uuid.uuid4().hex[:8]}_{safe_name}")
         try:
-            headers = {"Authorization": f"Bearer {self.bot_token}"}
-            with requests.get(url, headers=headers, timeout=60, stream=True) as resp:
-                resp.raise_for_status()
-                tmp_dir = SlackMessage.get_tmp_dir()
-                safe_name = re.sub(r"[^\w.\-]", "_", name) or "file"
-                # A name alone is not unique across messages or users.
-                with tempfile.NamedTemporaryFile(
-                    mode="wb", dir=tmp_dir, prefix="slack_", suffix=f"_{safe_name}", delete=False
-                ) as fp:
-                    local_path = fp.name
-                    for chunk in resp.iter_content(chunk_size=8192):
-                        if chunk:
-                            fp.write(chunk)
+            download_to_file(
+                url, local_path, MAX_FILE_BYTES, timeout=60,
+                headers={"Authorization": f"Bearer {self.bot_token}"},
+            )
             logger.debug(f"[Slack] downloaded {name} -> {local_path}")
             return local_path
         except Exception as e:
-            if local_path:
-                try:
-                    os.remove(local_path)
-                except OSError:
-                    pass
             logger.error(f"[Slack] download_file failed ({name}): {e}")
             return None
 

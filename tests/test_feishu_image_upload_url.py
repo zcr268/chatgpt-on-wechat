@@ -18,6 +18,10 @@ class DownloadResponse:
         self.interrupt = interrupt
         self.closed = False
 
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
     def iter_content(self, chunk_size):
         yield self.content
         if self.interrupt:

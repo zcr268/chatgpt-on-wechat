@@ -68,6 +68,10 @@ class FakeResponse:
     def json(self):
         return self._json
 
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
     def iter_content(self, chunk_size):
         for index in range(0, len(self.content), chunk_size):
             yield self.content[index:index + chunk_size]
@@ -239,7 +243,9 @@ def test_safe_filename_keeps_basename_only():
 
 def test_oversized_dingtalk_download_leaves_no_file(monkeypatch, tmp_path):
     _stub_dingtalk_download(monkeypatch, tmp_path)
-    response = FakeResponse(content=b"ignored", headers={"Content-Length": str(50 * 1024 * 1024 + 1)})
+    from common.media_download import MAX_FILE_BYTES
+
+    response = FakeResponse(content=b"ignored", headers={"Content-Length": str(MAX_FILE_BYTES + 1)})
     monkeypatch.setattr("channel.dingtalk.dingtalk_message.requests.get", lambda *a, **k: response)
 
     msg = DingTalkMessage(
@@ -275,7 +281,7 @@ def test_interrupted_http_download_preserves_existing_file(monkeypatch, tmp_path
 def test_streamed_size_limit_cleans_up_partial_download(monkeypatch, tmp_path):
     from channel.dingtalk import dingtalk_message
 
-    monkeypatch.setattr(dingtalk_message, "MAX_INBOUND_MEDIA_BYTES", 5)
+    monkeypatch.setattr(dingtalk_message, "MAX_FILE_BYTES", 5)
     response = FakeResponse(content=b"123456")
     monkeypatch.setattr("channel.dingtalk.dingtalk_message.requests.get", lambda *a, **k: response)
 

@@ -3,8 +3,8 @@ import io
 import os
 import time
 import uuid
+from urllib.parse import urlparse
 
-import requests
 import web
 from wechatpy.enterprise import parse_message
 from wechatpy.enterprise.crypto import WeChatCrypto
@@ -18,6 +18,7 @@ from channel.wechatcom.wechatcomapp_client import WechatComAppClient
 from channel.wechatcom.wechatcomapp_message import WechatComAppMessage
 from common.i18n import t as _t
 from common.log import logger
+from common.media_download import MAX_FILE_BYTES, MAX_IMAGE_BYTES, download_bytes, download_to_file
 from common.singleton import singleton
 from common.state_dir import tmp_dir
 from common.utils import compress_imgfile, fsize, split_string_by_utf8_length, convert_webp_to_png, remove_markdown_symbol
@@ -25,38 +26,6 @@ from config import conf
 from voice.audio_convert import any_to_amr, split_audio
 
 MAX_UTF8_LEN = 2048
-MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
-
-
-def _download_remote_image(url):
-    """Read an image reply with a strict cap before handing it to Pillow/upload."""
-    response = None
-    try:
-        response = requests.get(url, stream=True, timeout=60)
-        response.raise_for_status()
-        length = response.headers.get("Content-Length")
-        try:
-            declared_size = int(length) if length is not None else None
-        except (TypeError, ValueError):
-            declared_size = None
-        if declared_size is not None and declared_size > MAX_REMOTE_IMAGE_BYTES:
-            raise ValueError("remote image exceeds download limit")
-
-        image = io.BytesIO()
-        size = 0
-        for block in response.iter_content(8192):
-            size += len(block)
-            if size > MAX_REMOTE_IMAGE_BYTES:
-                raise ValueError("remote image exceeds download limit")
-            image.write(block)
-        image.seek(0)
-        return image
-    except Exception as exc:
-        logger.error(f"[wechatcom] image download failed: {exc}")
-        return None
-    finally:
-        if response is not None:
-            response.close()
 
 
 def _media_tmp_path(prefix: str, ext: str = "") -> str:
@@ -178,8 +147,10 @@ class WechatComAppChannel(ChatChannel):
             logger.info("[wechatcom] sendVoice={}, receiver={}".format(reply.content, receiver))
         elif reply.type == ReplyType.IMAGE_URL:  # 从网络下载图片
             img_url = reply.content
-            image_storage = _download_remote_image(img_url)
-            if image_storage is None:
+            try:
+                image_storage = io.BytesIO(download_bytes(img_url, MAX_IMAGE_BYTES, timeout=60))
+            except Exception as e:
+                logger.error(f"[wechatcom] image download failed: {e}")
                 return
             sz = fsize(image_storage)
             if sz >= 10 * 1024 * 1024:
@@ -237,11 +208,9 @@ class WechatComAppChannel(ChatChannel):
             path = path[7:]
         if path.startswith(("http://", "https://")):
             try:
-                resp = requests.get(path, timeout=60)
-                resp.raise_for_status()
-                local = _media_tmp_path("wechatcom_file", os.path.splitext(path)[1] or ".bin")
-                with open(local, "wb") as f:
-                    f.write(resp.content)
+                ext = os.path.splitext(urlparse(path).path)[1] or ".bin"
+                local = _media_tmp_path("wechatcom_file", ext)
+                download_to_file(path, local, MAX_FILE_BYTES, timeout=60)
                 path = local
             except Exception as e:
                 logger.error("[wechatcom] failed to fetch {}: {}".format(path, e))

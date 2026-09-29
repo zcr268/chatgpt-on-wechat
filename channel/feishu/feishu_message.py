@@ -1,60 +1,27 @@
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from channel.chat_message import safe_filename
-from channel.feishu.resource_download import MAX_AUDIO_BYTES, MAX_FILE_BYTES, download_resource
 import json
 import os
-import tempfile
 import requests
 from common.log import logger
 from common import state_dir, utils
+from common.media_download import MAX_FILE_BYTES, MAX_IMAGE_BYTES, download_to_file
 
-MAX_FEISHU_IMAGE_BYTES = 20 * 1024 * 1024
 
-
-def _download_image(url, headers, params, image_path):
-    """Save a Feishu image only after a bounded download completes."""
-    temporary_path = None
+def _download_resource(message_id, key, resource_type, access_token, path, max_bytes) -> bool:
+    """Save one message resource (image / file / audio) to ``path``."""
+    url = f"https://open.feishu.cn/open-apis/im/v1/messages/{message_id}/resources/{key}"
     try:
-        with requests.get(
-            url=url, headers=headers, params=params, timeout=(5, 30), stream=True
-        ) as response:
-            if response.status_code != 200:
-                logger.error(f"[FeiShu] Image download failed: status={response.status_code}")
-                return False
-            length = response.headers.get("Content-Length")
-            if length:
-                try:
-                    advertised_size = int(length)
-                except ValueError:
-                    advertised_size = 0
-                if advertised_size > MAX_FEISHU_IMAGE_BYTES:
-                    raise ValueError("Feishu image exceeds the download limit")
-
-            with tempfile.NamedTemporaryFile(
-                mode="wb", dir=os.path.dirname(image_path), prefix=".feishu_", delete=False
-            ) as handle:
-                temporary_path = handle.name
-                size = 0
-                for chunk in response.iter_content(chunk_size=64 * 1024):
-                    if not chunk:
-                        continue
-                    size += len(chunk)
-                    if size > MAX_FEISHU_IMAGE_BYTES:
-                        raise ValueError("Feishu image exceeds the download limit")
-                    handle.write(chunk)
-        os.replace(temporary_path, image_path)
-        temporary_path = None
+        download_to_file(
+            url, path, max_bytes, timeout=(5, 30),
+            headers={"Authorization": "Bearer " + access_token},
+            params={"type": resource_type},
+        )
         return True
-    except Exception as exc:
-        logger.error(f"[FeiShu] Image download failed: {exc}")
+    except Exception as e:
+        logger.error(f"[FeiShu] Failed to download {resource_type}, key={key}: {e}")
         return False
-    finally:
-        if temporary_path:
-            try:
-                os.remove(temporary_path)
-            except OSError:
-                pass
 
 
 class FeishuMessage(ChatMessage):
@@ -84,13 +51,8 @@ class FeishuMessage(ChatMessage):
             
             # 下载图片到工作空间临时目录
             tmp_dir = str(state_dir.tmp_dir())
-            image_path = os.path.join(tmp_dir, f"{image_key}.png")
-            
-            # 下载图片
-            url = f"https://open.feishu.cn/open-apis/im/v1/messages/{msg.get('message_id')}/resources/{image_key}"
-            headers = {"Authorization": "Bearer " + access_token}
-            params = {"type": "image"}
-            if _download_image(url, headers, params, image_path):
+            image_path = os.path.join(tmp_dir, f"{safe_filename(image_key) or 'image'}.png")
+            if _download_resource(self.msg_id, image_key, "image", access_token, image_path, MAX_IMAGE_BYTES):
                 logger.info(f"[FeiShu] Downloaded single image, key={image_key}, path={image_path}")
                 self.content = image_path
                 self.image_path = image_path  # 保存图片路径
@@ -144,16 +106,17 @@ class FeishuMessage(ChatMessage):
                 # 如果包含图片，下载并在文本中引用本地路径
                 tmp_dir = str(state_dir.tmp_dir())
                 
-                # Save only paths whose downloads completed successfully.
+                # Only successful downloads are recorded as paths; failed ones
+                # keep a marker so the agent knows an image was sent.
                 self.image_paths = {}
+                failed_keys = []
                 for image_key in dict.fromkeys(image_keys):
-                    image_path = os.path.join(tmp_dir, f"{image_key}.png")
-                    url = f"https://open.feishu.cn/open-apis/im/v1/messages/{self.msg_id}/resources/{image_key}"
-                    headers = {"Authorization": "Bearer " + access_token}
-                    params = {"type": "image"}
-                    if _download_image(url, headers, params, image_path):
+                    image_path = os.path.join(tmp_dir, f"{safe_filename(image_key) or 'image'}.png")
+                    if _download_resource(self.msg_id, image_key, "image", access_token, image_path, MAX_IMAGE_BYTES):
                         self.image_paths[image_key] = image_path
                         logger.info(f"[FeiShu] Image downloaded from post message, key={image_key}, path={image_path}")
+                    else:
+                        failed_keys.append(image_key)
                 
                 # 构建消息内容：文本 + 图片路径
                 content_parts = []
@@ -161,6 +124,8 @@ class FeishuMessage(ChatMessage):
                     content_parts.append("\n".join(text_parts).strip())
                 for image_key, image_path in self.image_paths.items():
                     content_parts.append(f"[图片: {image_path}]")
+                for image_key in failed_keys:
+                    content_parts.append(f"[图片下载失败: {image_key}]")
                 
                 self.content = "\n".join(content_parts)
                 logger.info(f"[FeiShu] Received post message with {len(image_keys)} image(s) and text: {self.content}")
@@ -182,15 +147,7 @@ class FeishuMessage(ChatMessage):
             )
 
             def _download_file():
-                # 如果响应状态码是200，则将响应内容写入本地文件
-                url = f"https://open.feishu.cn/open-apis/im/v1/messages/{self.msg_id}/resources/{file_key}"
-                headers = {
-                    "Authorization": "Bearer " + access_token,
-                }
-                params = {
-                    "type": "file"
-                }
-                download_resource(url, headers, params, self.content, MAX_FILE_BYTES)
+                _download_resource(self.msg_id, file_key, "file", access_token, self.content, MAX_FILE_BYTES)
             self._prepare_fn = _download_file
         elif msg_type == "audio":
             # 飞书用户发送的语音消息类型为 "audio"，文件为 opus 编码格式。
@@ -207,20 +164,8 @@ class FeishuMessage(ChatMessage):
 
             def _download_audio():
                 logger.info(f"[FeiShu] downloading audio: file_key={file_key}, msg_id={self.msg_id}")
-                url = f"https://open.feishu.cn/open-apis/im/v1/messages/{self.msg_id}/resources/{file_key}"
-                headers = {
-                    "Authorization": "Bearer " + access_token,
-                }
-                params = {
-                    "type": "file"
-                }
-                try:
-                    if download_resource(url, headers, params, self.content, MAX_AUDIO_BYTES):
-                        logger.info(f"[FeiShu] audio saved to: {self.content}")
-                    else:
-                        logger.error(f"[FeiShu] Failed to download audio, key={file_key}")
-                except Exception as e:
-                    logger.error(f"[FeiShu] Exception downloading audio, key={file_key}: {e}", exc_info=True)
+                if _download_resource(self.msg_id, file_key, "file", access_token, self.content, MAX_FILE_BYTES):
+                    logger.info(f"[FeiShu] audio saved to: {self.content}")
             self._prepare_fn = _download_audio
         else:
             raise NotImplementedError("Unsupported message type: Type:{} ".format(msg_type))

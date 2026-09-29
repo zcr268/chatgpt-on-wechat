@@ -1,12 +1,12 @@
 import os
 import re
 import base64
-import requests
 
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from common.log import logger
 from common import state_dir
+from common.media_download import MAX_FILE_BYTES, download_bytes
 from Crypto.Cipher import AES
 
 
@@ -30,8 +30,6 @@ OFFICE_ZIP_MARKERS = {
     b"xl/": ".xlsx",
     b"ppt/": ".pptx",
 }
-
-MAX_ENCRYPTED_MEDIA_BYTES = 50 * 1024 * 1024
 
 
 def _guess_ext_from_bytes(data: bytes) -> str:
@@ -63,31 +61,13 @@ def _decrypt_media(url: str, aeskey: str) -> bytes:
     if len(key) != 32:
         raise ValueError(f"Invalid AES key length: {len(key)}, expected 32")
 
-    resp = requests.get(url, stream=True, timeout=(5, 30))
-    try:
-        resp.raise_for_status()
-        length = resp.headers.get("Content-Length")
-        try:
-            declared_size = int(length) if length is not None else None
-        except (TypeError, ValueError):
-            declared_size = None  # The streamed byte limit still applies.
-        if declared_size is not None and declared_size > MAX_ENCRYPTED_MEDIA_BYTES:
-            raise ValueError("Encrypted media is too large")
-
-        encrypted = bytearray()
-        for chunk in resp.iter_content(chunk_size=8192):
-            encrypted.extend(chunk)
-            if len(encrypted) > MAX_ENCRYPTED_MEDIA_BYTES:
-                raise ValueError("Encrypted media is too large")
-    finally:
-        resp.close()
-
+    encrypted = download_bytes(url, MAX_FILE_BYTES, timeout=(5, 30))
     if not encrypted or len(encrypted) % AES.block_size:
         raise ValueError("Invalid encrypted media length")
 
     iv = key[:16]
     cipher = AES.new(key, AES.MODE_CBC, iv)
-    decrypted = cipher.decrypt(bytes(encrypted))
+    decrypted = cipher.decrypt(encrypted)
 
     pad_len = decrypted[-1]
     if not 1 <= pad_len <= 32 or decrypted[-pad_len:] != bytes([pad_len]) * pad_len:

@@ -6,6 +6,7 @@ import pytest
 from Crypto.Cipher import AES
 
 from channel.wecom_bot import wecom_bot_message as media
+from common import media_download
 
 
 KEY = bytes(range(32))
@@ -46,7 +47,7 @@ def test_valid_media_decrypts_and_closes_response(monkeypatch):
         calls.append(kwargs)
         return response
 
-    monkeypatch.setattr(media.requests, "get", get)
+    monkeypatch.setattr(media_download.requests, "get", get)
 
     assert media._decrypt_media("https://example.test/media", ENCODING_KEY) == b"image bytes"
     assert response.closed
@@ -54,8 +55,8 @@ def test_valid_media_decrypts_and_closes_response(monkeypatch):
 
 
 def test_declared_oversize_rejected_before_streaming(monkeypatch):
-    response = Response(b"", {"Content-Length": str(media.MAX_ENCRYPTED_MEDIA_BYTES + 1)})
-    monkeypatch.setattr(media.requests, "get", lambda *args, **kwargs: response)
+    response = Response(b"", {"Content-Length": str(media.MAX_FILE_BYTES + 1)})
+    monkeypatch.setattr(media_download.requests, "get", lambda *args, **kwargs: response)
 
     with pytest.raises(ValueError, match="too large"):
         media._decrypt_media("https://example.test/media", ENCODING_KEY)
@@ -63,9 +64,9 @@ def test_declared_oversize_rejected_before_streaming(monkeypatch):
 
 
 def test_streamed_oversize_rejected_without_length_header(monkeypatch):
-    monkeypatch.setattr(media, "MAX_ENCRYPTED_MEDIA_BYTES", 8)
+    monkeypatch.setattr(media, "MAX_FILE_BYTES", 8)
     response = Response(_encrypt(b"image bytes"))
-    monkeypatch.setattr(media.requests, "get", lambda *args, **kwargs: response)
+    monkeypatch.setattr(media_download.requests, "get", lambda *args, **kwargs: response)
 
     with pytest.raises(ValueError, match="too large"):
         media._decrypt_media("https://example.test/media", ENCODING_KEY)
@@ -76,7 +77,7 @@ def test_streamed_oversize_rejected_without_length_header(monkeypatch):
 def test_invalid_padding_is_rejected(monkeypatch, plaintext):
     # Encrypt an entire block without adding valid PKCS#7 padding.
     response = Response(AES.new(KEY, AES.MODE_CBC, KEY[:16]).encrypt(plaintext))
-    monkeypatch.setattr(media.requests, "get", lambda *args, **kwargs: response)
+    monkeypatch.setattr(media_download.requests, "get", lambda *args, **kwargs: response)
 
     with pytest.raises(ValueError, match="Invalid PKCS7 padding"):
         media._decrypt_media("https://example.test/media", ENCODING_KEY)
@@ -85,7 +86,7 @@ def test_invalid_padding_is_rejected(monkeypatch, plaintext):
 
 def test_interrupted_stream_closes_response(monkeypatch):
     response = Response(_encrypt(b"image bytes"), fail_after_first=True)
-    monkeypatch.setattr(media.requests, "get", lambda *args, **kwargs: response)
+    monkeypatch.setattr(media_download.requests, "get", lambda *args, **kwargs: response)
 
     with pytest.raises(OSError, match="connection lost"):
         media._decrypt_media("https://example.test/media", ENCODING_KEY)

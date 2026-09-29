@@ -89,12 +89,25 @@ class WeComAppFileReplyTest(unittest.TestCase):
         self.assertEqual("这是本周报告", self.rec.calls[0][1])
 
     def test_a_remote_file_url_is_downloaded_before_uploading(self):
-        with patch.object(channel_module.requests, "get") as get:
-            get.return_value.content = b"remote-body"
+        with patch("common.media_download.requests.get") as get:
+            get.return_value.headers = {}
+            get.return_value.iter_content.return_value = [b"remote-body"]
             reply = Reply(ReplyType.FILE, "https://files.example.com/weekly.pdf")
             reply.file_name = "weekly.pdf"
             self.channel.send(reply, self.context)
         self.assertIn(("upload", "file", "weekly.pdf", b"remote-body"), self.rec.calls)
+        self.assertTrue(get.call_args.kwargs["stream"])
+
+    def test_a_signed_url_keeps_its_real_extension(self):
+        with patch("common.media_download.requests.get") as get:
+            get.return_value.headers = {}
+            get.return_value.iter_content.return_value = [b"remote-body"]
+            self.channel.send(
+                Reply(ReplyType.FILE, "https://files.example.com/weekly.pdf?sig=a/b"), self.context
+            )
+        uploads = [c for c in self.rec.calls if c[0] == "upload"]
+        self.assertEqual(1, len(uploads))
+        self.assertTrue(uploads[0][2].endswith(".pdf"))
 
     def test_a_missing_file_reports_instead_of_uploading(self):
         self.channel.send(Reply(ReplyType.FILE, "file:///nonexistent/x.pdf"), self.context)

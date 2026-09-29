@@ -50,7 +50,7 @@ class TestWechatComAppImageDownload(unittest.TestCase):
         channel = self._channel()
 
         with patch(
-            "channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response
+            "common.media_download.requests.get", return_value=response
         ) as get:
             channel.send(
                 Reply(ReplyType.IMAGE_URL, "https://example.com/pic.png"),
@@ -68,7 +68,7 @@ class TestWechatComAppImageDownload(unittest.TestCase):
         response.headers = {"Content-Length": str(20 * 1024 * 1024 + 1)}
         channel = self._channel()
 
-        with patch("channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response):
+        with patch("common.media_download.requests.get", return_value=response):
             channel.send(Reply(ReplyType.IMAGE_URL, "https://example.com/huge.png"), {"receiver": "user-1"})
 
         response.iter_content.assert_not_called()
@@ -81,8 +81,8 @@ class TestWechatComAppImageDownload(unittest.TestCase):
         response.iter_content.return_value = [b"small", b"overflow"]
         channel = self._channel()
 
-        with patch("channel.wechatcom.wechatcomapp_channel.MAX_REMOTE_IMAGE_BYTES", 8), \
-                patch("channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response):
+        with patch("channel.wechatcom.wechatcomapp_channel.MAX_IMAGE_BYTES", 8), \
+                patch("common.media_download.requests.get", return_value=response):
             channel.send(Reply(ReplyType.IMAGE_URL, "https://example.com/huge.png"), {"receiver": "user-1"})
 
         response.close.assert_called_once()
@@ -95,7 +95,7 @@ class TestWechatComAppImageDownload(unittest.TestCase):
         response.raise_for_status.side_effect = requests.HTTPError("404")
         channel = self._channel()
 
-        with patch("channel.wechatcom.wechatcomapp_channel.requests.get", return_value=response):
+        with patch("common.media_download.requests.get", return_value=response):
             channel.send(Reply(ReplyType.IMAGE_URL, "https://example.com/missing.png"), {"receiver": "user-1"})
 
         response.close.assert_called_once()

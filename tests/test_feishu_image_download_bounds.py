@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from channel.feishu import feishu_message
+from common import media_download
 
 
 class FakeResponse:
@@ -11,14 +12,13 @@ class FakeResponse:
         self.chunks = chunks
         self.status_code = status_code
         self.headers = headers or {}
-        self.content = b"".join(chunks)
         self.closed = False
 
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_args):
+    def close(self):
         self.closed = True
+
+    def raise_for_status(self):
+        pass
 
     def iter_content(self, chunk_size):
         yield from self.chunks
@@ -37,32 +37,43 @@ def _event(message_type, content):
     }
 
 
+def _serve(monkeypatch, response):
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append(dict(kwargs, url=url))
+        return response
+
+    monkeypatch.setattr(media_download.requests, "get", get)
+    return calls
+
+
 def test_large_single_image_is_rejected_without_leaving_a_file(tmp_path, monkeypatch):
     monkeypatch.setattr(feishu_message.state_dir, "tmp_dir", lambda: tmp_path)
-    monkeypatch.setattr(feishu_message, "MAX_FEISHU_IMAGE_BYTES", 5, raising=False)
+    monkeypatch.setattr(feishu_message, "MAX_IMAGE_BYTES", 5)
     response = FakeResponse([b"abc", b"def"])
-    monkeypatch.setattr(feishu_message.requests, "get", lambda **kwargs: response)
+    _serve(monkeypatch, response)
 
     message = feishu_message.FeishuMessage(
         _event("image", {"image_key": "image-1"}), access_token="tenant-token"
     )
 
     assert message.image_path is None
-    assert "download" in message.content.lower() or "下载失败" in message.content
+    assert "下载失败" in message.content
     assert list(tmp_path.iterdir()) == []
     assert response.closed
 
 
-def test_large_post_image_does_not_publish_a_missing_path(tmp_path, monkeypatch):
+def test_failed_post_image_is_marked_without_a_path(tmp_path, monkeypatch):
     monkeypatch.setattr(feishu_message.state_dir, "tmp_dir", lambda: tmp_path)
-    monkeypatch.setattr(feishu_message, "MAX_FEISHU_IMAGE_BYTES", 5, raising=False)
+    monkeypatch.setattr(feishu_message, "MAX_IMAGE_BYTES", 5)
     response = FakeResponse([b"abcdef"], headers={"Content-Length": "6"})
-    monkeypatch.setattr(feishu_message.requests, "get", lambda **kwargs: response)
+    _serve(monkeypatch, response)
 
     post = {"content": [[{"tag": "text", "text": "hello"}, {"tag": "img", "image_key": "image-1"}]]}
     message = feishu_message.FeishuMessage(_event("post", post), access_token="tenant-token")
 
-    assert message.content == "hello"
+    assert message.content == "hello\n[图片下载失败: image-1]"
     assert message.image_paths == {}
     assert list(tmp_path.iterdir()) == []
     assert response.closed
@@ -71,33 +82,26 @@ def test_large_post_image_does_not_publish_a_missing_path(tmp_path, monkeypatch)
 def test_small_image_streams_to_workspace(tmp_path, monkeypatch):
     monkeypatch.setattr(feishu_message.state_dir, "tmp_dir", lambda: tmp_path)
     response = FakeResponse([b"abc", b"de"])
-    calls = []
+    calls = _serve(monkeypatch, response)
 
-    def get(**kwargs):
-        calls.append(kwargs)
-        return response
-
-    monkeypatch.setattr(feishu_message.requests, "get", get)
     message = feishu_message.FeishuMessage(
         _event("image", {"image_key": "image-1"}), access_token="tenant-token"
     )
 
     assert Path(message.image_path).read_bytes() == b"abcde"
+    assert calls[0]["url"].endswith("/messages/message-1/resources/image-1")
+    assert calls[0]["params"] == {"type": "image"}
+    assert calls[0]["headers"] == {"Authorization": "Bearer tenant-token"}
     assert calls[0]["stream"] is True
-    assert calls[0]["timeout"]
+    assert calls[0]["timeout"] == (5, 30)
     assert response.closed
 
 
 def test_post_uses_each_successful_image_once(tmp_path, monkeypatch):
     monkeypatch.setattr(feishu_message.state_dir, "tmp_dir", lambda: tmp_path)
     response = FakeResponse([b"image-bytes"])
-    calls = []
+    calls = _serve(monkeypatch, response)
 
-    def get(**kwargs):
-        calls.append(kwargs)
-        return response
-
-    monkeypatch.setattr(feishu_message.requests, "get", get)
     post = {"content": [[{"tag": "img", "image_key": "image-1"}, {"tag": "img", "image_key": "image-1"}]]}
     message = feishu_message.FeishuMessage(_event("post", post), access_token="tenant-token")
 
@@ -115,7 +119,8 @@ def test_interrupted_image_stream_cleans_up_partial_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr(feishu_message.state_dir, "tmp_dir", lambda: tmp_path)
     response = InterruptedResponse([b"partial"])
-    monkeypatch.setattr(feishu_message.requests, "get", lambda **kwargs: response)
+    _serve(monkeypatch, response)
+
     message = feishu_message.FeishuMessage(
         _event("image", {"image_key": "image-1"}), access_token="tenant-token"
     )
@@ -123,3 +128,14 @@ def test_interrupted_image_stream_cleans_up_partial_file(tmp_path, monkeypatch):
     assert message.image_path is None
     assert list(tmp_path.iterdir()) == []
     assert response.closed
+
+
+def test_image_key_cannot_escape_tmp_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(feishu_message.state_dir, "tmp_dir", lambda: tmp_path)
+    _serve(monkeypatch, FakeResponse([b"png"]))
+
+    message = feishu_message.FeishuMessage(
+        _event("image", {"image_key": "../../evil"}), access_token="tenant-token"
+    )
+
+    assert Path(message.image_path).parent == tmp_path

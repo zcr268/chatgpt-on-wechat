@@ -1,14 +1,11 @@
 import os
 import re
-import tempfile
-import requests
 
 from bridge.context import ContextType
 from channel.chat_message import ChatMessage
 from common.log import logger
 from common import state_dir
-
-MAX_QQ_ATTACHMENT_BYTES = 100 * 1024 * 1024
+from common.media_download import MAX_FILE_BYTES, download_to_file
 
 
 def _get_tmp_dir() -> str:
@@ -61,38 +58,11 @@ def _download_attachment(att: dict, msg_id: str, idx: int) -> str:
         fname = f"qq_{msg_id}_{idx}"
     # Keep filenames unique per message so two attachments never clobber.
     local_path = os.path.join(tmp_dir, f"qq_{msg_id}_{idx}_{fname}")
-    temporary_path = None
     try:
-        with requests.get(url, timeout=60, stream=True) as resp:
-            resp.raise_for_status()
-            length = resp.headers.get("Content-Length")
-            if length:
-                try:
-                    advertised_size = int(length)
-                except ValueError:
-                    advertised_size = 0
-                if advertised_size > MAX_QQ_ATTACHMENT_BYTES:
-                    raise ValueError("QQ attachment exceeds the download limit")
-
-            with tempfile.NamedTemporaryFile(dir=tmp_dir, prefix=".qq_", delete=False) as f:
-                temporary_path = f.name
-                size = 0
-                for chunk in resp.iter_content(chunk_size=64 * 1024):
-                    if not chunk:
-                        continue
-                    size += len(chunk)
-                    if size > MAX_QQ_ATTACHMENT_BYTES:
-                        raise ValueError("QQ attachment exceeds the download limit")
-                    f.write(chunk)
-        os.replace(temporary_path, local_path)
+        download_to_file(url, local_path, MAX_FILE_BYTES, timeout=60)
         logger.info(f"[QQ] Attachment downloaded: {local_path}")
         return local_path
     except Exception as e:
-        if temporary_path:
-            try:
-                os.remove(temporary_path)
-            except OSError:
-                pass
         logger.error(f"[QQ] Failed to download attachment: {e}")
         return ""
 

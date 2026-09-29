@@ -25,6 +25,10 @@ class DownloadResponse:
         self.interrupt = interrupt
         self.closed = False
 
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
     def iter_content(self, chunk_size):
         yield self.content
         if self.interrupt:
@@ -138,7 +142,7 @@ def test_file_stream_over_limit_is_not_uploaded(monkeypatch):
     response = DownloadResponse(content=b"oversize")
     post = _ok_upload()
 
-    with patch("channel.feishu.feishu_channel.MAX_REMOTE_FILE_BYTES", 4):
+    with patch("channel.feishu.feishu_channel.MAX_FILE_BYTES", 4):
         with patch("channel.feishu.feishu_channel.requests.get", return_value=response):
             with patch("channel.feishu.feishu_channel.requests.post", side_effect=post):
                 result = _channel()._upload_file_url(FILE_URL, "token")
