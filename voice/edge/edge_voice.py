@@ -45,7 +45,17 @@ class EdgeVoice(Voice):
     def textToVoice(self, text):
         fileName = TmpDir().path() + "reply-" + str(int(time.time())) + "-" + str(hash(text) & 0x7FFFFFFF) + ".mp3"
 
-        asyncio.run(self.gen_voice(text, fileName))
+        try:
+            asyncio.run(self.gen_voice(text, fileName))
+        except Exception as e:
+            # Every other provider in this package answers a failure with an
+            # ERROR reply. Letting the raise travel instead reaches
+            # ChatChannel._fail_callback, which only logs
+            # (channel/chat_channel.py:453), and because this runs while the
+            # text reply is being converted to voice the user loses the text
+            # answer as well.
+            logger.error("[EdgeTTS] textToVoice failed: {}".format(e))
+            return Reply(ReplyType.ERROR, "抱歉，语音合成失败")
 
         logger.info("[EdgeTTS] textToVoice text={} voice file name={}".format(text, fileName))
         return Reply(ReplyType.VOICE, fileName)
