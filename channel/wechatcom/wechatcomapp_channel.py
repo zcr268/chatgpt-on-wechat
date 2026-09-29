@@ -27,6 +27,11 @@ from voice.audio_convert import any_to_amr, split_audio
 
 MAX_UTF8_LEN = 2048
 
+# Total wall-clock budgets for remote downloads; the socket timeout alone does
+# not stop a server that keeps trickling bytes.
+_MAX_REMOTE_IMAGE_SECONDS = 60
+_MAX_REMOTE_FILE_SECONDS = 300
+
 
 def _media_tmp_path(prefix: str, ext: str = "") -> str:
     """Path for a file reply that has to be fetched before it can be uploaded.
@@ -156,9 +161,12 @@ class WechatComAppChannel(ChatChannel):
                     image_storage = io.BytesIO(image_file.read())
             else:
                 try:
-                    image_storage = io.BytesIO(download_bytes(img_url, MAX_IMAGE_BYTES, timeout=60))
+                    image_storage = io.BytesIO(download_bytes(
+                        img_url, MAX_IMAGE_BYTES, timeout=60, max_seconds=_MAX_REMOTE_IMAGE_SECONDS,
+                    ))
                 except Exception as e:
-                    logger.error(f"[wechatcom] image download failed: {e}")
+                    # The exception text can carry the full (possibly signed) URL.
+                    logger.error(f"[wechatcom] image download failed: {type(e).__name__}")
                     return
             sz = fsize(image_storage)
             if sz >= 10 * 1024 * 1024:
@@ -218,10 +226,10 @@ class WechatComAppChannel(ChatChannel):
             try:
                 ext = os.path.splitext(urlparse(path).path)[1] or ".bin"
                 local = _media_tmp_path("wechatcom_file", ext)
-                download_to_file(path, local, MAX_FILE_BYTES, timeout=60)
+                download_to_file(path, local, MAX_FILE_BYTES, timeout=60, max_seconds=_MAX_REMOTE_FILE_SECONDS)
                 path = local
             except Exception as e:
-                logger.error("[wechatcom] failed to fetch {}: {}".format(path, e))
+                logger.error("[wechatcom] failed to fetch remote file: {}".format(type(e).__name__))
                 return ""
         if not os.path.exists(path):
             logger.error("[wechatcom] file not found: {}".format(path))
