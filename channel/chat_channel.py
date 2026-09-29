@@ -312,7 +312,7 @@ class ChatChannel(Channel):
                 else:
                     logger.error("[chat_channel] unknown reply type: {}".format(reply.type))
                     return
-            if desire_rtype and desire_rtype != reply.type and reply.type not in [ReplyType.ERROR, ReplyType.INFO]:
+            if reply and desire_rtype and desire_rtype != reply.type and reply.type not in [ReplyType.ERROR, ReplyType.INFO]:
                 logger.warning("[chat_channel] desire_rtype: {}, but reply type: {}".format(context.get("desire_rtype"), reply.type))
             return reply
 
