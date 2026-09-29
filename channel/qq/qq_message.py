@@ -39,10 +39,17 @@ def _attachment_kind(content_type: str) -> str:
 
 def _safe_filename(name: str) -> str:
     """Strip path separators / odd chars so a server-provided filename can't
-    escape the tmp dir or collide with control characters."""
-    name = os.path.basename(name or "")
-    name = re.sub(r"[^\w.\-]+", "_", name).strip("._")
-    return name
+    escape the tmp dir or collide with control characters, and cap its length
+    at 180 chars so an over-long sender filename can't trip a filesystem
+    path-length error. Mirrors the canonical guard in channel/chat_message.py
+    and the dingtalk channel's private copy."""
+    if not name:
+        return ""
+    name = os.path.basename(str(name).replace("\\", "/"))
+    name = re.sub(r"[^\w.\- ]+", "_", name).strip(" .")
+    if name in (".", ".."):
+        return ""
+    return name[:180]
 
 
 def _download_attachment(att: dict, msg_id: str, idx: int) -> str:
