@@ -170,6 +170,23 @@ class WechatKfChannel(ChatChannel):
     # ------------------------------------------------------------------
     # Outbound — implementing the abstract `send` contract
     # ------------------------------------------------------------------
+    @staticmethod
+    def _read_media(path_or_url: str, max_bytes: int) -> Optional[io.BytesIO]:
+        """Load media from a local ``file://`` path, or download a bounded http(s) URL.
+
+        The agent bridge delivers local files as ``file://`` URLs (see
+        ``bridge/agent_bridge.py::_create_file_reply``), which ``requests``
+        cannot fetch.
+        """
+        if path_or_url.startswith("file://"):
+            try:
+                with open(path_or_url[7:], "rb") as f:
+                    return io.BytesIO(f.read())
+            except OSError as e:
+                logger.error("[wechat_kf] cannot read local media {}: {}".format(path_or_url, e))
+                return None
+        return _download_reply_media(path_or_url, max_bytes)
+
     def send(self, reply: Reply, context: Context):
         receiver = context["receiver"]
         msg = context.kwargs.get("msg")
@@ -236,7 +253,7 @@ class WechatKfChannel(ChatChannel):
 
         elif reply.type == ReplyType.IMAGE_URL:
             img_url = reply.content
-            image_storage = _download_reply_media(img_url, _MAX_REMOTE_IMAGE_BYTES)
+            image_storage = self._read_media(img_url, _MAX_REMOTE_IMAGE_BYTES)
             if image_storage is None:
                 return
             sz = fsize(image_storage)
@@ -269,7 +286,7 @@ class WechatKfChannel(ChatChannel):
 
         elif reply.type == ReplyType.VIDEO_URL:
             video_url = reply.content
-            video_storage = _download_reply_media(video_url, _MAX_REMOTE_VIDEO_BYTES)
+            video_storage = self._read_media(video_url, _MAX_REMOTE_VIDEO_BYTES)
             if video_storage is None:
                 return
             try:
@@ -282,12 +299,25 @@ class WechatKfChannel(ChatChannel):
 
         elif reply.type == ReplyType.FILE:
             file_path = reply.content
+            # The agent bridge may attach a summary of the file
+            # (bridge/agent_bridge.py::_create_file_reply); deliver it as a
+            # text bubble so the user sees the description, not just a file.
+            text_content = getattr(reply, "text_content", "") or ""
+            if text_content:
+                self._send_text(external_userid, open_kfid, text_content)
+                time.sleep(0.3)
             try:
-                with open(file_path, "rb") as f:
-                    response = self.client.media.upload(
-                        "file", (os.path.basename(file_path), f.read())
-                    )
-            except WeChatClientException as e:
+                if file_path.startswith("file://"):
+                    local_path = file_path[7:]
+                    with open(local_path, "rb") as f:
+                        data = f.read()
+                    name = os.path.basename(local_path)
+                else:
+                    with open(file_path, "rb") as f:
+                        data = f.read()
+                    name = os.path.basename(file_path)
+                response = self.client.media.upload("file", (name, data))
+            except (OSError, WeChatClientException) as e:
                 logger.error("[wechat_kf] upload file failed: {}".format(e))
                 return
             self._send_file(external_userid, open_kfid, response["media_id"])
