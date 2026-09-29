@@ -55,6 +55,40 @@ except ImportError as e:  # voice features optional
 MAX_UTF8_LEN = 2048
 KF_API_BASE = "https://qyapi.weixin.qq.com/cgi-bin/kf"
 SYNC_MSG_LIMIT = 1000
+_MAX_REMOTE_IMAGE_BYTES = 20 * 1024 * 1024
+_MAX_REMOTE_VIDEO_BYTES = 10 * 1024 * 1024
+_MAX_REMOTE_MEDIA_SECONDS = 60
+
+
+def _download_reply_media(url: str, max_bytes: int) -> Optional[io.BytesIO]:
+    """Download a bounded media reply, closing the HTTP response in every case."""
+    response = None
+    try:
+        deadline = time.monotonic() + _MAX_REMOTE_MEDIA_SECONDS
+        response = requests.get(url, stream=True, timeout=(5, 30))
+        response.raise_for_status()
+        try:
+            content_length = int(response.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            content_length = 0
+        if content_length > max_bytes:
+            raise ValueError("remote media is too large")
+
+        storage = io.BytesIO()
+        for block in response.iter_content(chunk_size=8192):
+            if time.monotonic() > deadline:
+                raise ValueError("remote media download timed out")
+            if storage.tell() + len(block) > max_bytes:
+                raise ValueError("remote media is too large")
+            storage.write(block)
+        storage.seek(0)
+        return storage
+    except (requests.RequestException, OSError, ValueError) as exc:
+        logger.warning("[wechat_kf] remote media download failed: {}".format(type(exc).__name__))
+        return None
+    finally:
+        if response is not None:
+            response.close()
 
 
 @singleton
@@ -202,10 +236,9 @@ class WechatKfChannel(ChatChannel):
 
         elif reply.type == ReplyType.IMAGE_URL:
             img_url = reply.content
-            pic_res = requests.get(img_url, stream=True, timeout=60)
-            image_storage = io.BytesIO()
-            for block in pic_res.iter_content(1024):
-                image_storage.write(block)
+            image_storage = _download_reply_media(img_url, _MAX_REMOTE_IMAGE_BYTES)
+            if image_storage is None:
+                return
             sz = fsize(image_storage)
             if sz >= 10 * 1024 * 1024:
                 logger.info("[wechat_kf] image too large, compressing, sz={}".format(sz))
@@ -236,10 +269,11 @@ class WechatKfChannel(ChatChannel):
 
         elif reply.type == ReplyType.VIDEO_URL:
             video_url = reply.content
+            video_storage = _download_reply_media(video_url, _MAX_REMOTE_VIDEO_BYTES)
+            if video_storage is None:
+                return
             try:
-                response = self.client.media.upload(
-                    "video", requests.get(video_url, stream=True, timeout=60).content
-                )
+                response = self.client.media.upload("video", video_storage)
             except WeChatClientException as e:
                 logger.error("[wechat_kf] upload video failed: {}".format(e))
                 return
