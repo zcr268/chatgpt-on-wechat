@@ -687,14 +687,14 @@ class FeiShuChanel(ChatChannel):
             logger.warning(f"[FeiShu] invalid message recall event: {event}")
             return 0, False
 
-        session_id = self._message_sessions.get(message_id)
+        session_id, agent_id = self._message_sessions.get(message_id, (None, None))
         if not session_id:
             logger.info(
                 f"[FeiShu] ignored recall for unknown message, message_id={message_id}"
             )
             return 0, False
 
-        result = self.cancel_message(session_id, message_id)
+        result = self.cancel_message(session_id, message_id, agent_id=agent_id)
         self._message_sessions.pop(message_id, None)
         logger.info(
             "[FeiShu] recalled message cancelled, "
@@ -871,10 +871,10 @@ class FeiShuChanel(ChatChannel):
             # directly so it works on the very first message.
             from agent.team_addressing import stamp_speaker_from_channel
             stamp_speaker_from_channel(self, context, feishu_msg.content_with_quote())
-            # Feishu recall events only include message_id/chat_id. Keep the
-            # accepted route and use message_id as the agent cancellation key.
+            # Feishu recall events only include message_id/chat_id, and a recall
+            # has to find the queue the message went into -- which produce() keys
+            # by the Agent it routed to. Record both halves once the route is set.
             context["request_id"] = msg_id
-            self._message_sessions[msg_id] = context["session_id"]
             # 流式回复模式：向 context 注入 on_event 回调，agent 每产出一段文字时会调用它。
             # 回调内部先发送一条占位消息获取 message_id，之后通过 PATCH 接口原地更新内容，
             # 实现打字机效果。回调结束时设置 context["feishu_streamed"]=True，
@@ -884,6 +884,7 @@ class FeiShuChanel(ChatChannel):
             if self.cfg("feishu_stream_reply", True):
                 context["on_event"] = self._make_feishu_stream_callback(context, feishu_msg.access_token)
             self.produce(context)
+            self._message_sessions[msg_id] = (context["session_id"], context.get("agent_id"))
         logger.debug(f"[FeiShu] query={feishu_msg.content}, type={feishu_msg.ctype}")
 
     def send(self, reply: Reply, context: Context):
