@@ -394,11 +394,16 @@ class Godcmd(Plugin):
                             if len(args) != 2:
                                 ok, result = False, "请提供插件名和优先级"
                             else:
-                                ok = PluginManager().set_plugin_priority(args[0], int(args[1]))
-                                if ok:
-                                    result = "插件" + args[0] + "优先级已设置为" + args[1]
+                                try:
+                                    priority = int(args[1])
+                                except ValueError:
+                                    ok, result = False, f"优先级 {args[1]} 无效, 应为整数"
                                 else:
-                                    result = "插件不存在"
+                                    ok = PluginManager().set_plugin_priority(args[0], priority)
+                                    if ok:
+                                        result = "插件" + args[0] + "优先级已设置为" + args[1]
+                                    else:
+                                        result = "插件不存在"
                         elif cmd == "reloadp":
                             if len(args) != 1:
                                 ok, result = False, "请提供插件名"
