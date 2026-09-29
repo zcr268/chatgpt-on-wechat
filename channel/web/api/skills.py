@@ -89,11 +89,15 @@ def _market_spec(source: str, value: str) -> str:
             raise ValueError(f"invalid skill name: {value}")
         return value
     if source == "clawhub":
+        from cli.commands.skill import SkillInstallError, parse_clawhub_ref
+
         if value.startswith("clawhub:"):
             value = value[len("clawhub:"):]
-        if not _SKILL_NAME_RE.match(value):
-            raise ValueError(f"invalid ClawHub skill name: {value}")
-        return f"clawhub:{value}"
+        try:
+            owner, slug = parse_clawhub_ref(value)
+        except SkillInstallError:
+            raise ValueError(f"invalid ClawHub skill: {value}")
+        return f"clawhub:{owner}/{slug}" if owner else f"clawhub:{slug}"
     if source == "github":
         if value.startswith(("https://", "http://")) or _GITHUB_SHORTHAND_RE.match(value):
             return value

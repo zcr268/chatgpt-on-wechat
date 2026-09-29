@@ -53,6 +53,12 @@ _GITLAB_URL_RE = re.compile(
 _GIT_SSH_RE = re.compile(
     r"^git@([^:]+):([^/]+)/([^/]+?)(?:\.git)?$"
 )
+_CLAWHUB_OWNER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\-]{0,63}$")
+# A skill page, e.g. https://clawhub.ai/steipete/skills/gog
+_CLAWHUB_URL_RE = re.compile(
+    r"^https?://(?:www\.)?clawhub\.ai/@?([^/?#]+)/skills/([^/?#]+)/?(?:[?#].*)?$",
+    re.IGNORECASE,
+)
 
 # Set while staging a preview so every installer writes into a scratch dir
 # instead of an Agent's live skills directory. A ContextVar rather than a
@@ -606,6 +612,42 @@ def _check_skill_name(name: str):
         )
 
 
+def is_clawhub_url(value: str) -> bool:
+    return bool(_CLAWHUB_URL_RE.match((value or "").strip()))
+
+
+def parse_clawhub_ref(ref: str):
+    """Split a ClawHub reference into ``(owner, slug)``; owner is None if not given.
+
+    Accepts ``slug``, ``owner/slug``, ``@owner/slug`` and a skill page URL.
+    ClawHub slugs are only unique per publisher, so a slug several publishers
+    share can only be downloaded together with its owner.
+    """
+    ref = (ref or "").strip()
+    m = _CLAWHUB_URL_RE.match(ref)
+    if m:
+        owner, slug = m.groups()
+    elif "/" in ref:
+        owner, slug = ref.split("/", 1)
+    else:
+        owner, slug = None, ref
+    if owner is not None:
+        owner = owner.lstrip("@")
+        if not _CLAWHUB_OWNER_RE.match(owner):
+            raise SkillInstallError(f"Invalid ClawHub owner '{owner}'.")
+    _check_skill_name(slug)
+    return owner, slug
+
+
+def _with_query(url: str, **params) -> str:
+    from urllib.parse import parse_qsl, urlencode, urlunparse
+
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query.update(params)
+    return urlunparse(parsed._replace(query=urlencode(query)))
+
+
 def _check_github_spec(spec: str):
     """Raise SkillInstallError if spec is not owner/repo."""
     if not re.match(r"^[a-zA-Z0-9_\-]+/[a-zA-Z0-9_.\-]+$", spec):
@@ -941,11 +983,10 @@ def _route_install(name: str, result: InstallResult, agent_id: str = None):
             _install_hub(raw, result, provider="github", agent_id=agent_id)
         return
 
-    # --- clawhub: prefix ---
-    if name.startswith("clawhub:"):
-        skill_name = name[8:]
-        _check_skill_name(skill_name)
-        _install_hub(skill_name, result, provider="clawhub", agent_id=agent_id)
+    # --- clawhub: prefix, or a ClawHub skill page URL ---
+    if name.startswith("clawhub:") or is_clawhub_url(name):
+        owner, skill_name = parse_clawhub_ref(name[8:] if name.startswith("clawhub:") else name)
+        _install_hub(skill_name, result, provider="clawhub", owner=owner, agent_id=agent_id)
         return
 
     # --- linkai: prefix ---
@@ -1184,8 +1225,12 @@ def install(name):
         sys.exit(1)
 
 
-def _install_hub(name, result: InstallResult, provider=None, agent_id: str = None):
-    """Install a skill from Skill Hub."""
+def _install_hub(name, result: InstallResult, provider=None, agent_id: str = None, owner: str = None):
+    """Install a skill from Skill Hub.
+
+    ``owner`` picks one publisher's skill on a registry whose slugs are only
+    unique per publisher (ClawHub).
+    """
     skills_dir = _target_skills_dir(agent_id)
     os.makedirs(skills_dir, exist_ok=True)
 
@@ -1195,6 +1240,8 @@ def _install_hub(name, result: InstallResult, provider=None, agent_id: str = Non
         body = {}
         if provider:
             body["provider"] = provider
+        if owner:
+            body["owner"] = owner
         resp = requests.post(
             f"{SKILL_HUB_API}/skills/{name}/download",
             json=body,
@@ -1277,8 +1324,12 @@ def _install_hub(name, result: InstallResult, provider=None, agent_id: str = Non
                 if parsed.scheme != "https":
                     raise SkillInstallError("Refusing to download from non-HTTPS URL.")
                 src_provider = data.get("source_provider", "registry")
-                has_mirror = data.get("has_mirror", False)
+                # The mirror is keyed by slug alone, so it cannot honour a
+                # requested publisher and might hand back someone else's skill.
+                has_mirror = data.get("has_mirror", False) and not owner
                 expected_checksum = data.get("checksum") or data.get("sha256")
+                if owner:
+                    download_url = _with_query(download_url, ownerHandle=owner)
                 result.messages.append(f"Source: {src_provider}")
                 result.messages.append("Downloading skill package...")
                 dl_err = None
@@ -1292,8 +1343,14 @@ def _install_hub(name, result: InstallResult, provider=None, agent_id: str = Non
                     dl_resp.raise_for_status()
                 except Exception as e:
                     dl_err = e
+                    status = getattr(getattr(e, "response", None), "status_code", None)
+                    if status == 409 and not owner:
+                        raise SkillInstallError(
+                            f"More than one publisher on {src_provider} has a skill named '{name}'. "
+                            f"Include the publisher, e.g. {provider or src_provider}:<owner>/{name}, "
+                            f"or paste the skill's page URL."
+                        )
                     if not has_mirror:
-                        status = getattr(getattr(e, "response", None), "status_code", None)
                         if status == 404:
                             raise SkillInstallError(
                                 f"Skill '{name}' was not found on {src_provider}. "
