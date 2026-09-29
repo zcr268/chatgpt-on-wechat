@@ -693,7 +693,7 @@ configure_channel() {
             # no prompt; it can be changed later in the web console / config.
             CHANNEL_TYPE="web"
             WEB_PORT="9899"
-            ACCESS_INFO="$(t "Web 控制台地址" "Web console") : http://localhost:9899/chat"
+            ACCESS_INFO="$(t "Web 控制台地址" "Web console") : http://localhost:9899/"
             ;;
         weixin)
             # Weixin
@@ -954,7 +954,7 @@ start_project() {
         local _port="${WEB_PORT:-9899}"
         echo ""
         echo -e "${YELLOW}${EMOJI_WARN} $(t "尚未配置模型，请在 Web 控制台完成配置" "Model not configured yet, please finish setup in the web console"):${NC}"
-        echo -e "${CYAN}   http://localhost:${_port}/chat${NC}"
+        echo -e "${CYAN}   http://localhost:${_port}/${NC}"
     fi
     echo ""
     echo -e "${CYAN}${BOLD}$(t "管理命令" "Management Commands"):${NC}"

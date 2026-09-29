@@ -642,7 +642,7 @@ function Configure-Channel {
             # Web (also the default when skipped). Default port, no prompt.
             $script:ChannelType = "web"
             $script:ChannelExtra["web_port"] = 9899
-            $script:AccessInfo = (T "Web 控制台地址" "Web console") + " : http://localhost:9899/chat"
+            $script:AccessInfo = (T "Web 控制台地址" "Web console") + " : http://localhost:9899/"
         }
         "weixin" {
             $script:ChannelType = "weixin"
