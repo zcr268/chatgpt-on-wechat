@@ -311,8 +311,10 @@ class WechatKfChannel(ChatChannel):
             self._initialize_cursor(token, open_kfid)
             return
 
-        msgs = self._pull_messages(token, open_kfid, existing_cursor)
+        msgs, next_cursor = self._pull_messages(token, open_kfid, existing_cursor)
         if not msgs:
+            if next_cursor != existing_cursor:
+                self.cursor_store.set(open_kfid, next_cursor)
             return
         file_cache = get_file_cache()
         for raw in msgs:
@@ -345,6 +347,7 @@ class WechatKfChannel(ChatChannel):
             # so the downstream agent can pick them up via the text content.
             # Paths are already under agent_workspace/tmp (see
             # WechatKfMessage._get_tmp_dir), so a relative ref also works.
+            clear_cached_files = False
             if kf_msg.ctype == ContextType.TEXT:
                 cached_files = file_cache.get(session_id)
                 if cached_files:
@@ -356,7 +359,7 @@ class WechatKfChannel(ChatChannel):
                         else:
                             refs.append(f"[文件: {fpath}]")
                     kf_msg.content = kf_msg.content + "\n" + "\n".join(refs)
-                    file_cache.clear(session_id)
+                    clear_cached_files = True
 
             context = self._compose_context(
                 kf_msg.ctype,
@@ -366,7 +369,13 @@ class WechatKfChannel(ChatChannel):
             )
             if context:
                 self.produce(context)
+                if clear_cached_files:
+                    file_cache.clear(session_id)
             time.sleep(0.05)  # tiny gap between messages of the same batch
+        # A failed produce() must leave the cursor unchanged so the next
+        # callback can retry the batch instead of silently losing messages.
+        if next_cursor != existing_cursor:
+            self.cursor_store.set(open_kfid, next_cursor)
 
     def _initialize_cursor(self, token: str, open_kfid: str):
         """
@@ -395,10 +404,11 @@ class WechatKfChannel(ChatChannel):
             "skipped {} historical messages".format(open_kfid, total_skipped)
         )
 
-    def _pull_messages(self, token: str, open_kfid: str, next_cursor: Optional[str]) -> list:
-        """Loop sync_msg until `has_more` is false. Returns raw msg dicts."""
+    def _pull_messages(self, token: str, open_kfid: str, next_cursor: Optional[str]) -> tuple:
+        """Pull raw messages and return the last successful page's cursor."""
         collected = []
         cursor = next_cursor or ""
+        last_cursor = cursor
         while True:
             data = self._call_sync_msg(token, open_kfid, cursor)
             if data is None:
@@ -413,7 +423,7 @@ class WechatKfChannel(ChatChannel):
                     collected.append(item)
             cursor_after = data.get("next_cursor") or ""
             if cursor_after:
-                self.cursor_store.set(open_kfid, cursor_after)
+                last_cursor = cursor_after
             if not data.get("has_more"):
                 break
             if not cursor_after or cursor_after == cursor:
@@ -425,7 +435,7 @@ class WechatKfChannel(ChatChannel):
         logger.info(
             "[wechat_kf] pulled {} messages for open_kfid={}".format(len(collected), open_kfid)
         )
-        return collected
+        return collected, last_cursor
 
     def _call_sync_msg(self, token: str, open_kfid: str, cursor: str) -> Optional[dict]:
         # `client.access_token` is the cached string property; do not use
