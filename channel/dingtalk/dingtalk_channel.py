@@ -22,6 +22,7 @@ from bridge.context import Context, ContextType
 from bridge.reply import Reply, ReplyType
 from channel.chat_channel import ChatChannel
 from common import state_dir
+from common.media_download import MAX_FILE_BYTES, MediaTooLargeError, download_to_file
 from channel.dingtalk.dingtalk_message import DingTalkMessage
 from channel.dingtalk.dingtalk_stream_card import (
     DingTalkCardStreamer,
@@ -442,22 +443,17 @@ class DingTalkChanel(ChatChannel, dingtalk_stream.ChatbotHandler):
         if file_path.startswith("file://"):
             file_path = file_path[7:]
         
-        # 如果是 HTTP URL，先下载
+        # 如果是 HTTP URL，先下载（带字节上限，防止超大响应耗尽内存/磁盘）
         if file_path.startswith("http://") or file_path.startswith("https://"):
             try:
                 import uuid
-                response = requests.get(file_path, timeout=(5, 60))
-                if response.status_code != 200:
-                    logger.error(f"[DingTalk] Failed to download file from URL: {file_path}")
-                    return None
-                
-                # 保存到临时文件
                 file_name = os.path.basename(file_path) or f"media_{uuid.uuid4()}"
                 temp_file = os.path.join(str(state_dir.tmp_dir()), file_name)
-                
-                with open(temp_file, "wb") as f:
-                    f.write(response.content)
-                
+                try:
+                    download_to_file(file_path, temp_file, MAX_FILE_BYTES, timeout=(5, 60))
+                except MediaTooLargeError:
+                    logger.error(f"[DingTalk] Downloaded file exceeds size limit: {file_path}")
+                    return None
                 file_path = temp_file
                 logger.info(f"[DingTalk] Downloaded file to {file_path}")
             except Exception as e:
