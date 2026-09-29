@@ -145,13 +145,21 @@ class WechatComAppChannel(ChatChannel):
                 self.client.message.send_voice(self.agent_id, receiver, media_id)
                 time.sleep(1)
             logger.info("[wechatcom] sendVoice={}, receiver={}".format(reply.content, receiver))
-        elif reply.type == ReplyType.IMAGE_URL:  # 从网络下载图片
+        elif reply.type == ReplyType.IMAGE_URL:  # 本地文件或从网络下载图片
             img_url = reply.content
-            try:
-                image_storage = io.BytesIO(download_bytes(img_url, MAX_IMAGE_BYTES, timeout=60))
-            except Exception as e:
-                logger.error(f"[wechatcom] image download failed: {e}")
-                return
+            local_path = img_url[7:] if img_url.startswith("file://") else img_url
+            if os.path.isfile(local_path):
+                # An image the agent generated itself arrives as a local path, so
+                # reading it is the only way it can ever reach the user; the file
+                # branch below already resolves "file://" this way.
+                with open(local_path, "rb") as image_file:
+                    image_storage = io.BytesIO(image_file.read())
+            else:
+                try:
+                    image_storage = io.BytesIO(download_bytes(img_url, MAX_IMAGE_BYTES, timeout=60))
+                except Exception as e:
+                    logger.error(f"[wechatcom] image download failed: {e}")
+                    return
             sz = fsize(image_storage)
             if sz >= 10 * 1024 * 1024:
                 logger.info("[wechatcom] image too large, ready to compress, sz={}".format(sz))
