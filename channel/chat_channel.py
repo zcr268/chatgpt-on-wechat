@@ -17,7 +17,7 @@ from plugins import *
 
 try:
     from voice.audio_convert import any_to_wav
-except Exception as e:
+except Exception:
     pass
 
 handler_pool = ThreadPoolExecutor(max_workers=8)  # 处理消息的线程池
@@ -250,7 +250,7 @@ class ChatChannel(Channel):
                     os.remove(file_path)
                     if wav_path != file_path:
                         os.remove(wav_path)
-                except Exception as e:
+                except Exception:
                     pass
                     # logger.warning("[chat_channel]delete temp file error: " + str(e))
 
@@ -311,7 +311,7 @@ class ChatChannel(Channel):
                 else:
                     logger.error("[chat_channel] unknown reply type: {}".format(reply.type))
                     return
-            if desire_rtype and desire_rtype != reply.type and reply.type not in [ReplyType.ERROR, ReplyType.INFO]:
+            if reply and desire_rtype and desire_rtype != reply.type and reply.type not in [ReplyType.ERROR, ReplyType.INFO]:
                 logger.warning("[chat_channel] desire_rtype: {}, but reply type: {}".format(context.get("desire_rtype"), reply.type))
             return reply
 
@@ -460,7 +460,7 @@ class ChatChannel(Channel):
                     self._fail_callback(session_id, exception=worker_exception, **kwargs)
                 else:
                     self._success_callback(session_id, **kwargs)
-            except CancelledError as e:
+            except CancelledError:
                 logger.info("Worker cancelled, session_id = {}".format(session_id))
             except Exception as e:
                 logger.exception("Worker raise exception: {}".format(e))
