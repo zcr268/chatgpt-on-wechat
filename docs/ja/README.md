@@ -226,6 +226,8 @@ CowAgent は主要な LLM プロバイダーすべてに対応しています。
 
 ## 🏷 更新履歴
 
+> **2026.09.30:** [v2.2.0](https://github.com/zhayujie/CowAgent/releases/tag/2.2.0) — 機能センターの追加、マルチ Agent 協調の最適化、Web コンソールの再構築、モデルキャッシュヒット率の向上、安定性とセキュリティの全面強化。
+
 > **2026.09.14:** [v2.1.9](https://github.com/zhayujie/CowAgent/releases/tag/2.1.9) — マルチ Agent 協調体験の最適化、モデルリスト設定と複数フォールバックモデル、チャネル連携の修正、画像モデルの追加（gpt-image-2.5）、音声の修正。
 
 > **2026.09.10:** [v2.1.8](https://github.com/zhayujie/CowAgent/releases/tag/2.1.8) — マルチエージェントチーム、定時タスクの手動作成、コンテキスト使用量の可視化、新モデルと検索プロバイダーの追加、ワークスペースファイルの編集。

@@ -227,6 +227,8 @@ CowAgent 支援國內外主流廠商的大語言模型。**文字對話、影像
 
 ## 🏷 更新日誌
 
+> **2026.09.30：** [v2.2.0](https://github.com/zhayujie/CowAgent/releases/tag/2.2.0) — 新增能力中心、多 Agent 協作優化、Web 控制台重構、模型快取命中率提升、穩定性與安全全面加強
+
 > **2026.09.14：** [v2.1.9](https://github.com/zhayujie/CowAgent/releases/tag/2.1.9) — 多 Agent 協作體驗優化、模型列表配置與多兜底模型、通道接入修復、新增圖像模型（gpt-image-2.5）、語音修復
 
 > **2026.09.10：** [v2.1.8](https://github.com/zhayujie/CowAgent/releases/tag/2.1.8) — 推出多 Agent 團隊、定時任務支援手動建立、上下文用量視覺化、模型和搜尋工具接入、工作空間檔案編輯
