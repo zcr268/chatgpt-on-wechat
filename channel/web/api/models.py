@@ -1365,6 +1365,7 @@ class ModelsHandler:
         "MiniMax-Text-01": {"context_window": 1000000},
         "mimo-v2.5-pro": {"context_window": 1000000, "max_output_tokens": 131072},
         "mimo-v2.5": {"context_window": 1000000, "max_output_tokens": 131072},
+        "gpt-6.1-sol": {"context_window": 1000000, "max_output_tokens": 128000},
         "gpt-6-luna": {"context_window": 1000000, "max_output_tokens": 128000},
         "gpt-6-sol": {"context_window": 1000000, "max_output_tokens": 128000},
         "gpt-6-astra": {"context_window": 1000000, "max_output_tokens": 128000},
