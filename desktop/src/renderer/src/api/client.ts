@@ -790,9 +790,12 @@ class ApiClient {
     })
   }
 
-  // Weixin QR login
-  async getWeixinQr(): Promise<{ status: string; qrcode_url?: string; qr_image?: string; source?: string; message?: string }> {
-    return this.request('/api/weixin/qrlogin')
+  // Weixin QR login. Pass instance_id so a live card reads that channel's
+  // own code instead of opening a standalone session (which would mint a
+  // second instance on confirm).
+  async getWeixinQr(instanceId?: string): Promise<{ status: string; qrcode_url?: string; qr_image?: string; source?: string; message?: string }> {
+    const q = instanceId ? `?instance_id=${encodeURIComponent(instanceId)}` : ''
+    return this.request(`/api/weixin/qrlogin${q}`)
   }
 
   async weixinQrAction(action: 'poll' | 'refresh'): Promise<Record<string, unknown> & { status: string }> {
