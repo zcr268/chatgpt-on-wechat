@@ -8,6 +8,7 @@ without any external MCP SDK dependency.
 import json
 import os
 import queue
+import shutil
 import subprocess
 import threading
 import urllib.request
@@ -235,9 +236,10 @@ class McpClient:
 
         args = self.config.get("args", [])
         env = self._build_stdio_env(self.config.get("env", None))
+        executable = self._resolve_executable(command, env)
 
         self._proc = subprocess.Popen(
-            [command] + list(args),
+            [executable] + list(args),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -255,6 +257,23 @@ class McpClient:
         ).start()
 
         return self._handshake()
+
+    def _resolve_executable(self, command: str, env: dict) -> str:
+        """Resolve ``command`` to a full path using the subprocess PATH.
+
+        Popen without a shell does not apply PATHEXT on Windows, so shims like
+        ``npx`` / ``uvx`` (really ``npx.cmd``) fail with WinError 2 unless
+        resolved first.
+        """
+        path = env.get("PATH") or env.get("Path") or os.environ.get("PATH")
+        resolved = shutil.which(command, path=path)
+        if resolved:
+            return resolved
+        logger.warning(
+            f"[MCP:{self.name}] command '{command}' not found in PATH; "
+            f"make sure it is installed (e.g. Node.js for npx)"
+        )
+        return command
 
     def _command_allowed(self, command: str) -> bool:
         """Check the executable against an optional command allowlist.
